@@ -48,4 +48,63 @@ enum RunnerSetup {
         report(.finished)
         return Outcome(build: build, staged: staged, installed: installed)
     }
+
+    static let switchStep = "Switch compatibility tool"
+
+    // Points the tool at a build that is already cloned, so moving between Rosetta
+    // and FEX does not copy CrossOver again. The bridge holds the patched ntdll for
+    // one build only, so it is staged for the target before the link moves, and put
+    // back for the build in use if anything fails on the way.
+    static func activate(
+        _ build: RunnerBuild,
+        runners: URL = SupportPaths.runners,
+        bridge: URL = SupportPaths.bridge,
+        license: (URL) -> CrossOverLicense.Status = { CrossOverLicense.check(crossOverRoot: $0) },
+        verify: (RunnerBuild, URL) throws -> Void = RunnerInstaller.verifyClone,
+        stage: (RunnerBuild, URL, URL) throws -> [WineArch] = {
+            try NtdllPatcher.stage(build: $0, runnerRoot: $1, bridge: $2)
+        },
+        patch: (RunnerBuild, URL, URL) throws -> RunnerPatcher.Outcome = {
+            try RunnerPatcher.install(build: $0, root: $1, bridge: $2)
+        },
+        report: @Sendable (Phase) -> Void = { _ in }
+    ) throws -> Outcome {
+        guard RunnerInstaller.hasClone(forBuild: build.id, runners: runners) else {
+            throw StepFailure(
+                step: switchStep, detail: "Build \(build.displayVersion) has not been set up."
+            )
+        }
+
+        // The clone carries the same verification key as the bundle it came from,
+        // so the check still holds once that copy of CrossOver is gone.
+        let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        let status = license(root)
+        guard status.licensed else {
+            throw StepFailure(step: "Verify CrossOver license", detail: status.detail)
+        }
+
+        let previous = RunnerStore.currentBuild(runners: runners)
+            .flatMap(SupportedRunners.build(id:))
+            .flatMap { $0 != build && RunnerInstaller.hasClone(forBuild: $0.id, runners: runners) ? $0 : nil }
+
+        do {
+            report(.staging)
+            try verify(build, root)
+            let staged = try stage(build, root, bridge)
+
+            report(.patching)
+            let installed = try patch(build, root, bridge)
+            try RunnerInstaller.pointCurrent(atBuild: build.id, runners: runners)
+
+            report(.finished)
+            return Outcome(build: build, staged: staged, installed: installed)
+        } catch {
+            if let previous {
+                _ = try? stage(
+                    previous, SupportPaths.clonedRoot(forBuild: previous.id, runners: runners), bridge
+                )
+            }
+            throw error
+        }
+    }
 }

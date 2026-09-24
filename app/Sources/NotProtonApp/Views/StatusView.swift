@@ -252,9 +252,21 @@ struct StatusView: View {
                 updateBlockRow(snapshot.updateBlocked)
             }
 
-            Section("Compatibility Tool") {
-                crossOverRow(snapshot)
+            Section {
+                crossOverRows(snapshot)
                 runnerRow(snapshot.runner, payload: snapshot.payload)
+                if snapshot.installedRunners.count > 1 {
+                    activeBuildRow(snapshot)
+                }
+            } header: {
+                Text("Compatibility Tool")
+            } footer: {
+                if status.usableCrossOvers.count > 1 {
+                    HStack {
+                        Spacer()
+                        crossOverLink
+                    }
+                }
             }
 
             componentsSection(snapshot.payload)
@@ -383,17 +395,24 @@ struct StatusView: View {
         )
     }
 
+    // One copy keeps the choose button on its row. With several, each row sets up
+    // its own build and choosing moves to the section footer.
     @ViewBuilder
-    private func crossOverRow(_ snapshot: StatusSnapshot) -> some View {
-        if let install = snapshot.crossOver.first(where: \.isUsable) {
-            if case .supported(let build) = install.support {
-                StatusRow(
-                    title: install.name,
-                    value: "Build \(build.displayVersion)",
-                    tone: snapshot.crossOverLicense?.licensed == true ? .ok : .warning,
-                    detail: install.bundle.path(percentEncoded: false),
-                    action: crossOverAction()
-                )
+    private func crossOverRows(_ snapshot: StatusSnapshot) -> some View {
+        let installs = snapshot.crossOver.filter(\.isUsable)
+        if !installs.isEmpty {
+            ForEach(installs) { install in
+                if case .supported(let build) = install.support {
+                    StatusRow(
+                        title: install.name,
+                        value: "Build \(build.displayVersion)",
+                        tone: snapshot.crossOverLicense?.licensed == true ? .ok : .warning,
+                        detail: install.bundle.path(percentEncoded: false),
+                        action: installs.count > 1
+                            ? setUpAction(for: install, build: build, snapshot: snapshot)
+                            : crossOverAction()
+                    )
+                }
             }
         } else {
             StatusRow(
@@ -405,7 +424,7 @@ struct StatusView: View {
         }
     }
 
-    private func crossOverAction() -> StatusAction {
+    private func crossOverAction(chooseLabel: String = "Choose\u{2026}") -> StatusAction {
         if status.chosenCrossOver != nil {
             return StatusAction(
                 label: "Use Search",
@@ -414,10 +433,63 @@ struct StatusView: View {
             ) { Task { await status.clearCrossOverChoice() } }
         }
         return StatusAction(
-            label: "Choose\u{2026}",
+            label: chooseLabel,
             help: "Pick a CrossOver install.",
             isEnabled: status.isIdle
         ) { Task { await status.chooseCrossOver() } }
+    }
+
+    @ViewBuilder
+    private var crossOverLink: some View {
+        let action = crossOverAction(chooseLabel: "Choose Another Copy\u{2026}")
+        Button(action.label, action: action.perform)
+            .buttonStyle(.link)
+            .disabled(!action.isEnabled)
+            .help(action.help ?? "")
+    }
+
+    // Only for a build with no clone yet. One already cloned is switched to with
+    // the active build picker, and recopied from the row below.
+    private func setUpAction(
+        for install: CrossOverInstall, build: RunnerBuild, snapshot: StatusSnapshot
+    ) -> StatusAction? {
+        guard !snapshot.installedRunners.contains(build) else { return nil }
+        return StatusAction(
+            label: "Set Up",
+            isProminent: snapshot.runner == .none,
+            help: "Set up the compatibility tool from \(install.name).",
+            isEnabled: status.isIdle
+        ) {
+            Task { await status.requestCompatibilityTool(from: install) }
+        }
+    }
+
+    private func activeBuildRow(_ snapshot: StatusSnapshot) -> some View {
+        Picker(selection: activeBuild) {
+            ForEach(snapshot.installedRunners) { build in
+                Text(build.displayVersion).tag(Optional(build.id))
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Active build")
+                    .font(.headline)
+                Text("Prefixes made with a different build will need to be rebuilt.")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.leading, StatusMetrics.textInset)
+        }
+        .disabled(!status.isIdle)
+        .help("Choose which CrossOver build games launch with.")
+    }
+
+    private var activeBuild: Binding<String?> {
+        Binding(
+            get: { status.snapshot?.runner.buildIdentifier },
+            set: { picked in
+                guard let build = picked.flatMap(SupportedRunners.build(id:)) else { return }
+                Task { await status.switchRunner(to: build) }
+            }
+        )
     }
 
     private func runnerAction(
@@ -427,7 +499,7 @@ struct StatusView: View {
             label: label,
             isProminent: true,
             help: "Set up the compatibility tool from CrossOver.",
-            isEnabled: status.isIdle && status.usableCrossOver != nil
+            isEnabled: status.isIdle && status.setupSource != nil
         ) {
             Task { await status.requestCompatibilityTool(replacingExisting: replacingExisting) }
         }
@@ -442,7 +514,8 @@ struct StatusView: View {
                 title: "Compatibility Tool",
                 value: "Not set up.",
                 tone: .neutral,
-                action: runnerAction()
+                // Each copy of CrossOver above has its own button when there are several.
+                action: status.usableCrossOvers.count > 1 ? nil : runnerAction()
             )
         case .cloned(let build, let supported):
             let satisfied = supported && !patchedMissing

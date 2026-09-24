@@ -80,7 +80,7 @@ enum RunnerInstaller {
         }
     }
 
-    private static func verifyClone(build: RunnerBuild, root: URL) throws {
+    static func verifyClone(build: RunnerBuild, root: URL) throws {
         let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
         guard let hash = Digest.sha256IfPresent(loader) else {
             throw StepFailure(step: step, detail: "The clone has no Wine loader at \(loader.lastPathComponent).")
