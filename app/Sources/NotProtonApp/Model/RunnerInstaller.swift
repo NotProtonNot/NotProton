@@ -37,7 +37,6 @@ enum RunnerInstaller {
 
         let cloned = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
         try verifyClone(build: build, root: cloned)
-        try pointCurrent(atBuild: build.id, runners: runners)
 
         return build
     }

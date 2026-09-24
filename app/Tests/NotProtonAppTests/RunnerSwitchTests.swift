@@ -112,6 +112,39 @@ struct RunnerSwitchTests {
         #expect(calls.staged == [Self.fex.id, Self.rosetta.id])
     }
 
+    @Test("A failed bridge restore reports both failures")
+    func failedRestoreIsReported() throws {
+        let runners = try makeRunners(cloning: [Self.rosetta, Self.fex])
+        defer { try? FileManager.default.removeItem(at: runners) }
+        try RunnerInstaller.pointCurrent(atBuild: Self.rosetta.id, runners: runners)
+
+        var staged: [String] = []
+        let failure = try #require(throws: StepFailure.self) {
+            try RunnerSetup.activate(
+                Self.fex,
+                runners: runners,
+                license: { _ in Self.licensed },
+                verify: { _, _ in },
+                stage: { build, _, _ in
+                    staged.append(build.id)
+                    if build == Self.rosetta {
+                        throw StepFailure(step: "restore", detail: "disk full")
+                    }
+                    return []
+                },
+                patch: { _, _, _ in
+                    throw StepFailure(step: "patch", detail: "patch failed")
+                }
+            )
+        }
+
+        #expect(staged == [Self.fex.id, Self.rosetta.id])
+        #expect(RunnerStore.currentBuild(runners: runners) == Self.rosetta.id)
+        #expect(failure.detail.contains("patch failed"))
+        #expect(failure.detail.contains("Restoring the previous build also failed"))
+        #expect(failure.detail.contains("disk full"))
+    }
+
     @Test("A build with no clone is refused without touching anything")
     func refusesMissingClone() throws {
         let runners = try makeRunners(cloning: [Self.rosetta])

@@ -37,16 +37,7 @@ enum RunnerSetup {
 
         report(.cloning)
         let build = try RunnerInstaller.clone(from: install, replacingExisting: replacingExisting)
-
-        report(.staging)
-        let root = SupportPaths.clonedRoot(forBuild: build.id)
-        let staged = try NtdllPatcher.stage(build: build, runnerRoot: root)
-
-        report(.patching)
-        let installed = try RunnerPatcher.install(build: build, root: root)
-
-        report(.finished)
-        return Outcome(build: build, staged: staged, installed: installed)
+        return try activate(build, report: report)
     }
 
     static let switchStep = "Switch compatibility tool"
@@ -87,9 +78,10 @@ enum RunnerSetup {
             .flatMap(SupportedRunners.build(id:))
             .flatMap { $0 != build && RunnerInstaller.hasClone(forBuild: $0.id, runners: runners) ? $0 : nil }
 
+        try verify(build, root)
+
         do {
             report(.staging)
-            try verify(build, root)
             let staged = try stage(build, root, bridge)
 
             report(.patching)
@@ -100,9 +92,17 @@ enum RunnerSetup {
             return Outcome(build: build, staged: staged, installed: installed)
         } catch {
             if let previous {
-                _ = try? stage(
-                    previous, SupportPaths.clonedRoot(forBuild: previous.id, runners: runners), bridge
-                )
+                do {
+                    _ = try stage(
+                        previous, SupportPaths.clonedRoot(forBuild: previous.id, runners: runners), bridge
+                    )
+                } catch let restorationError {
+                    throw StepFailure(
+                        step: switchStep,
+                        detail: "\(error.localizedDescription) Restoring the previous build also failed: "
+                            + restorationError.localizedDescription
+                    )
+                }
             }
             throw error
         }
