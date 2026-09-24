@@ -336,6 +336,19 @@ install_lsteamclient_trigger() {
   fi
 }
 
+# A fix to match Proton
+install_legacy_steam_dll() {
+  src="$bridge_src/legacycompat/Steam.dll"
+  dst="$WINEPREFIX/drive_c/windows/syswow64/Steam.dll"
+  [ -f "$src" ] && [ -d "$WINEPREFIX/drive_c/windows/syswow64" ] || return 0
+  cmp -s "$src" "$dst" && return 0
+  if cp -f "$src" "$dst"; then
+    echo "=== installed legacy Steam.dll ===" >> "$log" 2>&1 || true
+  else
+    echo "=== could not install the legacy Steam.dll ===" >> "$log" 2>&1 || true
+  fi
+}
+
 # Steam runs a Windows game's installscript.vdf by invoking the standalone
 # evaluator through the compat tool, the same way the linux client does, but
 # the binaries are missing on macOS, so...
@@ -351,16 +364,6 @@ install_legacycompat() {
     cp -f "$f" "$dst/$b" && \
       echo "=== installed legacycompat/$b ===" >> "$log" 2>&1
   done
-}
-
-link_legacy_steam_dll() {
-  src="$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/Steam.dll"
-  [ -n "$STEAM_COMPAT_INSTALL_PATH" ] && [ -f "$src" ] || return 0
-  dst="$(dirname "$STEAM_COMPAT_INSTALL_PATH")/Steam.dll"
-  [ -L "$dst" ] || [ ! -e "$dst" ] || return 0
-  [ "$(readlink "$dst" 2>/dev/null)" = "$src" ] && return 0
-  ln -sfn "$src" "$dst" && \
-    echo "=== linked legacy Steam.dll ===" >> "$log" 2>&1
 }
 
 bridge_files="steamclient64.dll steamclient.dll tier0_s64.dll vstdlib_s64.dll"
@@ -389,6 +392,7 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   done
   verify_runner
   install_lsteamclient_trigger
+  install_legacy_steam_dll
   export WINEDLLPATH="$prefix_steam:$WINEDLLPATH"
   export WINEDLLOVERRIDES="steamclient=n;steamclient64=n;lsteamclient=b"
   native_client="$STEAM_COMPAT_CLIENT_INSTALL_PATH"
@@ -397,7 +401,6 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="$native_client"
   fi
   install_legacycompat
-  link_legacy_steam_dll
   echo "=== bridge staged into $prefix_steam ===" >> "$log" 2>&1 || true
   echo "WINEDLLPATH=$WINEDLLPATH" >> "$log" 2>&1 || true
   echo "STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_COMPAT_CLIENT_INSTALL_PATH" >> "$log" 2>&1 || true
