@@ -28,6 +28,7 @@ struct ShellTests {
 
         let result = try Shell.run("/bin/cat", [file.path(percentEncoded: false)])
 
+        #expect(!result.outputLost, "the output was never collected, so the count below reads as zero")
         #expect(result.succeeded)
         #expect(result.stdout.utf8.count == payload.count)
     }
@@ -44,6 +45,7 @@ struct ShellTests {
     func separatesStderrFromStdout() throws {
         let result = try Shell.run("/bin/cat", [absentPath()])
 
+        #expect(!result.outputLost, "the output was never collected, so both streams read as empty")
         #expect(!result.succeeded)
         #expect(result.stdout.isEmpty)
         #expect(result.stderr.contains("No such file"))

@@ -101,7 +101,12 @@ struct AppInfoToolTests {
         let path = URL.temporaryDirectory.appending(path: "np-appinfo-\(UUID().uuidString).vdf")
         try cache.write(to: path)
         defer { try? FileManager.default.removeItem(at: path) }
-        return try Shell.run(tool.path(percentEncoded: false), [path.path(percentEncoded: false), appID])
+        let result = try Shell.run(
+            tool.path(percentEncoded: false), [path.path(percentEncoded: false), appID])
+        #expect(
+            !result.outputLost,
+            "appinfo ran but its output was never collected, so every field below reads as absent")
+        return result
     }
 
     private func values(_ result: CommandResult) -> [String: String] {

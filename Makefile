@@ -230,7 +230,7 @@ APP_TESTS := app/Tests
 
 app-tests:
 	@if [ ! -d $(APP_TESTS) ]; then $(call SKIP,app-tests,$(APP_TESTS)); exit 0; fi; \
-	touch app/Package.swift; cd app && swift test
+	touch app/Package.swift; cd app && swift test --no-parallel
 
 PANEL_TESTS := dylib/tests/panel-behavior
 
