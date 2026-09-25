@@ -117,6 +117,22 @@ APPLESCRIPT
   fi
   exit 1
 }
+
+# D3DMetal only ships for x86_64, so the FEX build of CrossOver reports it as
+# unusable and quietly falls back to another backend. Say so instead, once per
+# prefix, as nothing else tells the user why the game is not on D3DMetal.
+warn_d3dmetal_on_fex() {
+  [ "$CX_GRAPHICS_BACKEND" = d3dmetal ] || return 0
+  [ "${wine_unix##*/}" = aarch64-unix ] || return 0
+  echo "=== D3DMetal needs the Rosetta build of CrossOver, the FEX build falls back to another backend ===" >> "$log" 2>&1 || true
+  [ "$verb" != run ] || return 0
+  seen="$STEAM_COMPAT_DATA_PATH/notproton-d3dmetal-fex-warned"
+  [ ! -e "$seen" ] || return 0
+  : > "$seen" 2>/dev/null || true
+  osascript >/dev/null 2>&1 <<APPLESCRIPT || true
+display alert "D3DMetal is not available on the FEX build" message "D3DMetal is only available on the Rosetta build of CrossOver. On the FEX build, this game will launch with a different graphics backend instead. Install the Rosetta build in NotProton to use D3DMetal, or pick DXMT or DXVK under Properties > Compatibility." as warning
+APPLESCRIPT
+}
 # Steam cloud related
 merge_user_dir() {
   src=$1
@@ -278,6 +294,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
     > "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true
   stage_step="prefix arch check"
   refuse_foreign_prefix
+  warn_d3dmetal_on_fex
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
   "$WINESERVER" -k >> "$log" 2>&1 || true
   stage_step="profile layout"
