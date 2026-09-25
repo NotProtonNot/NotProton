@@ -18,4 +18,7 @@ int np_get_section_containing(const struct mach_header_64 *mh, intptr_t slide,
                               uintptr_t addr, uintptr_t *out_base,
                               size_t *out_size);
 
+int np_function_bounds(const struct mach_header_64 *mh, intptr_t slide,
+                       uintptr_t addr, uintptr_t *out_start, uintptr_t *out_end);
+
 #endif // NOTPROTON_CORE_MACHO_H

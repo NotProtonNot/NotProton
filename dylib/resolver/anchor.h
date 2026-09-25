@@ -14,7 +14,11 @@ typedef enum {
                                   // counting from a string load
     NP_MATCH_INSN_PAIR_IN_FN,    // the sole adjacent opcode pair inside the function
                                   // a string reference identifies
+    NP_MATCH_AOB,
+    NP_MATCH_CALL_TARGET,
 } np_match_kind_t;
+
+#define NP_CALL_PATH_MAX 4
 
 typedef struct {
     uint32_t first, first_mask;
@@ -42,6 +46,9 @@ typedef struct {
 
     int              caller_hops;
     int              caller_tail;
+
+    int              call_path[NP_CALL_PATH_MAX];
+    int              call_depth;
 } np_anchor_t;
 
 // Upper bound on a function body when scanning for a pair.

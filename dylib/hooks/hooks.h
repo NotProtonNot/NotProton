@@ -44,8 +44,17 @@ np_patch_entry_t *np_hooks_webui_defs(void);
 void np_hooks_webui_bind(const struct mach_header_64 *mh, intptr_t slide,
                          uintptr_t register_fn, uintptr_t dispatch_fn);
 
+int               np_hooks_shortcut_count(void);
+np_patch_entry_t *np_hooks_shortcut_defs(void);
+
+int               np_hooks_icon_count(void);
+np_patch_entry_t *np_hooks_icon_defs(void);
+
 int np_hooks_install_all(const struct mach_header_64 *mh, intptr_t slide,
                          np_resolve_result_t *resolved, int *total_out);
+
+int np_hooks_install_steamui(const struct mach_header_64 *mh, intptr_t slide,
+                             np_resolve_result_t *resolved, int *total_out);
 
 // True when `label` is one entry of the comma-separated value of env var `var`.
 // NOTPROTON_DISABLE uses this to skip named hooks.

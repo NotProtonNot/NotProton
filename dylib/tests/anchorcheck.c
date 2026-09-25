@@ -17,8 +17,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define STEAMCLIENT \
-    "/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steamclient.dylib"
+#define STEAM_MACOS \
+    "/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/"
+#define MAX_IMAGES 4
 #define SIGDB_DIR "signatures/macos.arm64"
 #define MAX_DBS   16
 
@@ -39,6 +40,57 @@ static const struct mach_header_64 *find_image(const char *suffix,
         return (const struct mach_header_64 *)_dyld_get_image_header(i);
     }
     return NULL;
+}
+
+typedef struct {
+    char                          module[64];
+    const struct mach_header_64  *mh;
+    intptr_t                      slide;
+    uintptr_t                     text;
+    size_t                        text_sz;
+    const char                   *path;
+} image_t;
+
+static image_t g_images[MAX_IMAGES];
+static int     g_image_count;
+
+static const image_t *image_for(const char *module) {
+    for (int i = 0; i < g_image_count; i++)
+        if (strcmp(g_images[i].module, module) == 0) return &g_images[i];
+    return NULL;
+}
+
+static int load_image(const char *module) {
+    if (image_for(module)) return 0;
+    if (g_image_count >= MAX_IMAGES) return -1;
+
+    const char *home = getenv("HOME");
+    char path[1024], suffix[128];
+    snprintf(path, sizeof(path), "%s%s%s", home ? home : "", STEAM_MACOS, module);
+    snprintf(suffix, sizeof(suffix), "/%s", module);
+
+    if (!dlopen(path, RTLD_LAZY | RTLD_LOCAL)) {
+        fprintf(stderr, "dlopen failed: %s\n", dlerror());
+        return -1;
+    }
+
+    image_t *im = &g_images[g_image_count];
+    im->mh = find_image(suffix, &im->slide, &im->path);
+    if (!im->mh) {
+        fprintf(stderr, "%s not found after dlopen\n", module);
+        return -1;
+    }
+    if (np_find_segment(im->mh, im->slide, "__TEXT", &im->text, &im->text_sz) != 0) {
+        fprintf(stderr, "%s has no __TEXT\n", module);
+        return -1;
+    }
+    snprintf(im->module, sizeof(im->module), "%s", module);
+    g_image_count++;
+
+    printf("image  : %s\n", im->path);
+    printf("slide  : 0x%lx\n", (unsigned long)im->slide);
+    printf("__TEXT : 0x%lx (%zu bytes)\n\n", im->text, im->text_sz);
+    return 0;
 }
 
 // An independent read on the anchor result, meaningful only against the build the
@@ -67,6 +119,8 @@ static const char *kind_name(np_match_kind_t k) {
         case NP_MATCH_VTABLE_SLOT:       return "vtable_slot";
         case NP_MATCH_INSN_AFTER_STRING: return "insn_after_string";
         case NP_MATCH_INSN_PAIR_IN_FN:   return "insn_pair";
+        case NP_MATCH_AOB:               return "aob";
+        case NP_MATCH_CALL_TARGET:       return "call_target";
         default:                          return "none";
     }
 }
@@ -91,6 +145,7 @@ typedef struct {
     int       unresolved;
     int       recorded_match;
     int       recorded_total;
+    int       loaded;
 } dbcheck_t;
 
 // Class vptrs per client build, read off the disassembly. These address data rather than
@@ -171,9 +226,8 @@ static int collect_dbs(char paths[][512], int max) {
 
 // One database against the live image: what its anchors found, and what its
 // recorded evidence claims.
-static int check_db(dbcheck_t *db, const struct mach_header_64 *mh, intptr_t slide,
-                    uintptr_t text, size_t text_sz) {
-    if (np_load_profile(db->path, &db->sigdb) != 0) {
+static int check_db(dbcheck_t *db) {
+    if (!db->loaded && np_load_profile(db->path, &db->sigdb) != 0) {
         fprintf(stderr, "cannot load sigdb '%s'\n", db->path);
         return -1;
     }
@@ -191,13 +245,20 @@ static int check_db(dbcheck_t *db, const struct mach_header_64 *mh, intptr_t sli
         r->recorded    = sig->func_addr_this_build;
         r->has_pattern = sig->aob_hex[0] != '\0';
 
+        const image_t *im = image_for(sig->module);
+        if (!im) {
+            fprintf(stderr, "no image loaded for module '%s'\n", sig->module);
+            return -1;
+        }
+
         uintptr_t anc = (sig->anchor.kind == NP_MATCH_NONE)
                           ? 0
-                          : np_locate_anchor(mh, slide, text, text_sz, &sig->anchor);
-        uintptr_t aob = resolve_by_aob(sig, text, text_sz);
+                          : np_locate_anchor(im->mh, im->slide, im->text, im->text_sz,
+                                             &sig->anchor);
+        uintptr_t aob = resolve_by_aob(sig, im->text, im->text_sz);
 
-        r->anchor = anc ? anc - (uintptr_t)slide : 0;
-        r->aob    = aob ? aob - (uintptr_t)slide : 0;
+        r->anchor = anc ? anc - (uintptr_t)im->slide : 0;
+        r->aob    = aob ? aob - (uintptr_t)im->slide : 0;
 
         if (!r->anchor) db->unresolved++;
         if (r->recorded) {
@@ -233,10 +294,10 @@ static int report_db(const dbcheck_t *db, int is_live) {
         const char *verdict;
 
         if (r->kind == NP_MATCH_NONE)          { verdict = "NO ANCHOR";     bad++; }
-        else if (!r->anchor)                   { verdict = "ANCHOR FAILED"; bad++; }
-        // A pattern from another build landing somewhere else is the hazard that
-        // keeps patterns out of the resolver, so it is worth seeing. Not a failure:
-        // nothing resolves from it.
+        else if (!r->anchor)                   { verdict = (r->has_pattern && r->aob)
+                                                             ? "anchor failed, aob resolves"
+                                                             : "UNRESOLVED";
+                                                 if (!(r->has_pattern && r->aob)) bad++; }
         else if (!is_live)                     { verdict = (r->has_pattern && r->aob && r->aob != r->anchor)
                                                              ? "stale pattern hit elsewhere"
                                                              : "resolved";           }
@@ -297,31 +358,7 @@ int main(int argc, char **argv) {
     const char *home = getenv("HOME");
     if (!home) { fprintf(stderr, "HOME unset\n"); return 3; }
 
-    char dylib[1024];
-    snprintf(dylib, sizeof(dylib), "%s%s", home, STEAMCLIENT);
-
-    void *handle = dlopen(dylib, RTLD_LAZY | RTLD_LOCAL);
-    if (!handle) {
-        fprintf(stderr, "dlopen failed: %s\n", dlerror());
-        return 3;
-    }
-
-    intptr_t slide = 0;
-    const char *loaded_path = NULL;
-    const struct mach_header_64 *mh =
-        find_image("/steamclient.dylib", &slide, &loaded_path);
-    if (!mh) { fprintf(stderr, "steamclient image not found after dlopen\n"); return 3; }
-
-    uintptr_t text;
-    size_t text_sz;
-    if (np_find_segment(mh, slide, "__TEXT", &text, &text_sz) != 0) {
-        fprintf(stderr, "__TEXT not found\n");
-        return 3;
-    }
-
-    printf("image  : %s\n", loaded_path);
-    printf("slide  : 0x%lx\n", (unsigned long)slide);
-    printf("__TEXT : 0x%lx (%zu bytes)\n\n", text, text_sz);
+    if (load_image(NP_MODULE_DEFAULT) != 0) return 3;
 
     char paths[MAX_DBS][512];
     int n = 0;
@@ -333,7 +370,16 @@ int main(int argc, char **argv) {
     dbcheck_t dbs[MAX_DBS] = {0};
     for (int i = 0; i < n; i++) {
         snprintf(dbs[i].path, sizeof(dbs[i].path), "%s", paths[i]);
-        if (check_db(&dbs[i], mh, slide, text, text_sz) != 0) return 2;
+        if (np_load_profile(dbs[i].path, &dbs[i].sigdb) != 0) {
+            fprintf(stderr, "cannot load sigdb '%s'\n", dbs[i].path);
+            return 2;
+        }
+        dbs[i].loaded = 1;
+        for (int j = 0; j < dbs[i].sigdb.sig_count; j++)
+            if (load_image(dbs[i].sigdb.signatures[j].module) != 0) return 3;
+    }
+    for (int i = 0; i < n; i++) {
+        if (check_db(&dbs[i]) != 0) return 2;
     }
 
     int live = pick_live(dbs, n);
@@ -347,7 +393,8 @@ int main(int argc, char **argv) {
                "checked. Anchors are what the dylib resolves from, so this is not a "
                "failure.\n");
     } else {
-        bad += run_rtti(mh, slide, text, text_sz, dbs[live].build);
+        const image_t *sc = image_for(NP_MODULE_DEFAULT);
+        bad += run_rtti(sc->mh, sc->slide, sc->text, sc->text_sz, dbs[live].build);
     }
 
     for (int i = 0; i < n; i++) {

@@ -68,6 +68,80 @@ int np_find_segment(const struct mach_header_64 *mh, intptr_t slide,
     return -1;
 }
 
+static const uint8_t *fn_starts_table(const struct mach_header_64 *mh,
+                                      intptr_t slide, size_t *out_size) {
+    const uint8_t *cursor = (const uint8_t *)(mh + 1);
+    uint32_t remaining = mh->ncmds;
+
+    const struct linkedit_data_command *fs = NULL;
+    uint64_t le_vmaddr = 0, le_fileoff = 0;
+    int have_le = 0;
+
+    while (remaining--) {
+        const struct load_command *lc = (const struct load_command *)cursor;
+        if (lc->cmdsize < sizeof(*lc)) return NULL;
+
+        if (lc->cmd == LC_FUNCTION_STARTS && lc->cmdsize >= sizeof(*fs)) {
+            fs = (const struct linkedit_data_command *)cursor;
+        } else if (lc->cmd == LC_SEGMENT_64) {
+            const struct segment_command_64 *sc = (const struct segment_command_64 *)cursor;
+            if (strncmp(sc->segname, SEG_LINKEDIT, sizeof(sc->segname)) == 0) {
+                le_vmaddr  = sc->vmaddr;
+                le_fileoff = sc->fileoff;
+                have_le    = 1;
+            }
+        }
+        cursor += lc->cmdsize;
+    }
+
+    if (!fs || !have_le || !fs->datasize) return NULL;
+    if (fs->dataoff < le_fileoff) return NULL;
+
+    *out_size = fs->datasize;
+    return (const uint8_t *)(uintptr_t)(le_vmaddr + (fs->dataoff - le_fileoff)
+                                        + (uint64_t)slide);
+}
+
+int np_function_bounds(const struct mach_header_64 *mh, intptr_t slide,
+                       uintptr_t addr, uintptr_t *out_start, uintptr_t *out_end) {
+    if (!mh || !out_start || !out_end) return -1;
+
+    size_t size = 0;
+    const uint8_t *p = fn_starts_table(mh, slide, &size);
+    if (!p) return -1;
+
+    const uint8_t *end = p + size;
+    uintptr_t va = (uintptr_t)mh;
+    uintptr_t start = 0;
+
+    while (p < end) {
+        uint64_t delta = 0;
+        unsigned shift = 0;
+        int complete = 0;
+
+        while (p < end) {
+            uint8_t b = *p++;
+            if (shift < 64) delta |= (uint64_t)(b & 0x7F) << shift;
+            shift += 7;
+            if (!(b & 0x80)) { complete = 1; break; }
+        }
+        if (!complete) break;
+        if (!delta) break;
+
+        va += (uintptr_t)delta;
+        if (va <= addr) {
+            start = va;
+            continue;
+        }
+        if (!start) return -1;
+        *out_start = start;
+        *out_end   = va;
+        return 0;
+    }
+
+    return -1;
+}
+
 int np_get_section_containing(const struct mach_header_64 *mh, intptr_t slide,
                              uintptr_t addr, uintptr_t *out_base,
                              size_t *out_size) {

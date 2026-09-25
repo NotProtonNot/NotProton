@@ -138,7 +138,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"dxmt\",label:\"DXMT\"}," \
     "{data:\"dxvk\",label:\"DXVK\"}," \
     "{data:\"wined3d\",label:\"WineD3D\"}];" \
-    "if((t.vecPlatforms||[]).indexOf(\"osx\")>=0&&!t.strCompatToolName)return null;" \
+    "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
+    "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"MSCXPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
     "(0," RT ".jsx)(\"style\",{children:" NP_CX_OPTIONS_CSS "})," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:\"Graphics\",children:[" \
@@ -242,6 +243,15 @@ static const np_gate_t g_gates_selecttool[] = {
       "the Windows version.\"", 1 },
 };
 
+static const np_gate_t g_fixes[] = {
+    { "(\"#AddNonSteam_Filter_Exe_MacOS\"),rFilePatterns:[\"*.app\"]",
+      "(\"#AddNonSteam_Filter_Exe_MacOS\"),rFilePatterns:[\"*.app\",\"*.exe\"]", 1 },
+    { "{strFileTypeName:\"Image Files (*.tga,*.png)\",rFilePatterns:[\"*.tga\",\"*.png\"]}",
+      "{strFileTypeName:\"Image Files (*.tga,*.png,*.exe)\","
+      "rFilePatterns:[\"*.tga\",\"*.png\",\"*.exe\"]}", 1 },
+};
+#define NP_FIX_COUNT (sizeof(g_fixes) / sizeof(g_fixes[0]))
+
 typedef struct {
     const char     *name;
     const char     *probe;
@@ -287,25 +297,38 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         }
         shape = &g_shapes[i];
     }
-    if (!shape)
+    int    fix_on[NP_FIX_COUNT];
+    size_t fix_live = 0;
+    for (size_t f = 0; f < NP_FIX_COUNT; f++) {
+        size_t n = count_matches(s, src_len, g_fixes[f].find);
+        fix_on[f] = n == (size_t)g_fixes[f].expect;
+        if (fix_on[f]) { fix_live++; continue; }
+        if (n)
+            NP_WARN("webpatch: fix %zu expected %d occurrence(s), found %zu; "
+                    "leaving it alone", f, g_fixes[f].expect, n);
+    }
+
+    if (!shape && !fix_live)
         return NULL;   // Not the part carrying the compat UI.
 
-    if (out_shape)
-        *out_shape = shape->name;
+    if (shape) {
+        if (out_shape)
+            *out_shape = shape->name;
 
-    int drifted = 0;
-    for (size_t g = 0; g < shape->count; g++) {
-        size_t n = count_matches(s, src_len, shape->gates[g].find);
-        if (n != (size_t)shape->gates[g].expect) {
-            NP_WARN("webpatch: [%s] gate %zu expected %d occurrence(s), found %zu",
-                    shape->name, g, shape->gates[g].expect, n);
-            drifted = 1;
+        int drifted = 0;
+        for (size_t g = 0; g < shape->count; g++) {
+            size_t n = count_matches(s, src_len, shape->gates[g].find);
+            if (n != (size_t)shape->gates[g].expect) {
+                NP_WARN("webpatch: [%s] gate %zu expected %d occurrence(s), found %zu",
+                        shape->name, g, shape->gates[g].expect, n);
+                drifted = 1;
+            }
         }
-    }
-    if (drifted) {
-        NP_ERR("webpatch: [%s] compat UI left unpatched, a Steam update moved the "
-               "anchors", shape->name);
-        return NULL;
+        if (drifted) {
+            NP_ERR("webpatch: [%s] compat UI left unpatched, a Steam update moved the "
+                   "anchors", shape->name);
+            return NULL;
+        }
     }
 
     np_out_t out = {0};
@@ -313,9 +336,14 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
     for (size_t i = 0; i < src_len; ) {
         const np_gate_t *hit = NULL;
         size_t used = 0;
-        for (size_t g = 0; g < shape->count; g++) {
+        for (size_t g = 0; shape && g < shape->count; g++) {
             used = match_at(s, src_len, i, shape->gates[g].find, caps);
             if (used) { hit = &shape->gates[g]; break; }
+        }
+        for (size_t f = 0; !hit && f < NP_FIX_COUNT; f++) {
+            if (!fix_on[f]) continue;
+            used = match_at(s, src_len, i, g_fixes[f].find, caps);
+            if (used) { hit = &g_fixes[f]; break; }
         }
         int ok = hit ? out_expand(&out, hit->replace, caps)
                      : out_put(&out, s + i, 1);
@@ -326,6 +354,7 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
     if (!out_reserve(&out, 0)) { free(out.buf); return NULL; }
     out.buf[out.len] = '\0';
     *out_len = out.len;
-    NP_LOG("webpatch: [%s] %zu gates applied", shape->name, shape->count);
+    NP_LOG("webpatch: [%s] %zu gates, %zu fixes applied",
+           shape ? shape->name : "no compat UI", shape ? shape->count : 0, fix_live);
     return out.buf;
 }

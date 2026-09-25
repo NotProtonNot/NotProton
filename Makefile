@@ -23,12 +23,16 @@ SRCS := \
 	dylib/core/loader.c \
 	dylib/core/macho.c \
 	dylib/resolver/anchor.c \
+	dylib/resolver/aob.c \
 	dylib/resolver/resolver.c \
 	dylib/resolver/sigdb.c \
 	dylib/util/log.c \
 	dylib/util/file.c \
+	dylib/util/peicon.c \
 	dylib/hooks/hooks.c \
 	dylib/hooks/hook_compat.c \
+	dylib/hooks/hook_shortcut.c \
+	dylib/hooks/hook_icon.c \
 	dylib/hooks/hook_webui.c \
 	dylib/hooks/hook_webpatch.c \
 	dylib/hooks/hook_spawn.c \
@@ -348,9 +352,11 @@ ICONMAKER := $(OUT_DIR)/iconmaker
 
 iconmaker: $(ICONMAKER)
 
-$(ICONMAKER): helpers/iconmaker.swift
+$(ICONMAKER): helpers/iconmaker.swift dylib/util/peicon.c dylib/util/peicon.h
 	@mkdir -p $(OUT_DIR)
-	swiftc -O -framework AppKit -o $@ $<
+	$(CC) -c -O2 -Wall -Wextra -o $(OUT_DIR)/peicon-host.o dylib/util/peicon.c
+	swiftc -O -framework AppKit -import-objc-header dylib/util/peicon.h \
+		-o $@ helpers/iconmaker.swift $(OUT_DIR)/peicon-host.o
 	@echo "==> Built $@"
 
 APPINFO := $(OUT_DIR)/appinfo

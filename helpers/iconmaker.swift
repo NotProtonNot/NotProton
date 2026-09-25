@@ -1,20 +1,32 @@
 // Reads an image and produces a macOS .icns masked to the continuous rounded
 // rect (squircle) that native app icons use. Input is scaled to fill 1024x1024
 // and clipped. Output covers 16x16 through 512x512@2x.
-// Usage: iconmaker <input-image> <output.icns>
+// Usage: iconmaker <input-image|input.exe> <output.icns>
 
 import AppKit
 import Foundation
 
 guard CommandLine.arguments.count == 3 else {
-    fputs("usage: iconmaker <input-image> <output.icns>\n", stderr)
+    fputs("usage: iconmaker <input-image|input.exe> <output.icns>\n", stderr)
     exit(1)
 }
 
 let inputPath = CommandLine.arguments[1]
 let outputPath = CommandLine.arguments[2]
 
-guard let srcImage = NSImage(contentsOfFile: inputPath) else {
+private func loadImage(_ path: String) -> NSImage? {
+    var length = 0
+    if let raw = np_pe_icon_ico(path, &length) {
+        let ico = Data(bytesNoCopy: raw, count: length, deallocator: .free)
+        if !ico.isEmpty, let image = NSImage(data: ico) {
+            FileHandle.standardError.write(Data("iconmaker: using icon from PE resources\n".utf8))
+            return image
+        }
+    }
+    return NSImage(contentsOfFile: path)
+}
+
+guard let srcImage = loadImage(inputPath) else {
     fputs("iconmaker: cannot read \(inputPath)\n", stderr)
     exit(1)
 }

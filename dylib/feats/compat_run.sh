@@ -78,10 +78,22 @@ report_early_exit() {
 }
 trap report_early_exit EXIT
 
-if [ -n "$STEAM_COMPAT_APP_ID" ]; then
-  export SteamAppId="$STEAM_COMPAT_APP_ID"
-  export SteamGameId="$STEAM_COMPAT_APP_ID"
-fi
+while :; do
+  case "$STEAM_COMPAT_INSTALL_PATH" in
+    ?*/) STEAM_COMPAT_INSTALL_PATH="${STEAM_COMPAT_INSTALL_PATH%/}" ;;
+    *) break ;;
+  esac
+done
+export STEAM_COMPAT_INSTALL_PATH
+
+app_id="$STEAM_COMPAT_APP_ID"
+case "$app_id" in ''|0) app_id="$SteamAppId" ;; esac
+case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null) ;; esac
+case "$app_id" in ''|*[!0-9]*) app_id=0 ;; esac
+echo "app_id=$app_id (STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID)" >> "$log" 2>&1 || true
+
+[ -n "$SteamAppId" ] || export SteamAppId="$app_id"
+[ -n "$SteamGameId" ] || export SteamGameId="$app_id"
 
 prefix_machine() {
   dll="$WINEPREFIX/drive_c/windows/system32/ntdll.dll"
@@ -427,7 +439,7 @@ fi
 
 # Fixes CrossOver window focus issues
 steam_root="$(dirname "$(dirname "$(dirname "$STEAM_COMPAT_DATA_PATH")")")"
-manifest="$steam_root/steamapps/appmanifest_$STEAM_COMPAT_APP_ID.acf"
+manifest="$steam_root/steamapps/appmanifest_$app_id.acf"
 client_root="$STEAM_COMPAT_CLIENT_INSTALL_PATH"
 while [ -n "$client_root" ] && [ "$client_root" != "/" ] && [ ! -d "$client_root/appcache" ]; do
   client_root=$(dirname "$client_root")
@@ -439,7 +451,7 @@ meta_name=""
 meta_icon=""
 meta_clienticon=""
 if [ -x "$appinfo_tool" ] && [ -f "$appinfo_vdf" ]; then
-  meta=$("$appinfo_tool" "$appinfo_vdf" "$STEAM_COMPAT_APP_ID" 2>> "$log") || meta=""
+  meta=$("$appinfo_tool" "$appinfo_vdf" "$app_id" 2>> "$log") || meta=""
   meta_name=$(printf '%s\n' "$meta" | sed -n 's/^name=//p')
   meta_icon=$(printf '%s\n' "$meta" | sed -n 's/^icon=//p')
   meta_clienticon=$(printf '%s\n' "$meta" | sed -n 's/^clienticon=//p')
@@ -453,7 +465,7 @@ fi
 # shellcheck disable=SC1003 # the pair deletes a literal backslash, not a quote
 bundle_name=$(printf '%s' "$game_name" | tr -d '/:"`$\\')
 game_name_xml=$(printf '%s' "$game_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
-loader_root="$HOME/Library/Application Support/notproton/launchers/$STEAM_COMPAT_APP_ID"
+loader_root="$HOME/Library/Application Support/notproton/launchers/$app_id"
 mkdir -p "$loader_root"
 loader_app="$loader_root/$bundle_name.app"
 rm -rf "$loader_root"/*.app
@@ -466,7 +478,7 @@ icon_arg=""
 resolve_icon() {
   set +e
   iconmaker="$HOME/Library/Application Support/notproton/iconmaker"
-  art_dir="$client_root/appcache/librarycache/$STEAM_COMPAT_APP_ID"
+  art_dir="$client_root/appcache/librarycache/$app_id"
   art=""
   if [ -n "$meta_clienticon" ]; then
     ico="$loader_root/clienticon-$meta_clienticon.ico"
@@ -474,7 +486,7 @@ resolve_icon() {
     find "$loader_root" -maxdepth 1 -name 'clienticon-*'   ! -name "clienticon-$meta_clienticon.*" -delete 2>/dev/null || true
     find "$absent" -mtime +14 -delete 2>/dev/null || true
     if [ ! -s "$ico" ] && [ ! -f "$absent" ]; then
-      url="https://shared.fastly.steamstatic.com/community_assets/images/apps/$STEAM_COMPAT_APP_ID/$meta_clienticon.ico"
+      url="https://shared.fastly.steamstatic.com/community_assets/images/apps/$app_id/$meta_clienticon.ico"
       code=$(curl -fsL --connect-timeout 5 --max-time 20 -w '%{http_code}' -o "$ico.new" "$url" 2>>"$log")
       magic=$(od -An -tx1 -N4 "$ico.new" 2>/dev/null | tr -d ' \n')
       if [ "$magic" = "00000100" ]; then
@@ -504,6 +516,13 @@ resolve_icon() {
       found=$(find "$art_dir" -name "$name" 2>/dev/null | head -1)
       [ -n "$found" ] && { art="$found"; break; }
     done
+  fi
+  # non-Steam shortcuts have no art, so (as a temporary measure while I think of
+  # better ways to solve for this) let's use the icon in the EXE itself instead.
+  if [ -z "$art" ] && [ -f "$target" ]; then
+    case "$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')" in
+      *.exe) art="$target" ;;
+    esac
   fi
   icon_source=""
   if [ -n "$art" ]; then
@@ -543,7 +562,7 @@ cat > "$loader_contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>$game_name_xml</string>
   <key>CFBundleDisplayName</key><string>$game_name_xml</string>
-  <key>CFBundleIdentifier</key><string>com.notproton.launcher.$STEAM_COMPAT_APP_ID</string>
+  <key>CFBundleIdentifier</key><string>com.notproton.launcher.$app_id</string>
   <key>CFBundleExecutable</key><string>launcher</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>

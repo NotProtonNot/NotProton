@@ -25,6 +25,30 @@ static void wrong(const char *fmt, ...) {
 // Invariants the transform relies on but cannot check at run time. A replacement still
 // holding its own anchor would be found again next pass, and an anchor inside another
 // anchor would make the result depend on table order rather than on the chunk.
+static void check_gate(const char *nm, size_t i, const np_gate_t *a,
+                       const np_gate_t *group, size_t group_n) {
+    if (!a->find || !*a->find)       wrong("[%s] gate %zu has no anchor", nm, i);
+    if (!a->replace || !*a->replace) wrong("[%s] gate %zu has no replacement", nm, i);
+    if (a->expect < 1)               wrong("[%s] gate %zu expects %d hits", nm, i, a->expect);
+    if (a->find && a->replace && strcmp(a->find, a->replace) == 0)
+        wrong("[%s] gate %zu replaces its anchor with itself", nm, i);
+    if (a->find && a->replace && *a->find && strstr(a->replace, a->find))
+        wrong("[%s] gate %zu replacement still contains its own anchor", nm, i);
+    // A capture the replacement reads but the anchor never binds would
+    // expand to nothing, so the transform would refuse at run time.
+    for (const char *r = a->replace; r && *r; r++) {
+        int ci = cap_index((unsigned char)*r);
+        if (ci >= 0 && !strchr(a->find, *r))
+            wrong("[%s] gate %zu replacement reads capture %d, anchor never binds it",
+                  nm, i, ci + 1);
+    }
+    for (size_t j = 0; j < group_n; j++) {
+        if (i == j || !a->find || !group[j].find || !*group[j].find) continue;
+        if (strstr(a->find, group[j].find))
+            wrong("[%s] gate %zu anchor contains gate %zu anchor", nm, i, j);
+    }
+}
+
 static void selfcheck(void) {
     size_t total = 0;
     for (size_t sh = 0; sh < NP_SHAPE_COUNT; sh++) {
@@ -36,32 +60,23 @@ static void selfcheck(void) {
             if (strcmp(S->probe, g_shapes[o].probe) == 0)
                 wrong("[%s] and [%s] share a probe", nm, g_shapes[o].name);
         }
-        for (size_t i = 0; i < S->count; i++) {
-            const np_gate_t *a = &S->gates[i];
-            if (!a->find || !*a->find)       wrong("[%s] gate %zu has no anchor", nm, i);
-            if (!a->replace || !*a->replace) wrong("[%s] gate %zu has no replacement", nm, i);
-            if (a->expect < 1)               wrong("[%s] gate %zu expects %d hits", nm, i, a->expect);
-            if (a->find && a->replace && strcmp(a->find, a->replace) == 0)
-                wrong("[%s] gate %zu replaces its anchor with itself", nm, i);
-            if (a->find && a->replace && *a->find && strstr(a->replace, a->find))
-                wrong("[%s] gate %zu replacement still contains its own anchor", nm, i);
-            // A capture the replacement reads but the anchor never binds would
-            // expand to nothing, so the transform would refuse at run time.
-            for (const char *r = a->replace; r && *r; r++) {
-                int ci = cap_index((unsigned char)*r);
-                if (ci >= 0 && !strchr(a->find, *r))
-                    wrong("[%s] gate %zu replacement reads capture %d, anchor never binds it",
-                          nm, i, ci + 1);
-            }
-            for (size_t j = 0; j < S->count; j++) {
-                if (i == j || !a->find || !S->gates[j].find || !*S->gates[j].find) continue;
-                if (strstr(a->find, S->gates[j].find))
-                    wrong("[%s] gate %zu anchor contains gate %zu anchor", nm, i, j);
-            }
-        }
+        for (size_t i = 0; i < S->count; i++)
+            check_gate(nm, i, &S->gates[i], S->gates, S->count);
         total += S->count;
     }
-    printf("%zu shapes, %zu gates checked\n", NP_SHAPE_COUNT, total);
+
+    for (size_t f = 0; f < NP_FIX_COUNT; f++) {
+        check_gate("fix", f, &g_fixes[f], g_fixes, NP_FIX_COUNT);
+        for (size_t sh = 0; sh < NP_SHAPE_COUNT; sh++)
+            for (size_t g = 0; g < g_shapes[sh].count; g++)
+                if (strstr(g_fixes[f].find, g_shapes[sh].gates[g].find) ||
+                    strstr(g_shapes[sh].gates[g].find, g_fixes[f].find))
+                    wrong("fix %zu and [%s] gate %zu share an anchor",
+                          f, g_shapes[sh].name, g);
+    }
+
+    printf("%zu shapes, %zu gates, %zu fixes checked\n",
+           NP_SHAPE_COUNT, total, NP_FIX_COUNT);
 }
 
 static uint8_t *slurp(const char *path, size_t *len) {
@@ -99,6 +114,16 @@ static void check_output(const char *out, size_t out_len) {
             < (size_t)S->gates[g].expect)
             wrong("[%s] gate %zu replacement is missing from the patch", S->name, g);
     }
+    for (size_t f = 0; f < NP_FIX_COUNT; f++) {
+        size_t anchor = count_matches(out, out_len, g_fixes[f].find);
+        size_t repl   = count_matches(out, out_len, g_fixes[f].replace);
+        if (!anchor && !repl) continue;
+        if (anchor)
+            wrong("fix %zu anchor survived the patch", f);
+        if (repl < (size_t)g_fixes[f].expect)
+            wrong("fix %zu replacement is missing from the patch", f);
+    }
+
     // This pass is meant to be refused, so its drift report is not a finding.
     size_t again_len = 0;
     int saved = np_log_level;

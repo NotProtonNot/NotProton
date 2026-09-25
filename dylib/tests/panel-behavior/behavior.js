@@ -16,6 +16,9 @@ for (const form of Object.keys(FORMS)) {
 
   t.ok(P({ details: details('', { vecPlatforms: ['osx'], strCompatToolName: '' }) }) === null,
        'a mac build with nothing pinned renders no panel');
+  t.ok(P({ details: details('', { unAppID: 3420702832, vecPlatforms: ['osx'],
+                                  strCompatToolName: '' }) }) !== null,
+       'a shortcut renders the panel before a tool name reaches the page');
 
   let r = nodes('');
   t.ok(toggles(r).length === 5 && sections(r).length === 2, 'automatic shows five toggles in two sections');

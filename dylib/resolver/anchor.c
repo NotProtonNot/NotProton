@@ -238,19 +238,62 @@ static uintptr_t scan_for_insn(uintptr_t text, size_t text_sz,
 }
 
 // The sole matching instruction pair inside one function body
-static uintptr_t body_end(uintptr_t fn, uintptr_t text, size_t text_sz) {
+static uintptr_t body_end(const struct mach_header_64 *mh, intptr_t slide,
+                          uintptr_t fn, uintptr_t text, size_t text_sz) {
     uintptr_t cap = fn + NP_FN_SPAN_MAX;
     uintptr_t bound = text + text_sz;
     if (cap > bound) cap = bound;
+
+    uintptr_t start, end;
+    if (np_function_bounds(mh, slide, fn, &start, &end) == 0 &&
+        start == fn && end > fn && end <= bound)
+        return end < cap ? end : cap;
+
     for (uintptr_t pc = fn + 4; pc + 4 <= cap; pc += 4) {
         if (is_entry_insn(pc)) return pc;
     }
     return cap;
 }
 
-static uintptr_t sole_insn_pair(uintptr_t fn, uintptr_t text, size_t text_sz,
+static uintptr_t nth_call_target(const struct mach_header_64 *mh, intptr_t slide,
+                                 uintptr_t fn, uintptr_t text, size_t text_sz,
+                                 int nth) {
+    uintptr_t end   = body_end(mh, slide, fn, text, text_sz);
+    uintptr_t limit = text + text_sz - 4;
+    int seen = 0;
+
+    for (uintptr_t pc = fn; pc + 4 <= end; pc += 4) {
+        uintptr_t t = bl_target(pc, *(const uint32_t *)pc);
+        if (!t) continue;
+        if (++seen != nth) continue;
+        if (t < text || t > limit) return 0;
+
+        uintptr_t through = b_target(t, *(const uint32_t *)t);
+        if (through && through >= text && through <= limit) t = through;
+        return t;
+    }
+    return 0;
+}
+
+static uintptr_t walk_call_path(const struct mach_header_64 *mh, intptr_t slide,
+                                uintptr_t fn, uintptr_t text, size_t text_sz,
+                                const np_anchor_t *anchor) {
+    if (anchor->call_depth < 1 || anchor->call_depth > NP_CALL_PATH_MAX) {
+        NP_WARN("anchor: call_depth=%d outside 1..%d", anchor->call_depth,
+                NP_CALL_PATH_MAX);
+        return 0;
+    }
+    for (int i = 0; i < anchor->call_depth; i++) {
+        fn = nth_call_target(mh, slide, fn, text, text_sz, anchor->call_path[i]);
+        if (!fn) return 0;
+    }
+    return np_looks_like_prologue(fn) ? fn : 0;
+}
+
+static uintptr_t sole_insn_pair(const struct mach_header_64 *mh, intptr_t slide,
+                                uintptr_t fn, uintptr_t text, size_t text_sz,
                                 const np_insn_pair_t *p) {
-    uintptr_t end = body_end(fn, text, text_sz);
+    uintptr_t end = body_end(mh, slide, fn, text, text_sz);
     uintptr_t found = 0;
 
     for (uintptr_t pc = fn; pc + 8 <= end; pc += 4) {
@@ -319,7 +362,8 @@ uintptr_t np_locate_anchor(const struct mach_header_64 *mh, intptr_t slide,
     }
 
     if (anchor->kind != NP_MATCH_STRING &&
-        anchor->kind != NP_MATCH_INSN_PAIR_IN_FN) return 0;
+        anchor->kind != NP_MATCH_INSN_PAIR_IN_FN &&
+        anchor->kind != NP_MATCH_CALL_TARGET) return 0;
 
     uintptr_t fn;
     if (anchor->caller_hops > 0) {
@@ -336,7 +380,9 @@ uintptr_t np_locate_anchor(const struct mach_header_64 *mh, intptr_t slide,
     if (!fn) return 0;
 
     if (anchor->kind == NP_MATCH_INSN_PAIR_IN_FN)
-        return sole_insn_pair(fn, text_base, text_size, &anchor->pair);
+        return sole_insn_pair(mh, slide, fn, text_base, text_size, &anchor->pair);
+    if (anchor->kind == NP_MATCH_CALL_TARGET)
+        return walk_call_path(mh, slide, fn, text_base, text_size, anchor);
     return fn;
 }
 

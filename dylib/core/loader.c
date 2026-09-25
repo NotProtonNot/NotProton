@@ -19,6 +19,7 @@
 #include <libgen.h>
 
 #define STEAMCLIENT_DYLIB "steamclient.dylib"
+#define STEAMUI_DYLIB     "steamui.dylib"
 
 // The bootstrapper can take a while before the real client dylib appears...
 #define WAIT_TIMEOUT_MS 60000
@@ -104,6 +105,40 @@ static pthread_t g_install;
 static int       g_install_started;
 static int       g_active;
 
+static void install_steamui(np_sigdb_t *sigdb) {
+    int required = np_required_for_module(sigdb, STEAMUI_DYLIB);
+    if (required == 0) {
+        NP_DBG("install_thread: no %s signatures in this database", STEAMUI_DYLIB);
+        return;
+    }
+
+    const struct mach_header_64 *mh = NULL;
+    intptr_t slide = 0;
+
+    if (np_await_image(STEAMUI_DYLIB, WAIT_TIMEOUT_MS, &mh, &slide, NULL, 0) != 0) {
+        NP_WARN("install_thread: %s absent after %d ms, its hooks stay off",
+                STEAMUI_DYLIB, WAIT_TIMEOUT_MS);
+        return;
+    }
+
+    np_resolve_result_t resolved = {0};
+    int count = np_resolve_signatures(mh, slide, sigdb, STEAMUI_DYLIB, &resolved);
+    NP_LOG("install_thread: %s signatures %d/%d resolved", STEAMUI_DYLIB, count, required);
+
+    if (count < required)
+        NP_WARN("install_thread: %s %d/%d signatures resolved; the hooks that did "
+                "resolve still install, the rest stay off", STEAMUI_DYLIB, count,
+                required);
+
+    int total = 0;
+    int installed = np_hooks_install_steamui(mh, slide, &resolved, &total);
+
+    NP_LOG("install_thread: %s ready, %d/%d hooks installed",
+           STEAMUI_DYLIB, installed, total);
+
+    np_free_resolution(&resolved);
+}
+
 static void *install_thread(void *unused) {
     (void)unused;
 
@@ -144,12 +179,10 @@ static void *install_thread(void *unused) {
 
     np_resolve_result_t resolved = {0};
 
-    int resolved_count = np_resolve_signatures(mh, slide, &sigdb, &resolved);
-    NP_LOG("install_thread: signatures %d/%d resolved", resolved_count, sigdb.sig_count);
-
-    int required = 0;
-    for (int i = 0; i < sigdb.sig_count; i++)
-        if (!sigdb.signatures[i].deprecated) required++;
+    int resolved_count = np_resolve_signatures(mh, slide, &sigdb, STEAMCLIENT_DYLIB,
+                                               &resolved);
+    int required = np_required_for_module(&sigdb, STEAMCLIENT_DYLIB);
+    NP_LOG("install_thread: signatures %d/%d resolved", resolved_count, required);
 
     // Safety feature :)
     if (resolved_count < required) {
@@ -176,6 +209,9 @@ static void *install_thread(void *unused) {
                 "incomplete for this client build", installed, total);
 
     np_free_resolution(&resolved);
+
+    install_steamui(&sigdb);
+
     np_free_profile(&sigdb);
 
     return NULL;

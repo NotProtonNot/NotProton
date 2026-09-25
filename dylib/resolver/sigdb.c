@@ -75,6 +75,23 @@ static int load_insn_pair(cJSON *anchor_obj, np_insn_pair_t *p) {
     return 0;
 }
 
+static int load_call_path(cJSON *obj, np_anchor_t *a) {
+    cJSON *arr = cJSON_GetObjectItem(obj, "call_path");
+    if (!arr || !cJSON_IsArray(arr)) return -1;
+
+    int n = cJSON_GetArraySize(arr);
+    if (n < 1 || n > NP_CALL_PATH_MAX) return -1;
+
+    for (int i = 0; i < n; i++) {
+        cJSON *e = cJSON_GetArrayItem(arr, i);
+        if (!e || !cJSON_IsNumber(e)) return -1;
+        if (e->valueint < 1) return -1;
+        a->call_path[i] = e->valueint;
+    }
+    a->call_depth = n;
+    return 0;
+}
+
 static void load_anchor(cJSON *sig_obj, np_anchor_t *a) {
     cJSON *obj = cJSON_GetObjectItem(sig_obj, "anchor");
     if (!obj || !cJSON_IsObject(obj)) return;
@@ -98,6 +115,14 @@ static void load_anchor(cJSON *sig_obj, np_anchor_t *a) {
             a->kind = NP_MATCH_NONE;
             return;
         }
+    } else if (strcmp(ks, "call_target") == 0) {
+        a->kind = NP_MATCH_CALL_TARGET;
+        str_field(obj, "value", a->str, sizeof(a->str));
+        if (load_call_path(obj, a) != 0) {
+            NP_WARN("sigdb: anchor '%s' has no usable call_path; ignoring it", a->str);
+            a->kind = NP_MATCH_NONE;
+            return;
+        }
     } else if (strcmp(ks, "vtable_slot") == 0) {
         a->va = hex_field(obj, "va");
         // A missing or unparseable va reads as zero
@@ -108,6 +133,9 @@ static void load_anchor(cJSON *sig_obj, np_anchor_t *a) {
         }
         a->kind = NP_MATCH_VTABLE_SLOT;
         return;                         // refinements below are string-only
+    } else if (strcmp(ks, "aob") == 0) {
+        a->kind = NP_MATCH_AOB;
+        return;
     } else {
         return;
     }
@@ -171,8 +199,12 @@ int np_load_profile(const char *path, np_sigdb_t *out) {
             np_sig_entry_t *e = &out->signatures[i++];
 
             str_field(elem, "name",    e->name,    sizeof(e->name));
+            str_field(elem, "module",  e->module,  sizeof(e->module));
             str_field(elem, "aob_hex", e->aob_hex, sizeof(e->aob_hex));
             e->func_addr_this_build = hex_field(elem, "func_addr_this_build");
+
+            if (!e->module[0])
+                memcpy(e->module, NP_MODULE_DEFAULT, sizeof(NP_MODULE_DEFAULT));
 
             if ((v = cJSON_GetObjectItem(elem, "deprecated")))
                 e->deprecated = cJSON_IsTrue(v);
@@ -180,6 +212,12 @@ int np_load_profile(const char *path, np_sigdb_t *out) {
                 e->match_offset = (int32_t)v->valueint;
 
             load_anchor(elem, &e->anchor);
+
+            if (e->anchor.kind == NP_MATCH_AOB && !e->aob_hex[0]) {
+                NP_WARN("sigdb: '%s' anchors on its byte pattern but carries none; "
+                        "ignoring it", e->name);
+                e->anchor.kind = NP_MATCH_NONE;
+            }
         }
     }
 

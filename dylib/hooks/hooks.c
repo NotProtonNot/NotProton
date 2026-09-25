@@ -43,6 +43,11 @@ static const np_hook_group_t np_groups[] = {
     { "webui",  np_hooks_webui_count,  np_hooks_webui_defs  },
 };
 
+static const np_hook_group_t np_steamui_groups[] = {
+    { "shortcut", np_hooks_shortcut_count, np_hooks_shortcut_defs },
+    { "icon",     np_hooks_icon_count,     np_hooks_icon_defs     },
+};
+
 // Installs one entry. Returns 1 when the patch lands, 0 when it is skipped or fails.
 static int np_apply_entry(np_resolve_result_t *resolved, const char *group,
                           np_patch_entry_t *e) {
@@ -78,6 +83,42 @@ static int np_apply_entry(np_resolve_result_t *resolved, const char *group,
     return 0;
 }
 
+static int install_groups(const np_hook_group_t *groups, size_t n_groups,
+                          np_resolve_result_t *resolved, int *total_out) {
+    int total  = 0;
+    int landed = 0;
+
+    for (size_t g = 0; g < n_groups; g++) {
+        const np_hook_group_t *group = &groups[g];
+        np_patch_entry_t *entries = group->entries();
+        int n = group->count();
+        for (int i = 0; i < n; i++) {
+            total++;
+            landed += np_apply_entry(resolved, group->group, &entries[i]);
+        }
+    }
+
+    if (total_out)
+        *total_out = total;
+    return landed;
+}
+
+int np_hooks_install_steamui(const struct mach_header_64 *mh, intptr_t slide,
+                             np_resolve_result_t *resolved, int *total_out) {
+    (void)mh;
+    (void)slide;
+
+    int total  = 0;
+    int landed = install_groups(np_steamui_groups,
+                                sizeof(np_steamui_groups) / sizeof(np_steamui_groups[0]),
+                                resolved, &total);
+
+    if (total_out)
+        *total_out = total;
+    NP_LOG("hooks: steamui %d/%d installed", landed, total);
+    return landed;
+}
+
 int np_hooks_install_all(const struct mach_header_64 *mh, intptr_t slide,
                          np_resolve_result_t *resolved, int *total_out) {
     np_hooks_compat_set_helpers(
@@ -103,17 +144,9 @@ int np_hooks_install_all(const struct mach_header_64 *mh, intptr_t slide,
     np_webui_dump_routes();
     np_hooks_webui_bind(mh, slide, register_fn, dispatch_fn);
 
-    int total = 0;
-    int landed = 0;
-    for (size_t g = 0; g < sizeof(np_groups) / sizeof(np_groups[0]); g++) {
-        const np_hook_group_t *group = &np_groups[g];
-        np_patch_entry_t *entries = group->entries();
-        int n = group->count();
-        for (int i = 0; i < n; i++) {
-            total++;
-            landed += np_apply_entry(resolved, group->group, &entries[i]);
-        }
-    }
+    int total  = 0;
+    int landed = install_groups(np_groups, sizeof(np_groups) / sizeof(np_groups[0]),
+                                resolved, &total);
 
     np_hooks_compat_publish_originals();
 

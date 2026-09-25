@@ -6,8 +6,11 @@
 #include <stddef.h>
 #include "anchor.h"
 
+#define NP_MODULE_DEFAULT "steamclient.dylib"
+
 typedef struct {
     char        name[128];
+    char        module[64];
     char        aob_hex[4096];
     uintptr_t   func_addr_this_build;
     int         deprecated;

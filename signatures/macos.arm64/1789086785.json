@@ -164,6 +164,34 @@
         "kind": "string",
         "value": "GetWildcardMapping: Invalid unAppID k_nAppIdAll"
       }
+    },
+    {
+      "name": "steamui::ShortcutExtensionMatches",
+      "module": "steamui.dylib",
+      "aob_hex": "F4 4F BE A9 FD 7B 01 A9 FD 43 00 91 F3 03 01 AA 00 00 40 F9 ?? ?? ?? ?? C0 00 00 B4 61 02 40 F9 02 00 B0 12 ?? ?? ?? ?? 1F 00 00 71 E0 17 9F 1A FD 7B 41 A9 F4 4F C2 A8 C0 03 5F D6",
+      "anchor": {
+        "kind": "call_target",
+        "value": "CSteamApp::GetShortcut() only valid for shortcuts",
+        "call_path": [
+          5,
+          4
+        ]
+      }
+    },
+    {
+      "name": "steamui::ShortcutIconRender",
+      "module": "steamui.dylib",
+      "aob_hex": "FF C3 01 D1 E9 23 02 6D F8 5F 03 A9 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91 F4 03 01 AA F5 03 00 AA ?? ?? ?? ??",
+      "anchor": {
+        "kind": "call_target",
+        "value": "strIconDataBase64",
+        "nth_xref": 2,
+        "call_path": [
+          11,
+          3,
+          2
+        ]
+      }
     }
   ]
 }
