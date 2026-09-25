@@ -81,4 +81,19 @@ enum RunnerStore {
             .map { String($0.dropFirst("crossover-".count)) }
             .sorted()
     }
+
+    // The build runners/current names, without checking that it is usable.
+    static func currentBuild(runners: URL = SupportPaths.runners) -> String? {
+        let current = runners.appending(path: "current").path(percentEncoded: false)
+        return (try? FileManager.default.destinationOfSymbolicLink(atPath: current))
+            .flatMap(buildIdentifier(inPath:))
+    }
+
+    // Supported builds with a clone on disk, which the tool can be pointed at
+    // without copying CrossOver again.
+    static func installedBuilds(in runners: URL = SupportPaths.runners) -> [RunnerBuild] {
+        clonedBuilds(in: runners)
+            .compactMap(SupportedRunners.build(id:))
+            .filter { RunnerInstaller.hasClone(forBuild: $0.id, runners: runners) }
+    }
 }

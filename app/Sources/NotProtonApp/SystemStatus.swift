@@ -21,6 +21,7 @@ struct StatusSnapshot: Sendable {
     var crossOverLicense: CrossOverLicense.Status?
     var runner: RunnerState
     var payload: PayloadState
+    var installedRunners: [RunnerBuild] = []
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
         let installs = CrossOverSource.discover()
@@ -39,7 +40,8 @@ struct StatusSnapshot: Sendable {
             runner: runner,
             payload: PayloadInspector.inspect(
                 build: runner.buildIdentifier.flatMap(SupportedRunners.build(id:))
-            )
+            ),
+            installedRunners: RunnerStore.installedBuilds()
         )
     }
 }
@@ -118,8 +120,22 @@ final class SystemStatus {
         snapshot?.crossOver.first(where: \.isUsable)
     }
 
-    func checkLicense() async -> CrossOverLicense.Status? {
-        guard let install = usableCrossOver else { return nil }
+    var usableCrossOvers: [CrossOverInstall] {
+        snapshot?.crossOver.filter(\.isUsable) ?? []
+    }
+
+    // The install a repair of the current tool copies from: the one it was cloned
+    // from when that is still around, so a recopy does not swap Rosetta for FEX.
+    var setupSource: CrossOverInstall? {
+        let current = snapshot?.runner.buildIdentifier
+        return usableCrossOvers.first { install in
+            if case .supported(let build) = install.support { return build.id == current }
+            return false
+        } ?? usableCrossOver
+    }
+
+    func checkLicense(for chosen: CrossOverInstall? = nil) async -> CrossOverLicense.Status? {
+        guard let install = chosen ?? usableCrossOver else { return nil }
         let status = await Task.detached(priority: .userInitiated) {
             CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
         }.value
@@ -154,15 +170,28 @@ final class SystemStatus {
         }
     }
 
-    func requestCompatibilityTool(replacingExisting: Bool = false) async {
+    func requestCompatibilityTool(
+        from chosen: CrossOverInstall? = nil, replacingExisting: Bool = false
+    ) async {
+        let install = chosen ?? setupSource
         if let question = Self.activationQuestion(
             .compatibilityTool,
-            licensed: await checkLicense()?.licensed,
+            licensed: await checkLicense(for: install)?.licensed,
             runner: snapshot?.runner ?? RunnerState.none
         ) {
             pendingConfirmation = question
         } else {
-            await setUpRunner(replacingExisting: replacingExisting)
+            await setUpRunner(from: install, replacingExisting: replacingExisting)
+        }
+    }
+
+    func switchRunner(to build: RunnerBuild) async {
+        guard build.id != snapshot?.runner.buildIdentifier else { return }
+        await perform(from: RunnerSetup.Phase.staging.label) { progress in
+            let result = try await Task.detached(priority: .userInitiated) {
+                try RunnerSetup.activate(build, report: { progress($0.label) })
+            }.value
+            return "Now using build \(result.build.displayVersion)."
         }
     }
 
@@ -227,8 +256,8 @@ final class SystemStatus {
         await refresh()
     }
 
-    private func setUpRunner(replacingExisting: Bool = false) async {
-        guard let install = usableCrossOver else {
+    private func setUpRunner(from install: CrossOverInstall?, replacingExisting: Bool = false) async {
+        guard let install else {
             setFailure("No supported copy of CrossOver found.")
             AppLog.note("run refused: no supported CrossOver")
             outcome = nil

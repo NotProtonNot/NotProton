@@ -64,7 +64,7 @@ struct NotProtonApp: App {
                 .disabled(!status.isIdle)
 
             Button("Set Up Compatibility Tool") { Task { await status.requestCompatibilityTool() } }
-                .disabled(!status.isIdle || status.usableCrossOver == nil)
+                .disabled(!status.isIdle || status.setupSource == nil)
 
             Button("Fetch Valve Binaries") { Task { await status.fetchValveBinaries() } }
                 .disabled(!status.isIdle)

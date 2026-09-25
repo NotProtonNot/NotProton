@@ -91,7 +91,9 @@ struct RunnerInstallerTests {
 
     // A CrossOver bundle holding only the files the clone path hashes, with the build describing
     // those exact bytes, so verification passes without a real 1.2G install to copy.
-    private func makeSupportedInstall(in directory: URL) throws -> (CrossOverInstall, RunnerBuild) {
+    private func makeSupportedInstall(
+        in directory: URL, version: String = "27.0.0.40921"
+    ) throws -> (CrossOverInstall, RunnerBuild) {
         let bundle = directory.appending(path: "source/CrossOver Preview.app")
         let wine = bundle.appending(path: "Contents/SharedSupport/CrossOver/lib/wine")
 
@@ -117,7 +119,7 @@ struct RunnerInstallerTests {
         }
 
         let build = RunnerBuild(
-            bundleVersion: "27.0.0.40921",
+            bundleVersion: version,
             releaseVersion: "20260821",
             flavor: nil,
             loaderSHA256: try hash(wine.appending(path: "x86_64-unix/wine")),
@@ -128,6 +130,26 @@ struct RunnerInstallerTests {
             bundle: bundle, releaseVersion: build.releaseVersion, support: .supported(build)
         )
         return (install, build)
+    }
+
+    @Test("Cloning another build leaves the active link alone until setup finishes")
+    func cloneDoesNotActivate() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+
+        let (first, firstBuild) = try makeSupportedInstall(
+            in: runners.appending(path: "first"), version: "1.0.0.1"
+        )
+        let (second, _) = try makeSupportedInstall(
+            in: runners.appending(path: "second"), version: "2.0.0.2"
+        )
+
+        _ = try RunnerInstaller.clone(from: first, runners: runners)
+        #expect(RunnerStore.currentBuild(runners: runners) == nil)
+
+        try RunnerInstaller.pointCurrent(atBuild: firstBuild.id, runners: runners)
+        _ = try RunnerInstaller.clone(from: second, runners: runners)
+        #expect(RunnerStore.currentBuild(runners: runners) == firstBuild.id)
     }
 
     // The first attempt left the build directory holding the payload's contents, not the payload.
@@ -189,6 +211,7 @@ struct RunnerInstallerTests {
 
         let (install, build) = try makeSupportedInstall(in: runners)
         _ = try RunnerInstaller.clone(from: install, runners: runners)
+        try RunnerInstaller.pointCurrent(atBuild: build.id, runners: runners)
 
         let payload = SupportPaths
             .clonedRoot(forBuild: build.bundleVersion, runners: runners)
