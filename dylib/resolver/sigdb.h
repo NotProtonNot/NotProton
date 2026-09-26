@@ -14,7 +14,7 @@ typedef struct {
     char        aob_hex[4096];
     uintptr_t   func_addr_this_build;
     int         deprecated;
-    int32_t     match_offset;   // signed delta from the pattern hit to the entry point
+    int32_t     match_offset;   // site = hit - match_offset; the site is not always an entry
     np_anchor_t anchor;
 } np_sig_entry_t;
 

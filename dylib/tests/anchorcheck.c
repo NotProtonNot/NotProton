@@ -278,7 +278,7 @@ static int check_aob_fallback(const char *path) {
         for (int i = 0; i < db.sig_count; i++) {
             np_sig_entry_t *sig = &db.signatures[i];
             if (strcmp(sig->module, g_images[m].module) != 0) continue;
-            if (!sig->aob_hex[0] || !sig->func_addr_this_build) continue;
+            if (sig->deprecated || !sig->aob_hex[0] || !sig->func_addr_this_build) continue;
 
             uintptr_t got  = np_lookup_address(&res, sig->name);
             uintptr_t want = sig->func_addr_this_build + (uintptr_t)g_images[m].slide;
