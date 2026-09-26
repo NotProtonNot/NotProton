@@ -42,10 +42,6 @@ enum RunnerSetup {
 
     static let switchStep = "Switch compatibility tool"
 
-    // Points the tool at a build that is already cloned, so moving between Rosetta
-    // and FEX does not copy CrossOver again. The bridge holds the patched ntdll for
-    // one build only, so it is staged for the target before the link moves, and put
-    // back for the build in use if anything fails on the way.
     static func activate(
         _ build: RunnerBuild,
         runners: URL = SupportPaths.runners,
@@ -66,8 +62,6 @@ enum RunnerSetup {
             )
         }
 
-        // The clone carries the same verification key as the bundle it came from,
-        // so the check still holds once that copy of CrossOver is gone.
         let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
         let status = license(root)
         guard status.licensed else {

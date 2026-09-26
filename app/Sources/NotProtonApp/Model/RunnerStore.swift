@@ -82,15 +82,42 @@ enum RunnerStore {
             .sorted()
     }
 
-    // The build that runners/current names, without checking that it is usable.
+    static func orphanedClones(in runners: URL = SupportPaths.runners) -> [String] {
+        clonedBuilds(in: runners).filter { SupportedRunners.build(id: $0) == nil }
+    }
+
+    static func damagedClones(in runners: URL = SupportPaths.runners) -> [String] {
+        clonedBuilds(in: runners).filter {
+            SupportedRunners.build(id: $0) != nil
+                && !RunnerInstaller.hasClone(forBuild: $0, runners: runners)
+        }
+    }
+
+    static func cloneSize(forBuild build: String, runners: URL = SupportPaths.runners) -> Int64 {
+        let root = SupportPaths.runnerRoot(forBuild: build, runners: runners)
+        guard let walker = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        var total: Int64 = 0
+        for case let url as URL in walker {
+            let values = try? url.resourceValues(
+                forKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+            )
+            let bytes = values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0
+            total += Int64(bytes)
+        }
+        return total
+    }
+
     static func currentBuild(runners: URL = SupportPaths.runners) -> String? {
         let current = runners.appending(path: "current").path(percentEncoded: false)
         return (try? FileManager.default.destinationOfSymbolicLink(atPath: current))
             .flatMap(buildIdentifier(inPath:))
     }
 
-    // Supported builds with a clone on disk, which the tool can be pointed at
-    // without copying CrossOver again.
     static func installedBuilds(in runners: URL = SupportPaths.runners) -> [RunnerBuild] {
         clonedBuilds(in: runners)
             .compactMap(SupportedRunners.build(id:))

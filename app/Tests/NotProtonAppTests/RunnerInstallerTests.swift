@@ -132,6 +132,26 @@ struct RunnerInstallerTests {
         return (install, build)
     }
 
+    @Test("A payload that never finished copying is replaced rather than kept")
+    func partialCloneIsReplaced() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+
+        let (install, build) = try makeSupportedInstall(in: runners.appending(path: "src"))
+
+        let stale = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try Data("junk".utf8).write(to: stale.appending(path: "leftover"))
+        #expect(!RunnerInstaller.hasClone(forBuild: build.id, runners: runners))
+
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+
+        #expect(RunnerInstaller.hasClone(forBuild: build.id, runners: runners))
+        #expect(!FileManager.default.fileExists(
+            atPath: stale.appending(path: "leftover").path(percentEncoded: false)
+        ))
+    }
+
     @Test("Cloning another build leaves the active link alone until setup finishes")
     func cloneDoesNotActivate() throws {
         let runners = try makeRunners()

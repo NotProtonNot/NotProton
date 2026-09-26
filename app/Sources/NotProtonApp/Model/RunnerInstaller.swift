@@ -41,6 +41,25 @@ enum RunnerInstaller {
         return build
     }
 
+    static let removeStep = "Remove build"
+
+    static func removeClone(forBuild build: String, runners: URL = SupportPaths.runners) throws {
+        let target = SupportPaths.runnerRoot(forBuild: build, runners: runners)
+        let path = target.path(percentEncoded: false)
+
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw StepFailure(step: removeStep, detail: "Build \(build) is not set up.")
+        }
+        guard RunnerStore.currentBuild(runners: runners) != build else {
+            throw StepFailure(
+                step: removeStep,
+                detail: "Build \(build) is the active build. Switch to another build first."
+            )
+        }
+
+        try WriteRefused.catching(path) { try FileManager.default.removeItem(at: target) }
+    }
+
     static func hasClone(forBuild build: String, runners: URL = SupportPaths.runners) -> Bool {
         let root = SupportPaths.clonedRoot(forBuild: build, runners: runners)
         return FileManager.default.fileExists(

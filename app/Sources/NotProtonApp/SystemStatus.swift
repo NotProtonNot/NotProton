@@ -22,6 +22,8 @@ struct StatusSnapshot: Sendable {
     var runner: RunnerState
     var payload: PayloadState
     var installedRunners: [RunnerBuild] = []
+    var orphanedRunners: [String] = []
+    var damagedRunners: [String] = []
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
         let installs = CrossOverSource.discover()
@@ -42,7 +44,9 @@ struct StatusSnapshot: Sendable {
             payload: PayloadInspector.inspect(
                 build: runner.buildIdentifier.flatMap(SupportedRunners.build(id:))
             ),
-            installedRunners: RunnerStore.installedBuilds()
+            installedRunners: RunnerStore.installedBuilds(),
+            orphanedRunners: RunnerStore.orphanedClones(),
+            damagedRunners: RunnerStore.damagedClones()
         )
     }
 }
@@ -69,6 +73,7 @@ final class SystemStatus {
         case blockUpdates
         case installUnlicensed
         case toolUnlicensed
+        case removeBuild
         case removeEverything
 
         var id: Self { self }
@@ -138,14 +143,36 @@ final class SystemStatus {
         }
     }
 
-    // The install a repair of the current tool copies from: the one it was cloned
-    // from when that is still around, so a recopy does not swap Rosetta for FEX.
-    var setupSource: CrossOverInstall? {
+    struct AvailableBuild: Identifiable {
+        let install: CrossOverInstall
+        let build: RunnerBuild
+
+        var id: String { build.id }
+    }
+
+    var repairSource: CrossOverInstall? {
         let current = snapshot?.runner.buildIdentifier
         return usableCrossOvers.first { install in
             if case .supported(let build) = install.support { return build.id == current }
             return false
-        } ?? usableCrossOver
+        }
+    }
+
+    var setupSource: CrossOverInstall? { repairSource ?? usableCrossOver }
+
+    var setupSourceIsDeployed: Bool {
+        guard case .supported(let build)? = setupSource?.support else { return false }
+        return snapshot?.installedRunners.contains(build) ?? false
+    }
+
+    var availableBuilds: [AvailableBuild] {
+        let installed = snapshot?.installedRunners ?? []
+        guard !installed.isEmpty else { return [] }
+        return usableCrossOvers.compactMap { install in
+            guard case .supported(let build) = install.support,
+                  !installed.contains(build) else { return nil }
+            return AvailableBuild(install: install, build: build)
+        }
     }
 
     func checkLicense(for chosen: CrossOverInstall? = nil) async -> CrossOverLicense.Status? {
@@ -202,6 +229,29 @@ final class SystemStatus {
             pendingConfirmation = question
         } else {
             await setUpRunner(from: install, replacingExisting: replacingExisting)
+        }
+    }
+
+    private(set) var pendingRemoval: String?
+
+    func requestBuildRemoval(_ build: String) {
+        guard isIdle else { return }
+        pendingRemoval = build
+        pendingConfirmation = .removeBuild
+    }
+
+    func cancelBuildRemoval() {
+        pendingRemoval = nil
+    }
+
+    func removePendingBuild() async {
+        guard let build = pendingRemoval else { return }
+        pendingRemoval = nil
+        await perform(from: RunnerInstaller.removeStep) { _ in
+            try await Task.detached(priority: .userInitiated) {
+                try RunnerInstaller.removeClone(forBuild: build)
+            }.value
+            return "Removed build \(SupportedRunners.displayVersion(forID: build))."
         }
     }
 
@@ -396,5 +446,23 @@ final class SystemStatus {
         }.value
         snapshot = captured
         AppLog.note(captured)
+        await measureRunnerSizes()
+    }
+
+    private(set) var runnerSizes: [String: Int64] = [:]
+
+    func measureRunnerSizes() async {
+        let known = Set(runnerSizes.keys)
+        let present = await Task.detached(priority: .utility) {
+            Set(RunnerStore.clonedBuilds())
+        }.value
+
+        for stale in known.subtracting(present) { runnerSizes[stale] = nil }
+
+        for build in present.subtracting(known) {
+            runnerSizes[build] = await Task.detached(priority: .utility) {
+                RunnerStore.cloneSize(forBuild: build)
+            }.value
+        }
     }
 }

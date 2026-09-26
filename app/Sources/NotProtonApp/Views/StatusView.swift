@@ -50,6 +50,7 @@ struct StatusRow: View {
 
     var tone: StatusTone?
     var detail: String?
+    var secondaryAction: StatusAction?
     var action: StatusAction?
 
     var body: some View {
@@ -81,8 +82,17 @@ struct StatusRow: View {
                 }
             }
 
-            if let action {
+            if secondaryAction != nil || action != nil {
                 Spacer(minLength: 12)
+            }
+            if let secondaryAction {
+                button(secondaryAction)
+                    .disabled(!secondaryAction.isEnabled)
+                    .help(secondaryAction.help ?? "")
+                    .accessibilityLabel("\(secondaryAction.label), \(title)")
+                    .padding(.trailing, 8)
+            }
+            if let action {
                 button(action)
                     .disabled(!action.isEnabled)
                     .help(action.help ?? "")
@@ -158,6 +168,23 @@ struct StatusView: View {
                 "This will restore Steam itself to its original state but does not remove "
                     + "the support components used by NotProton."
             )
+        }
+        .confirmationDialog(
+            "Are you sure?",
+            isPresented: asking(.removeBuild),
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                Task { await status.removePendingBuild() }
+            }
+            Button("Cancel", role: .cancel) { status.cancelBuildRemoval() }
+        } message: {
+            if let build = status.pendingRemoval {
+                Text(
+                    "Are you sure you want to remove "
+                        + "\(SupportedRunners.displayVersion(forID: build))?"
+                )
+            }
         }
         .confirmationDialog(
             "Remove everything NotProton has created?",
@@ -255,8 +282,9 @@ struct StatusView: View {
             Section {
                 crossOverRows(snapshot)
                 runnerRow(snapshot.runner, payload: snapshot.payload)
-                if snapshot.installedRunners.count > 1 {
-                    activeBuildRow(snapshot)
+                if snapshot.installedRunners.count > 1 || !snapshot.orphanedRunners.isEmpty
+                    || !snapshot.damagedRunners.isEmpty || !status.availableBuilds.isEmpty {
+                    buildRows(snapshot)
                 }
             } header: {
                 Text("Compatibility Tool")
@@ -395,8 +423,6 @@ struct StatusView: View {
         )
     }
 
-    // One copy keeps the choose button on its row. With several, each row sets up
-    // its own build and choosing moves to the section footer.
     @ViewBuilder
     private func crossOverRows(_ snapshot: StatusSnapshot) -> some View {
         let installs = snapshot.crossOver.filter(\.isUsable)
@@ -448,8 +474,6 @@ struct StatusView: View {
             .help(action.help ?? "")
     }
 
-    // Only for a build with no clone yet. One already cloned is switched to with
-    // the active build picker, and recopied from the row below.
     private func setUpAction(
         for install: CrossOverInstall, build: RunnerBuild, snapshot: StatusSnapshot
     ) -> StatusAction? {
@@ -464,32 +488,84 @@ struct StatusView: View {
         }
     }
 
-    private func activeBuildRow(_ snapshot: StatusSnapshot) -> some View {
-        Picker(selection: activeBuild) {
-            ForEach(snapshot.installedRunners) { build in
-                Text(build.displayVersion).tag(Optional(build.id))
+    @ViewBuilder
+    private func buildRows(_ snapshot: StatusSnapshot) -> some View {
+        let active = snapshot.runner.buildIdentifier
+        ForEach(SupportedRunners.all) { build in
+            if snapshot.installedRunners.contains(build) {
+                let isActive = build.id == active
+                StatusRow(
+                    title: build.displayVersion,
+                    value: isActive ? "Active build." : buildSize(build.id),
+                    tone: isActive ? .ok : .neutral,
+                    secondaryAction: isActive ? nil : removeAction(build.id),
+                    action: isActive ? nil : useAction(build)
+                )
+            } else if snapshot.damagedRunners.contains(build.id) {
+                StatusRow(
+                    title: build.displayVersion,
+                    value: "Damaged Copy",
+                    tone: .warning,
+                    detail: buildSize(build.id),
+                    secondaryAction: removeAction(build.id),
+                    action: status.availableBuilds.first(where: { $0.id == build.id })
+                        .map(copyAction)
+                )
+            } else if let available = status.availableBuilds.first(where: { $0.id == build.id }) {
+                StatusRow(
+                    title: build.displayVersion,
+                    tone: .neutral,
+                    action: copyAction(available)
+                )
             }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Active build")
-                    .font(.headline)
-                Text("Prefixes made with a different build will need to be rebuilt.")
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.leading, StatusMetrics.textInset)
         }
-        .disabled(!status.isIdle)
-        .help("Choose which CrossOver build games launch with.")
+        ForEach(snapshot.orphanedRunners, id: \.self) { build in
+            StatusRow(
+                title: SupportedRunners.displayVersion(forID: build),
+                value: "No longer supported.",
+                tone: .warning,
+                detail: buildSize(build),
+                secondaryAction: removeAction(build)
+            )
+        }
     }
 
-    private var activeBuild: Binding<String?> {
-        Binding(
-            get: { status.snapshot?.runner.buildIdentifier },
-            set: { picked in
-                guard let build = picked.flatMap(SupportedRunners.build(id:)) else { return }
-                Task { await status.switchRunner(to: build) }
-            }
-        )
+    private func buildSize(_ build: String) -> String? {
+        status.runnerSizes[build].map {
+            ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+        }
+    }
+
+    private func copyAction(_ available: SystemStatus.AvailableBuild) -> StatusAction {
+        StatusAction(
+            label: "Copy",
+            isProminent: true,
+            help: "Copy this CrossOver build and use it.",
+            isEnabled: status.isIdle
+        ) {
+            Task { await status.requestCompatibilityTool(from: available.install) }
+        }
+    }
+
+    private func useAction(_ build: RunnerBuild) -> StatusAction {
+        StatusAction(
+            label: "Use",
+            help: "Launch games with this CrossOver build.",
+            isEnabled: status.isIdle
+        ) {
+            Task { await status.switchRunner(to: build) }
+        }
+    }
+
+    private func removeAction(_ build: String) -> StatusAction {
+        StatusAction(
+            label: "Remove",
+            role: .destructive,
+            help: "Delete this build from disk.",
+            isEnabled: status.isIdle
+        ) {
+            status.requestBuildRemoval(build)
+        }
     }
 
     private func runnerAction(
@@ -514,18 +590,20 @@ struct StatusView: View {
                 title: "Compatibility Tool",
                 value: "Not set up.",
                 tone: .neutral,
-                // Each copy of CrossOver above has its own button when there are several.
                 action: status.crossOverRowsOfferSetUp ? nil : runnerAction()
             )
         case .cloned(let build, let supported):
             let satisfied = supported && !patchedMissing
+            let deployed = status.setupSourceIsDeployed
             return StatusRow(
                 title: "Compatibility Tool",
                 value: "Build \(SupportedRunners.displayVersion(forID: build))"
                     + (supported ? "" : " (unsupported)"),
                 tone: satisfied ? .ok : .warning,
                 action: satisfied
-                    ? runnerAction(label: "Copy Again", replacingExisting: true)
+                    ? runnerAction(
+                        label: deployed ? "Copy Again" : "Copy", replacingExisting: true
+                    )
                     : runnerAction()
             )
         case .unpatched(let build, _):
