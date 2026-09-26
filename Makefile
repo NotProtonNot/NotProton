@@ -56,7 +56,7 @@ OBJS := $(patsubst %.c,$(OUT_DIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib-install sigcheck app-payload app app-zip \
-        anchorcheck sigdb-fixtures webpatch-fixtures panel-behavior app-tests \
+        anchorcheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
@@ -162,6 +162,25 @@ sigdb-fixtures:
 	done; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "==> $$n sigdb fixtures: none crashed, each exited as $(SIGDB_FIXTURES)/EXPECTED records"
+
+PEICON_CHECK := $(OUT_DIR)/peicon-check
+
+$(PEICON_CHECK): dylib/tests/peicon-check.c dylib/util/peicon.c dylib/util/peicon.h
+	@mkdir -p $(dir $@)
+	$(CC) -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) -std=c17 -g -O1 \
+	  -Wall -Wextra -Wno-unused-parameter -Idylib \
+	  -o $@ dylib/tests/peicon-check.c dylib/util/peicon.c
+
+peicon-fixtures:
+	@if [ ! -f dylib/tests/peicon-check.c ]; then \
+		$(call SKIP,peicon-fixtures,dylib/tests/peicon-check.c); exit 0; fi; \
+	$(MAKE) -s $(PEICON_CHECK) || exit 1; \
+	tmp=$$(mktemp -d); \
+	$(PEICON_CHECK) "$$tmp"; rc=$$?; \
+	rm -rf "$$tmp"; \
+	if [ $$rc -eq 9 ]; then \
+		echo "peicon-check ran out of time, so a hostile resource tree is unbounded"; fi; \
+	exit $$rc
 
 GATECHECK         := $(OUT_DIR)/gatecheck
 WEBPATCH_FIXTURES := dylib/tests/webpatch-fixtures
@@ -354,8 +373,10 @@ iconmaker: $(ICONMAKER)
 
 $(ICONMAKER): helpers/iconmaker.swift dylib/util/peicon.c dylib/util/peicon.h
 	@mkdir -p $(OUT_DIR)
-	$(CC) -c -O2 -Wall -Wextra -o $(OUT_DIR)/peicon-host.o dylib/util/peicon.c
-	swiftc -O -framework AppKit -import-objc-header dylib/util/peicon.h \
+	$(CC) -c -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) -std=c17 -O2 \
+		-Wall -Wextra -o $(OUT_DIR)/peicon-host.o dylib/util/peicon.c
+	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) \
+		-framework AppKit -import-objc-header dylib/util/peicon.h \
 		-o $@ helpers/iconmaker.swift $(OUT_DIR)/peicon-host.o
 	@echo "==> Built $@"
 
@@ -365,7 +386,7 @@ appinfo: $(APPINFO)
 
 $(APPINFO): helpers/appinfo.swift
 	@mkdir -p $(OUT_DIR)
-	swiftc -O -o $@ $<
+	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) -o $@ $<
 	@echo "==> Built $@"
 
 helpers-install: $(ICONMAKER) $(APPINFO)

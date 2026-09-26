@@ -13,6 +13,10 @@
 #define NP_PE_MAX_LEAVES   4096
 #define NP_PE_MAX_IMAGE    (16 * 1024 * 1024)
 #define NP_PE_MAX_DEPTH    3
+#define NP_PE_MAX_ENTRIES  512
+#define NP_PE_MAX_VISITS   65536
+#define NP_PE_MAX_ICO      (32 * 1024 * 1024)
+#define NP_PE_MAX_ICO_IMGS 64
 
 #define NP_RT_ICON         3
 #define NP_RT_GROUP_ICON   14
@@ -38,6 +42,7 @@ typedef struct {
     int            nsects;
     np_leaf_t     *leaves;
     int            nleaves;
+    uint32_t       visits;
 } np_pe_t;
 
 static int rd_u8(const np_pe_t *pe, size_t off, uint8_t *out) {
@@ -94,7 +99,12 @@ static void walk(np_pe_t *pe, size_t base, size_t node, int depth,
     if (!rd_u16(pe, node + 12, &named) || !rd_u16(pe, node + 14, &ids)) return;
 
     int total = (int)named + (int)ids;
+    if (total > NP_PE_MAX_ENTRIES) total = NP_PE_MAX_ENTRIES;
+
     for (int i = 0; i < total; i++) {
+        if (pe->visits == 0) return;
+        pe->visits--;
+
         size_t   entry = node + 16 + (size_t)i * 8;
         uint32_t name_field, off_field;
         if (!rd_u32(pe, entry, &name_field) || !rd_u32(pe, entry + 4, &off_field)) return;
@@ -161,8 +171,10 @@ static void *build_ico(np_pe_t *pe, uint32_t rsrc_rva, size_t *out_len) {
     uint16_t count;
     if (!rva_to_off(pe, group->rva, &group_at)) return NULL;
     if (group->size < 6) return NULL;
+    if (pe->n < group->size || group_at > pe->n - group->size) return NULL;
     if (!rd_u16(pe, group_at + 4, &count) || count == 0) return NULL;
     if (group->size < 6 + (uint32_t)count * 14) return NULL;
+    if (count > NP_PE_MAX_ICO_IMGS) count = NP_PE_MAX_ICO_IMGS;
 
     const np_leaf_t **picked = calloc(count, sizeof(*picked));
     uint8_t          *records = calloc(count, 16);
@@ -189,6 +201,13 @@ static void *build_ico(np_pe_t *pe, uint32_t rsrc_rva, size_t *out_len) {
         if (!img || img->size == 0 || img->size > NP_PE_MAX_IMAGE) continue;
         if (!rva_to_off(pe, img->rva, &at)) continue;
         if (pe->n < img->size || at > pe->n - img->size) continue;
+
+        int seen = 0;
+        for (int j = 0; j < written; j++) {
+            if (picked[j] == img) { seen = 1; break; }
+        }
+        if (seen) continue;
+        if (img->size > NP_PE_MAX_ICO - payload) break;
 
         uint8_t *r = records + (size_t)written * 16;
         r[0] = w;
@@ -245,6 +264,7 @@ static void *icon_from_map(const uint8_t *map, size_t len, size_t *out_len) {
     memset(&pe, 0, sizeof(pe));
     pe.p = map;
     pe.n = len;
+    pe.visits = NP_PE_MAX_VISITS;
 
     uint16_t mz;
     uint32_t peo32, sig;

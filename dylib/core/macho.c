@@ -74,21 +74,27 @@ static const uint8_t *fn_starts_table(const struct mach_header_64 *mh,
     uint32_t remaining = mh->ncmds;
 
     const struct linkedit_data_command *fs = NULL;
-    uint64_t le_vmaddr = 0, le_fileoff = 0;
+    uint64_t le_vmaddr = 0, le_fileoff = 0, le_filesize = 0;
     int have_le = 0;
 
+    const uint8_t *lc_end = cursor + mh->sizeofcmds;
+
     while (remaining--) {
+        if ((size_t)(lc_end - cursor) < sizeof(struct load_command)) return NULL;
         const struct load_command *lc = (const struct load_command *)cursor;
-        if (lc->cmdsize < sizeof(*lc)) return NULL;
+        if (lc->cmdsize < sizeof(*lc) || lc->cmdsize > (size_t)(lc_end - cursor))
+            return NULL;
 
         if (lc->cmd == LC_FUNCTION_STARTS && lc->cmdsize >= sizeof(*fs)) {
             fs = (const struct linkedit_data_command *)cursor;
-        } else if (lc->cmd == LC_SEGMENT_64) {
+        } else if (lc->cmd == LC_SEGMENT_64 &&
+                   lc->cmdsize >= sizeof(struct segment_command_64)) {
             const struct segment_command_64 *sc = (const struct segment_command_64 *)cursor;
             if (strncmp(sc->segname, SEG_LINKEDIT, sizeof(sc->segname)) == 0) {
-                le_vmaddr  = sc->vmaddr;
-                le_fileoff = sc->fileoff;
-                have_le    = 1;
+                le_vmaddr   = sc->vmaddr;
+                le_fileoff  = sc->fileoff;
+                le_filesize = sc->filesize;
+                have_le     = 1;
             }
         }
         cursor += lc->cmdsize;
@@ -97,9 +103,11 @@ static const uint8_t *fn_starts_table(const struct mach_header_64 *mh,
     if (!fs || !have_le || !fs->datasize) return NULL;
     if (fs->dataoff < le_fileoff) return NULL;
 
+    uint64_t rel = (uint64_t)fs->dataoff - le_fileoff;
+    if (rel > le_filesize || (uint64_t)fs->datasize > le_filesize - rel) return NULL;
+
     *out_size = fs->datasize;
-    return (const uint8_t *)(uintptr_t)(le_vmaddr + (fs->dataoff - le_fileoff)
-                                        + (uint64_t)slide);
+    return (const uint8_t *)(uintptr_t)(le_vmaddr + rel + (uint64_t)slide);
 }
 
 int np_function_bounds(const struct mach_header_64 *mh, intptr_t slide,

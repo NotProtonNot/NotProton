@@ -215,7 +215,7 @@ struct SetupSourceTests {
             steamRunning: false,
             updateBlocked: false,
             crossOver: installs,
-            crossOverLicense: nil,
+            crossOverLicense: [:],
             runner: runner,
             payload: PayloadInspector.inspect(bridge: FileManager.default.temporaryDirectory)
         )

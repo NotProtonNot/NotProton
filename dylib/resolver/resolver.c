@@ -42,9 +42,13 @@ static void push(np_resolve_result_t *r, const char *name, uintptr_t addr) {
     r->items[r->used++] = (np_resolved_t){ .name = name, .site = addr };
 }
 
+static int usable_code_address(const char *name, uintptr_t addr,
+                               uintptr_t text, size_t text_sz);
+
 // Single-signature resolution
-static uintptr_t scan_aob(np_sig_entry_t *sig, uintptr_t text, size_t text_sz) {
-    if (!sig->aob_hex[0]) return 0;
+uintptr_t np_aob_site(const np_sig_entry_t *sig, uintptr_t text, size_t text_sz) {
+    if (!sig || !sig->aob_hex[0]) return 0;
+    if (text_sz < sizeof(uint32_t)) return 0;
 
     np_byte_pattern_t pat;
     if (np_compile_pattern(sig->aob_hex, &pat) != 0) {
@@ -56,15 +60,66 @@ static uintptr_t scan_aob(np_sig_entry_t *sig, uintptr_t text, size_t text_sz) {
     np_release_pattern(&pat);
     if (!hit) return 0;
 
-    return hit + (intptr_t)sig->match_offset;
+    uintptr_t site = hit - (uintptr_t)(intptr_t)sig->match_offset;
+    if (!usable_code_address(sig->name, site, text, text_sz))
+        return 0;
+    return site;
+}
+
+static int anchor_targets_function_entry(np_match_kind_t kind) {
+    switch (kind) {
+        case NP_MATCH_STRING:
+        case NP_MATCH_VTABLE_SLOT:
+        case NP_MATCH_CALL_TARGET:
+            return 1;
+        case NP_MATCH_NONE:
+        case NP_MATCH_INSN_AFTER_STRING:
+        case NP_MATCH_INSN_PAIR_IN_FN:
+        case NP_MATCH_AOB:
+            return 0;
+    }
+    return 0;
+}
+
+static int aob_site_plausible(const np_sig_entry_t *sig,
+                             const struct mach_header_64 *mh, intptr_t slide,
+                             uintptr_t addr) {
+    uintptr_t start = 0, end = 0;
+    int bounded = np_function_bounds(mh, slide, addr, &start, &end) == 0;
+
+    if (!anchor_targets_function_entry(sig->anchor.kind)) {
+        if (!bounded)
+            NP_WARN("resolver: '%s' byte pattern site 0x%lx is not inside any known "
+                    "function; rejecting", sig->name, (unsigned long)addr);
+        return bounded;
+    }
+
+    if (bounded) {
+        if (start != addr) {
+            NP_WARN("resolver: '%s' byte pattern hit 0x%lx is inside 0x%lx, not a "
+                    "function start; rejecting", sig->name, (unsigned long)addr,
+                    (unsigned long)start);
+            return 0;
+        }
+        return 1;
+    }
+    if (!np_looks_like_prologue(addr)) {
+        NP_WARN("resolver: '%s' byte pattern hit 0x%lx has no function bounds and "
+                "does not open with a prologue; rejecting", sig->name,
+                (unsigned long)addr);
+        return 0;
+    }
+    return 1;
 }
 
 static uintptr_t try_anchor(np_sig_entry_t *sig,
                             const struct mach_header_64 *mh, intptr_t slide,
                             uintptr_t text, size_t text_sz) {
     if (sig->anchor.kind == NP_MATCH_AOB) {
-        uintptr_t addr = scan_aob(sig, text, text_sz);
-        if (addr) NP_LOG("resolver: '%s' -> 0x%lx [aob]", sig->name, (unsigned long)addr);
+        uintptr_t addr = np_aob_site(sig, text, text_sz);
+        if (!addr) return 0;
+        if (!aob_site_plausible(sig, mh, slide, addr)) return 0;
+        NP_LOG("resolver: '%s' -> 0x%lx [aob]", sig->name, (unsigned long)addr);
         return addr;
     }
 
@@ -72,18 +127,11 @@ static uintptr_t try_anchor(np_sig_entry_t *sig,
     if (sig->anchor.kind != NP_MATCH_NONE)
         addr = np_locate_anchor(mh, slide, text, text_sz, &sig->anchor);
 
-    uintptr_t alt = scan_aob(sig, text, text_sz);
+    uintptr_t alt = np_aob_site(sig, text, text_sz);
 
     if (!addr) {
         if (!alt) return 0;
-
-        uintptr_t start = 0, end = 0;
-        if (np_function_bounds(mh, slide, alt, &start, &end) == 0 && start != alt) {
-            NP_WARN("resolver: '%s' byte pattern hit 0x%lx is inside 0x%lx, not a "
-                    "function start; rejecting", sig->name, (unsigned long)alt,
-                    (unsigned long)start);
-            return 0;
-        }
+        if (!aob_site_plausible(sig, mh, slide, alt)) return 0;
 
         NP_LOG("resolver: '%s' -> 0x%lx [aob, anchor did not resolve]",
                sig->name, (unsigned long)alt);

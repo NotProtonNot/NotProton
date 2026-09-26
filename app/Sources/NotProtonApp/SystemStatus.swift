@@ -18,15 +18,16 @@ struct StatusSnapshot: Sendable {
     var steamRunning: Bool
     var updateBlocked: Bool
     var crossOver: [CrossOverInstall]
-    var crossOverLicense: CrossOverLicense.Status?
+    var crossOverLicense: [String: CrossOverLicense.Status] = [:]
     var runner: RunnerState
     var payload: PayloadState
     var installedRunners: [RunnerBuild] = []
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
         let installs = CrossOverSource.discover()
-        let license = installs.first(where: \.isUsable).map {
-            CrossOverLicense.check(crossOverRoot: $0.crossOverRoot)
+        var licenses: [String: CrossOverLicense.Status] = [:]
+        for install in installs where install.isUsable {
+            licenses[install.id] = CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
         }
 
         let runner = RunnerStore.state()
@@ -36,7 +37,7 @@ struct StatusSnapshot: Sendable {
             steamRunning: SteamBundle.isRunning,
             updateBlocked: UpdateBlock.isPresent(),
             crossOver: installs,
-            crossOverLicense: license,
+            crossOverLicense: licenses,
             runner: runner,
             payload: PayloadInspector.inspect(
                 build: runner.buildIdentifier.flatMap(SupportedRunners.build(id:))
@@ -57,7 +58,10 @@ final class SystemStatus {
     private(set) var failure: String?
     private(set) var failureRemedy: Remedy?
 
-    var isBusy: Bool { activity != nil }
+    private var runInFlight = false
+    private var checkingLicense = false
+
+    var isBusy: Bool { activity != nil || runInFlight || checkingLicense }
     var isIdle: Bool { !isBusy && !isRefreshing }
 
     enum Confirmation: Identifiable, Hashable {
@@ -124,6 +128,16 @@ final class SystemStatus {
         snapshot?.crossOver.filter(\.isUsable) ?? []
     }
 
+    var crossOverRowsOfferSetUp: Bool {
+        let usable = usableCrossOvers
+        guard usable.count > 1 else { return false }
+        let installed = snapshot?.installedRunners ?? []
+        return usable.contains { install in
+            if case .supported(let build) = install.support { return !installed.contains(build) }
+            return false
+        }
+    }
+
     // The install a repair of the current tool copies from: the one it was cloned
     // from when that is still around, so a recopy does not swap Rosetta for FEX.
     var setupSource: CrossOverInstall? {
@@ -139,7 +153,7 @@ final class SystemStatus {
         let status = await Task.detached(priority: .userInitiated) {
             CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
         }.value
-        snapshot?.crossOverLicense = status
+        snapshot?.crossOverLicense[install.id] = status
         return status
     }
 
@@ -159,6 +173,9 @@ final class SystemStatus {
     }
 
     func requestInstall() async {
+        guard isIdle else { return }
+        checkingLicense = true
+        defer { checkingLicense = false }
         if let question = Self.activationQuestion(
             .install,
             licensed: await checkLicense()?.licensed,
@@ -173,6 +190,9 @@ final class SystemStatus {
     func requestCompatibilityTool(
         from chosen: CrossOverInstall? = nil, replacingExisting: Bool = false
     ) async {
+        guard isIdle else { return }
+        checkingLicense = true
+        defer { checkingLicense = false }
         let install = chosen ?? setupSource
         if let question = Self.activationQuestion(
             .compatibilityTool,
@@ -186,6 +206,7 @@ final class SystemStatus {
     }
 
     func switchRunner(to build: RunnerBuild) async {
+        guard isIdle else { return }
         guard build.id != snapshot?.runner.buildIdentifier else { return }
         await perform(from: RunnerSetup.Phase.staging.label) { progress in
             let result = try await Task.detached(priority: .userInitiated) {
@@ -240,6 +261,13 @@ final class SystemStatus {
         from first: String,
         _ body: (_ progress: @escaping @Sendable (String) -> Void) async throws -> String?
     ) async {
+        guard !runInFlight else {
+            AppLog.note("run refused: '\(first)' overlaps a run already in flight")
+            return
+        }
+        runInFlight = true
+        defer { runInFlight = false }
+
         clearFailure()
         outcome = nil
         let run = beginRun(first)

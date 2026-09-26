@@ -21,6 +21,8 @@ typedef struct {
 // True when the 32-bit value at `addr` looks like a common AArch64 prologue.
 int np_looks_like_prologue(uintptr_t addr);
 
+uintptr_t np_aob_site(const np_sig_entry_t *sig, uintptr_t text, size_t text_sz);
+
 // Resolve the signatures in `sigdb` that name `module` against the live image at
 // `mh`+`slide`. Entries belonging to another image are left out of `out`.
 int np_resolve_signatures(const struct mach_header_64 *mh, intptr_t slide,

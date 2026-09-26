@@ -208,8 +208,15 @@ int np_load_profile(const char *path, np_sigdb_t *out) {
 
             if ((v = cJSON_GetObjectItem(elem, "deprecated")))
                 e->deprecated = cJSON_IsTrue(v);
-            if ((v = cJSON_GetObjectItem(elem, "match_offset")))
-                e->match_offset = (int32_t)v->valueint;
+            if ((v = cJSON_GetObjectItem(elem, "match_offset"))) {
+                if (cJSON_IsNumber(v)) {
+                    e->match_offset = (int32_t)v->valueint;
+                } else {
+                    NP_WARN("sigdb: '%s' has a non-numeric match_offset; dropping "
+                            "its byte pattern", e->name);
+                    e->aob_hex[0] = '\0';
+                }
+            }
 
             load_anchor(elem, &e->anchor);
 

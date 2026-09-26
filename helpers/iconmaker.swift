@@ -18,7 +18,7 @@ private func loadImage(_ path: String) -> NSImage? {
     var length = 0
     if let raw = np_pe_icon_ico(path, &length) {
         let ico = Data(bytesNoCopy: raw, count: length, deallocator: .free)
-        if !ico.isEmpty, let image = NSImage(data: ico) {
+        if !ico.isEmpty, let image = NSImage(data: ico), hasArea(image) {
             FileHandle.standardError.write(Data("iconmaker: using icon from PE resources\n".utf8))
             return image
         }
@@ -26,7 +26,12 @@ private func loadImage(_ path: String) -> NSImage? {
     return NSImage(contentsOfFile: path)
 }
 
-guard let srcImage = loadImage(inputPath) else {
+private func hasArea(_ image: NSImage) -> Bool {
+    image.size.width > 0 && image.size.height > 0
+        && image.size.width.isFinite && image.size.height.isFinite
+}
+
+guard let srcImage = loadImage(inputPath), hasArea(srcImage) else {
     fputs("iconmaker: cannot read \(inputPath)\n", stderr)
     exit(1)
 }

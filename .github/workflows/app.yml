@@ -95,6 +95,7 @@ jobs:
         run: |
           make -s sigcheck
           make -s webpatch-fixtures
+          make -s peicon-fixtures
           make -s panel-behavior
           make -s spawn-env
           make -s compatcheck

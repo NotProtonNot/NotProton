@@ -345,7 +345,7 @@ struct LicenseFreshnessTests {
             steamRunning: false,
             updateBlocked: false,
             crossOver: install.map { [$0] } ?? [],
-            crossOverLicense: license,
+            crossOverLicense: install.flatMap { i in license.map { [i.id: $0] } } ?? [:],
             runner: .none,
             payload: PayloadInspector.inspect(bridge: bridge)
         )
@@ -375,7 +375,7 @@ struct LicenseFreshnessTests {
 
         #expect(!fresh.licensed, "the cached verdict was handed back instead of a new one")
         #expect(
-            status.snapshot?.crossOverLicense?.licensed == false,
+            status.snapshot?.crossOverLicense[install.id]?.licensed == false,
             "the dialog would still report the verdict the check replaced"
         )
     }

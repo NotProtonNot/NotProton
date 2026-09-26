@@ -406,7 +406,7 @@ struct StatusView: View {
                     StatusRow(
                         title: install.name,
                         value: "Build \(build.displayVersion)",
-                        tone: snapshot.crossOverLicense?.licensed == true ? .ok : .warning,
+                        tone: snapshot.crossOverLicense[install.id]?.licensed == true ? .ok : .warning,
                         detail: install.bundle.path(percentEncoded: false),
                         action: installs.count > 1
                             ? setUpAction(for: install, build: build, snapshot: snapshot)
@@ -515,7 +515,7 @@ struct StatusView: View {
                 value: "Not set up.",
                 tone: .neutral,
                 // Each copy of CrossOver above has its own button when there are several.
-                action: status.usableCrossOvers.count > 1 ? nil : runnerAction()
+                action: status.crossOverRowsOfferSetUp ? nil : runnerAction()
             )
         case .cloned(let build, let supported):
             let satisfied = supported && !patchedMissing

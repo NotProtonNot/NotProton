@@ -44,13 +44,10 @@ static size_t          g_cache_len;
 static long            g_cache_mtime;
 static long long       g_cache_size;
 
-static int runtime_ready(void) {
-    static int checked;
-    static int ok;
+static pthread_once_t g_runtime_once = PTHREAD_ONCE_INIT;
+static int            g_runtime_ok;
 
-    if (checked) return ok;
-    checked = 1;
-
+static void runtime_init(void) {
     np_get_class = (void *(*)(const char *))dlsym(RTLD_DEFAULT, "objc_getClass");
     np_sel       = (void *(*)(const char *))dlsym(RTLD_DEFAULT, "sel_registerName");
     g_msg_send   = dlsym(RTLD_DEFAULT, "objc_msgSend");
@@ -61,10 +58,14 @@ static int runtime_ready(void) {
     void **rgb = (void **)dlsym(RTLD_DEFAULT, "NSDeviceRGBColorSpace");
     if (rgb) g_device_rgb = *rgb;
 
-    ok = np_get_class && np_sel && g_msg_send && np_release &&
-         np_pool_push && np_pool_pop && g_device_rgb;
-    if (!ok) NP_WARN("icon: AppKit runtime unavailable, leaving icons to Steam");
-    return ok;
+    g_runtime_ok = np_get_class && np_sel && g_msg_send && np_release &&
+                   np_pool_push && np_pool_pop && g_device_rgb;
+    if (!g_runtime_ok) NP_WARN("icon: AppKit runtime unavailable, leaving icons to Steam");
+}
+
+static int runtime_ready(void) {
+    pthread_once(&g_runtime_once, runtime_init);
+    return g_runtime_ok;
 }
 
 static void *ico_copy_for_path(const char *path, size_t *out_len) {
