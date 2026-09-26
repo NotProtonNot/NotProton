@@ -82,7 +82,7 @@ enum RunnerStore {
             .sorted()
     }
 
-    // The build runners/current names, without checking that it is usable.
+    // The build that runners/current names, without checking that it is usable.
     static func currentBuild(runners: URL = SupportPaths.runners) -> String? {
         let current = runners.appending(path: "current").path(percentEncoded: false)
         return (try? FileManager.default.destinationOfSymbolicLink(atPath: current))
