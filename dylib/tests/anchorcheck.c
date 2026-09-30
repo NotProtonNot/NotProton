@@ -330,7 +330,7 @@ static int report_db(const dbcheck_t *db, int is_live) {
         else if (!r->anchor)                   { verdict = (r->has_pattern && r->aob)
                                                              ? "ANCHOR FAILED (aob resolves)"
                                                              : "ANCHOR FAILED";
-                                                 if (is_live) bad++; }
+                                                 bad++; }
         else if (!is_live)                     { verdict = (r->has_pattern && r->aob && r->aob != r->anchor)
                                                              ? "stale pattern hit elsewhere"
                                                              : "resolved";           }

@@ -291,23 +291,48 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   stage_step="prefix arch check"
   refuse_foreign_prefix
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
+  setup_marker="$WINEPREFIX/.notproton_setup_v1"
+  retina_marker="$WINEPREFIX/.notproton_retina"
+  current_retina="${NOTPROTON_RETINA:-0}"
+
   "$WINESERVER" -k >> "$log" 2>&1 || true
-  stage_step="profile layout"
-  lay_out_proton_profile
-  "$WINELOADER" wineboot --init >> "$log" 2>&1 || true
-  "$WINELOADER" reg add 'HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug' /v Auto /t REG_SZ /d 0 /f >> "$log" 2>&1 || true
-  "$WINELOADER" reg add 'HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug' /v Auto /t REG_SZ /d 0 /f >> "$log" 2>&1 || true
-  "$WINELOADER" reg add 'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f >> "$log" 2>&1 || true
+  if [ ! -f "$setup_marker" ]; then
+    echo "=== first-time prefix initialization ===" >> "$log" 2>&1 || true
+    stage_step="profile layout"
+    lay_out_proton_profile
+    init_ok=1
+    "$WINELOADER" wineboot --init >> "$log" 2>&1 || init_ok=0
+    "$WINELOADER" reg add 'HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug' /v Auto /t REG_SZ /d 0 /f >> "$log" 2>&1 || init_ok=0
+    "$WINELOADER" reg add 'HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug' /v Auto /t REG_SZ /d 0 /f >> "$log" 2>&1 || init_ok=0
+    "$WINELOADER" reg add 'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f >> "$log" 2>&1 || init_ok=0
 
-  echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
-  if [ "$NOTPROTON_RETINA" = "1" ]; then
-    "$WINELOADER" reg add 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /t REG_SZ /d y /f >> "$log" 2>&1 || true
+    echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
+    if [ "$NOTPROTON_RETINA" = "1" ]; then
+      "$WINELOADER" reg add 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /t REG_SZ /d y /f >> "$log" 2>&1 || init_ok=0
+    else
+      "$WINELOADER" reg delete 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /f >> "$log" 2>&1 || true
+    fi
+    printf '%s' "$current_retina" > "$retina_marker" 2>/dev/null || true
+
+    "$WINELOADER" reg add 'HKLM\Software\Classes\steam' /v 'URL Protocol' /t REG_SZ /d '' /f >> "$log" 2>&1 || init_ok=0
+    "$WINELOADER" reg add 'HKLM\Software\Classes\steam\shell\open\command' /ve /t REG_SZ /d '"C:\Program Files (x86)\Steam\steam.exe" "%1"' /f >> "$log" 2>&1 || init_ok=0
+    if [ "$init_ok" = 1 ]; then
+      : > "$setup_marker" 2>/dev/null || true
+    else
+      echo "=== prefix initialization failed, will retry on next launch ===" >> "$log" 2>&1 || true
+    fi
   else
-    "$WINELOADER" reg delete 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /f >> "$log" 2>&1 || true
+    echo "=== fast prefix reuse (skipped wineboot and static reg add) ===" >> "$log" 2>&1 || true
+    if [ ! -f "$retina_marker" ] || [ "$(cat "$retina_marker" 2>/dev/null)" != "$current_retina" ]; then
+      echo "video: RetinaMode updating to ${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
+      if [ "$NOTPROTON_RETINA" = "1" ]; then
+        "$WINELOADER" reg add 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /t REG_SZ /d y /f >> "$log" 2>&1 || true
+      else
+        "$WINELOADER" reg delete 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /f >> "$log" 2>&1 || true
+      fi
+      printf '%s' "$current_retina" > "$retina_marker" 2>/dev/null || true
+    fi
   fi
-
-  "$WINELOADER" reg add 'HKLM\Software\Classes\steam' /v 'URL Protocol' /t REG_SZ /d '' /f >> "$log" 2>&1 || true
-  "$WINELOADER" reg add 'HKLM\Software\Classes\steam\shell\open\command' /ve /t REG_SZ /d '"C:\Program Files (x86)\Steam\steam.exe" "%1"' /f >> "$log" 2>&1 || true
 fi
 
 bridge_src="$HOME/Library/Application Support/notproton/bridge"
@@ -392,8 +417,11 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
       echo "=== bridge missing $f ===" >> "$log" 2>&1 || true
       continue
     fi
-    cp -f "$src" "$prefix_steam/$f" || \
-      echo "=== failed to stage $f ===" >> "$log" 2>&1
+    dst="$prefix_steam/$f"
+    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+      cp -f "$src" "$dst" || \
+        echo "=== failed to stage $f ===" >> "$log" 2>&1
+    fi
   done
   for f in "$prefix_steam"/*.dll "$prefix_steam"/*.so "$prefix_steam"/*.exe; do
     [ -f "$f" ] || continue
@@ -468,13 +496,12 @@ game_name_xml=$(printf '%s' "$game_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g
 loader_root="$HOME/Library/Application Support/notproton/launchers/$app_id"
 mkdir -p "$loader_root"
 loader_app="$loader_root/$bundle_name.app"
-rm -rf "$loader_root"/*.app
 loader_contents="$loader_app/Contents"
 loader_macos="$loader_contents/MacOS"
 loader_res="$loader_contents/Resources"
-mkdir -p "$loader_macos" "$loader_res"
 
 icon_arg=""
+icon_cache="$loader_root/game.icns"
 resolve_icon() {
   set +e
   iconmaker="$HOME/Library/Application Support/notproton/iconmaker"
@@ -483,23 +510,26 @@ resolve_icon() {
   if [ -n "$meta_clienticon" ]; then
     ico="$loader_root/clienticon-$meta_clienticon.ico"
     absent="$loader_root/clienticon-$meta_clienticon.absent"
-    find "$loader_root" -maxdepth 1 -name 'clienticon-*'   ! -name "clienticon-$meta_clienticon.*" -delete 2>/dev/null || true
+    find "$loader_root" -maxdepth 1 -name 'clienticon-*' ! -name "clienticon-$meta_clienticon.*" -delete 2>/dev/null || true
     find "$absent" -mtime +14 -delete 2>/dev/null || true
     if [ ! -s "$ico" ] && [ ! -f "$absent" ]; then
       url="https://shared.fastly.steamstatic.com/community_assets/images/apps/$app_id/$meta_clienticon.ico"
-      code=$(curl -fsL --connect-timeout 5 --max-time 20 -w '%{http_code}' -o "$ico.new" "$url" 2>>"$log")
+      code=$(curl -sL --connect-timeout 3 --max-time 8 -w '%{http_code}' -o "$ico.new" "$url" 2>>"$log" || echo "none")
       magic=$(od -An -tx1 -N4 "$ico.new" 2>/dev/null | tr -d ' \n')
       if [ "$magic" = "00000100" ]; then
         mv -f "$ico.new" "$ico"
         echo "fetched client icon $meta_clienticon" >> "$log" 2>&1 || true
       else
         rm -f "$ico.new"
-        if [ "$code" = "404" ]; then
-          : > "$absent"
-          echo "no client icon published for $meta_clienticon" >> "$log" 2>&1 || true
-        else
-          echo "client icon fetch for $meta_clienticon failed (http ${code:-none}), will retry" >> "$log" 2>&1 || true
-        fi
+        case "$code" in
+          *404*)
+            : > "$absent"
+            echo "no client icon published for $meta_clienticon" >> "$log" 2>&1 || true
+            ;;
+          *)
+            echo "client icon fetch for $meta_clienticon skipped or timed out, will retry" >> "$log" 2>&1 || true
+            ;;
+        esac
       fi
     fi
     [ -s "$ico" ] && art="$ico"
@@ -508,7 +538,7 @@ resolve_icon() {
     art="$art_dir/$meta_icon.jpg"
   fi
   if [ -z "$art" ]; then
-    art=$(find "$art_dir" -maxdepth 1 -type f -name '*.jpg' 2>/dev/null |   grep -E '/[0-9a-f]{40}\.jpg$' | head -1)
+    art=$(find "$art_dir" -maxdepth 1 -type f -name '*.jpg' 2>/dev/null | grep -E '/[0-9a-f]{40}\.jpg$' | head -1)
   fi
   # Capsule art (horrible) fallback if no icon at all exists...
   if [ -z "$art" ]; then
@@ -528,12 +558,11 @@ resolve_icon() {
   if [ -n "$art" ]; then
     icon_source="$art $(stat -f %m "$art" 2>/dev/null || echo 0)"
   fi
-  icon_cache="$loader_root/game.icns"
-  if [ -n "$art" ] && [ -s "$icon_cache" ] &&   [ "$(cat "$loader_root/notproton-icon.source" 2>/dev/null)" =   "$icon_source" ] && cp -f "$icon_cache" "$loader_res/game.icns"; then
+  if [ -n "$art" ] && [ -s "$icon_cache" ] && [ "$(cat "$loader_root/notproton-icon.source" 2>/dev/null)" = "$icon_source" ]; then
     icon_arg="  <key>CFBundleIconFile</key><string>game</string>"
     echo "icon reused from $art" >> "$log" 2>&1 || true
   elif [ -n "$art" ] && [ -x "$iconmaker" ]; then
-    if "$iconmaker" "$art" "$icon_cache" >> "$log" 2>&1 &&   cp -f "$icon_cache" "$loader_res/game.icns"; then
+    if "$iconmaker" "$art" "$icon_cache" >> "$log" 2>&1; then
       icon_arg="  <key>CFBundleIconFile</key><string>game</string>"
       printf '%s\n' "$icon_source" > "$loader_root/notproton-icon.source"
       echo "icon built from $art" >> "$log" 2>&1 || true
@@ -555,6 +584,33 @@ if [ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
   uielement_arg="  <key>LSUIElement</key><true/>"
   echo "launcher tile hidden by NOTPROTON_HIDE_LAUNCHER_TILE" >> "$log" 2>&1 || true
 fi
+
+# Bump when the Info.plist or launcher templates below change
+bundle_template_ver=1
+bundle_needs_build=0
+if [ ! -d "$loader_app" ] || [ ! -x "$loader_macos/launcher" ] || [ ! -f "$loader_contents/Info.plist" ] || [ ! -e "$loader_macos/wine" ]; then
+  bundle_needs_build=1
+elif [ ! -f "$loader_root/.notproton-bundle-ver" ] || [ "$(cat "$loader_root/.notproton-bundle-ver" 2>/dev/null)" != "$bundle_template_ver" ]; then
+  bundle_needs_build=1
+elif ! cmp -s "$WINELOADER" "$loader_macos/wine" 2>/dev/null; then
+  bundle_needs_build=1
+else
+  plist_has_icon=$(grep -q '<key>CFBundleIconFile</key>' "$loader_contents/Info.plist" 2>/dev/null && echo 1 || echo 0)
+  want_icon=$([ -n "$icon_arg" ] && echo 1 || echo 0)
+  plist_has_ui=$(grep -q '<key>LSUIElement</key>' "$loader_contents/Info.plist" 2>/dev/null && echo 1 || echo 0)
+  want_ui=$([ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ] && echo 1 || echo 0)
+  if [ "$plist_has_icon" != "$want_icon" ] || [ "$plist_has_ui" != "$want_ui" ]; then
+    bundle_needs_build=1
+  fi
+fi
+
+needs_lsregister="$bundle_needs_build"
+if [ "$bundle_needs_build" = 1 ]; then
+  rm -rf "$loader_root"/*.app
+  mkdir -p "$loader_macos" "$loader_res"
+  printf '%s\n' "$bundle_template_ver" > "$loader_root/.notproton-bundle-ver" 2>/dev/null || true
+  [ -s "$icon_cache" ] && cp -f "$icon_cache" "$loader_res/game.icns" 2>/dev/null || true
+# Bump bundle_template_ver above when modifying this template
 cat > "$loader_contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -592,6 +648,7 @@ else
   echo "loader staging failed, game mode unavailable" >> "$log" 2>&1 || true
 fi
 
+# Bump bundle_template_ver above when modifying this template
 cat > "$loader_macos/launcher" <<LAUNCHER
 #!/bin/sh
 export WINELOADER="$WINELOADER"
@@ -611,6 +668,22 @@ fi
 exit \$?
 LAUNCHER
 chmod +x "$loader_macos/launcher"
+else
+  WINELOADER="$loader_macos/wine"
+  echo "reusing existing staged bundle (skipped rebuild and lsregister)" >> "$log" 2>&1 || true
+  for f in "$wine_unix"/*; do
+    [ -e "$f" ] || continue
+    base=${f##*/}
+    case "$base" in
+      wine|wine.app) continue ;;
+    esac
+    ln -sfn "$f" "$loader_macos/$base" 2>/dev/null || true
+  done
+  if [ -s "$icon_cache" ] && ! cmp -s "$icon_cache" "$loader_res/game.icns" 2>/dev/null; then
+    cp -f "$icon_cache" "$loader_res/game.icns" 2>/dev/null || true
+    needs_lsregister=1
+  fi
+fi
 
 wine_helpers='winedevice\.exe|services\.exe|plugplay\.exe|svchost\.exe'
 wine_helpers="$wine_helpers|rpcss\.exe|explorer\.exe|steam\.exe"
@@ -704,9 +777,11 @@ set -- \
   --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
   --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
-lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
-lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
-[ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+if [ "$needs_lsregister" = 1 ]; then
+  lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
+  lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
+  [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+fi
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
 open_pid=$!
 status=0
