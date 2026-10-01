@@ -336,7 +336,7 @@ migrate_user_paths() {
 }
 
 lay_out_proton_profile() {
-  users="$WINEPREFIX/drive_c/users"
+  users="${1:-$WINEPREFIX}/drive_c/users"
   if [ -d "$users/crossover" ] && [ ! -L "$users/crossover" ]; then
     echo "=== prefix predates the steamuser layout, rebuild it for cloud saves ===" \
       >> "$log" 2>&1 || true
@@ -402,6 +402,90 @@ if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
 
+# A fresh prefix is close to a gigabyte of files that wineboot copies out of the
+# runner, and every game gets its own. Build one template per runner instead and seed
+# each game from it. Within a single APFS volume "cp -c" clones, so the files share
+# blocks and every prefix after the first costs almost nothing, as well as skipping
+# the wineboot that building one needs. Seeding this way is safe because a wine prefix
+# does not care where it lives: dosdevices holds "c: -> ../drive_c" and "z: -> /",
+# which both survive the move, and the template is built through the same steps in the
+# same order a game's prefix takes.
+template_root="$np_support/templates"
+# Keyed by the build this compatibility tool runs and by the unix arch. A build can be
+# installed alongside others, and one runner serves both flavors, which populate a
+# prefix from different PE sets, so both belong in the key.
+runner_id=""
+if [ -n "$np_build" ]; then
+  runner_id="crossover-$np_build-${wine_unix##*/}"
+fi
+template="$template_root/$runner_id/pfx"
+
+# A clone only shares blocks inside one volume, and a library can sit on a disk of its
+# own, so the template belongs beside the prefixes it seeds. compatdata is where those
+# prefixes already live, so it is always the right volume. The support directory stays
+# as the fallback for a run with no library path to derive one from.
+pick_template_dir() {
+  if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
+    template_root="$(dirname "$STEAM_COMPAT_DATA_PATH")/notproton-template"
+  fi
+  template="$template_root/$runner_id/pfx"
+}
+
+same_volume() {
+  one=$(stat -f %d "$1" 2>/dev/null) || return 1
+  two=$(stat -f %d "$2" 2>/dev/null) || return 1
+  [ "$one" = "$two" ]
+}
+
+# Built under a temporary name and moved into place, so a second game starting
+# while this runs sees either no template or a finished one, never a partial tree.
+build_prefix_template() {
+  staging="$template_root/$runner_id/pfx.building.$$"
+  rm -rf "$staging" 2>/dev/null || true
+  mkdir -p "$staging" || return 1
+  echo "=== building the prefix template for $runner_id ===" >> "$log" 2>&1 || true
+  # Through the same steps a game's prefix takes, in the same order. A bare wineboot
+  # leaves a real users/crossover directory behind, which lay_out_proton_profile
+  # refuses to convert, so a prefix seeded from such a template would lose the
+  # steamuser layout that cloud saves are written through.
+  lay_out_proton_profile "$staging"
+  WINEPREFIX="$staging" "$WINELOADER" wineboot --init >> "$log" 2>&1 || true
+  WINEPREFIX="$staging" "$WINESERVER" -w >> "$log" 2>&1 || true
+  if [ ! -f "$staging/system.reg" ]; then
+    echo "=== wineboot produced no template, this game gets its own prefix ===" \
+      >> "$log" 2>&1 || true
+    rm -rf "$staging" 2>/dev/null || true
+    return 1
+  fi
+  if [ -f "$template/system.reg" ]; then
+    rm -rf "$staging" 2>/dev/null || true
+  else
+    mv "$staging" "$template" 2>/dev/null || rm -rf "$staging" 2>/dev/null || true
+  fi
+  [ -f "$template/system.reg" ]
+}
+
+seed_prefix_from_template() {
+  if [ -z "$runner_id" ] || [ -f "$WINEPREFIX/system.reg" ]; then
+    return 0
+  fi
+  pick_template_dir
+  if [ ! -f "$template/system.reg" ] && ! build_prefix_template; then
+    return 0
+  fi
+
+  if same_volume "$template" "$WINEPREFIX" \
+    && cp -c -R "$template/." "$WINEPREFIX/" 2>/dev/null; then
+    echo "=== cloned this prefix from the $runner_id template ===" >> "$log" 2>&1 || true
+  elif cp -R "$template/." "$WINEPREFIX/" 2>/dev/null; then
+    echo "=== copied this prefix from the $runner_id template, not a clone ===" \
+      >> "$log" 2>&1 || true
+  else
+    echo "=== could not seed from the template, it will be built from scratch ===" \
+      >> "$log" 2>&1 || true
+  fi
+}
+
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
   mkdir -p "$WINEPREFIX"
@@ -422,6 +506,8 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   claim_prefix
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
   "$WINESERVER" -k >> "$log" 2>&1 || true
+  stage_step="prefix seed"
+  seed_prefix_from_template
   stage_step="profile layout"
   lay_out_proton_profile
   echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
