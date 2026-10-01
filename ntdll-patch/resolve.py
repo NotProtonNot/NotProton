@@ -285,13 +285,16 @@ def resolve_i386(pe):
         raise SystemExit(f"{pe.path}: no MODREF flag test in build_module")
     wm = re.search(r'\[(e\w\w) \+ 0x37\]', body[anchor].op_str).group(1)
 
-    # The module flags are tested for bit 2 just above. Either the value is still in memory
-    # or the compiler loaded it first, in which case that load starts the hook.
+    # The gate is build_module's "do not resolve references" test, just above. wine
+    # renamed the constant between 11.0 and 11.15 and the value changed with it:
+    # DONT_RESOLVE_DLL_REFERENCES is 0x1, LDR_DONT_RESOLVE_REFS is 0x2. Same test,
+    # so both are accepted. Either the value is still in memory or the compiler
+    # loaded it first, in which case that load starts the hook.
     gate = None
     for k in range(anchor - 1, max(anchor - 24, 0), -1):
         i = body[k]
         if i.mnemonic == 'test' and i.operands and i.operands[-1].type == X86.X86_OP_IMM \
-                and i.operands[-1].imm == 2:
+                and i.operands[-1].imm in (1, 2):
             gate = k
             break
     if gate is None:
