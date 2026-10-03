@@ -3,6 +3,7 @@
 // not modified, to keep the Steam bootstrap happy.
 
 #include "../feats/webpatch.h"
+#include "../feats/compat.h"
 #include "../feats/compatsvc.h"
 #include "../util/file.h"
 #include "../util/log.h"
@@ -112,6 +113,10 @@ static int open_patched(const char *path) {
 
     size_t patched_len = 0;
     const char *shape = NULL;
+    char fex[1024];
+    if (np_compat_fex_tools_js(fex, sizeof(fex)) != 0)
+        snprintf(fex, sizeof(fex), "[]");
+    np_webpatch_set_fex_tools(fex);
     char *patched = np_webpatch_transform((const uint8_t *)raw, raw_len, &patched_len,
                                           &shape);
     free(raw);
@@ -130,7 +135,7 @@ static int open_patched(const char *path) {
     if (fd < 0)
         return -1;
 
-    NP_LOG_FIRST("webpatch: served patched compat chunk (%s)", path);
+    NP_LOG_FIRST("webpatch: served patched compat chunk (%s, FEX tools %s)", path, fex);
     return fd;
 }
 
