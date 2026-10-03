@@ -40,7 +40,7 @@ struct ToggleAgreementTests {
         #expect(names.count >= 8, "found \(names.count) toggles, the parse looks wrong")
 
         #expect(
-            webpatch.contains(#"v.push(\"%command%\")"#),
+            webpatch.contains(#"rest=\"%command%\""#),
             "webpatch.c no longer writes %command%, so the toggles would reach the game as arguments"
         )
 

@@ -9,7 +9,8 @@ let failed = 0;
 for (const form of Object.keys(FORMS)) {
   const { render: P, written } = panel(emit, form);
   const t = runner(form);
-  const nodes = opts => walk(P({ details: details(opts) }));
+  // Only assignments ahead of %command% are environment variables.
+  const nodes = opts => walk(P({ details: details(opts + ' %command%') }));
   const toggles = ns => ns.filter(x => x.type === 'Toggle').map(x => x.props.label);
   const sections = ns => ns.filter(x => x.type === 'Section').map(x => x.props.label.split(' ')[0]);
   const last = () => (written.length ? written[written.length - 1].opts : '');

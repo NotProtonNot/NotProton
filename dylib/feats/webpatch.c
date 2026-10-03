@@ -104,7 +104,28 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     return 1;
 }
 
-// CrossOver options panel. Not in great shape, but it'll do
+// Keep the original token spans when editing launch options. Decoding quotes is
+// only for matching assignments, never for executing or rewriting game arguments.
+// Removed assignments take their following whitespace so repeated edits do not
+// accumulate separators. hook_launch.c runs the options through a shell, so only
+// assignments before %command% are environment variables. Without %command%, Steam
+// passes everything to the game, but leading assignments are still edited because
+// earlier versions of this panel wrote them there. Shell operators, comments and
+// unquoted line breaks would change what the shell runs, so they disable editing.
+#define NP_CX_OPTION_TOKENS \
+    "a=(()=>{const a=[];let i=0;while(i<o.length){" \
+    "if(o[i]===\"\\n\")return null;if(/\\s/.test(o[i])){i++;continue}" \
+    "const start=i;let v=\"\",q=0;" \
+    "while(i<o.length){const c=o.charCodeAt(i);if(!q&&/\\s/.test(o[i]))break;" \
+    "if(c===q){q=0;i++;continue}" \
+    "if(!q&&(c===34||c===39)){q=c;i++;continue}" \
+    "if(c===92&&q!==39){if(i+1===o.length)return null;" \
+    "const n=o.charCodeAt(i+1);if(!q||n===34||n===92||n===36||n===96||n===10){" \
+    "if(n!==10)v+=o[i+1];i+=2;continue}}" \
+    "if(!q&&(/[;&|<>()`]/.test(o[i])||i===start&&o[i]===\"#\"))return null;v+=o[i++]}" \
+    "if(q)return null;a.push({start,end:i,value:v})}return a})(),"
+
+// CrossOver options panel.
 #define NP_CX_OPTIONS_CSS \
     "\".MSCXPanel{margin-top:10px}" \
     ".MSCXPanel .MSCXRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
@@ -115,15 +136,23 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
-    "g=k=>{const p=o.split(\" \").find(x=>x.indexOf(k+\"=\")===0);return p?p.slice(k.length+1):\"\"}," \
-    "s=ps=>{const a=o.split(\" \").filter(x=>x&&!ps.some(p=>x.indexOf(p[0]+\"=\")===0))," \
-    "v=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+p[1]);" \
-    "if(v.length&&a.indexOf(\"%command%\")<0)v.push(\"%command%\");" \
-    "const r=v.concat(a);" \
-    "SteamClient.Apps.SetAppLaunchOptions(t.unAppID," \
-    "1===r.length&&\"%command%\"===r[0]?\"\":r.join(\" \"))}," \
+    NP_CX_OPTION_TOKENS \
+    "cut=a?a.findIndex(x=>x.value===\"%command%\"):-1," \
+    "lead=a?a.findIndex(x=>!/^[A-Za-z_]\\w*=/.test(o.slice(x.start,x.end))):-1," \
+    "env=a&&(cut<0?[]:a.slice(0,cut))," \
+    "ed=a&&(cut<0?a.slice(0,lead<0?a.length:lead):env)," \
+    "g=k=>{const p=(env||[]).filter(x=>o.startsWith(k+\"=\",x.start)).pop();" \
+    "return p?p.value.slice(k.length+1):\"\"}," \
+    "s=ps=>{if(!a)return;let rest=\"\",end=0;" \
+    "ed.forEach(x=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",x.start))){" \
+    "rest+=o.slice(end,x.start);end=x.end;" \
+    "while(end<o.length&&/\\s/.test(o[end]))end++}});rest=end<o.length?rest+o.slice(end):rest.trimEnd();" \
+    "const added=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+p[1]).join(\" \");" \
+    "if(added&&cut<0)rest=\"%command%\"+(rest?\" \"+rest:\"\");" \
+    "const r=added?added+(rest?\" \"+rest:\"\"):rest;" \
+    "SteamClient.Apps.SetAppLaunchOptions(t.unAppID,r.trim()===\"%command%\"?\"\":r)}," \
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
-    "checked:g(ks[0])===on," \
+    "checked:g(ks[0])===on,disabled:!a," \
     "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
     "b=g(\"CX_GRAPHICS_BACKEND\")," \
     "dm=\"\"===b||\"d3dmetal\"===b," \
@@ -145,8 +174,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"MSCXPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
     "(0," RT ".jsx)(\"style\",{children:" NP_CX_OPTIONS_CSS "})," \
+    "!a&&(0," RT ".jsx)(\"div\",{role:\"status\",children:" \
+    "\"To edit CrossOver settings here, close any open quotes or escapes in Launch Options " \
+    "and remove shell operators (; & | < > ( ) ` #) and line breaks.\"})," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:\"Graphics\",children:[" \
-    "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
+    "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b,disabled:!a," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",v.data]]" \
     ".concat(\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]])" \
     ".concat(\"\"===v.data||\"dxmt\"===v.data?[]:" \
@@ -161,7 +193,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
-    "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \
+    "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U,disabled:!a," \
     "selectedOption:sw?(0===cf.indexOf(F)?cf.slice(F.length):\"2.0\"):\"\"," \
     "onChange:v=>s(v.data?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"1\"],[\"DXMT_CONFIG\",F+v.data]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",\"\"]])})},\"usf\")" \
