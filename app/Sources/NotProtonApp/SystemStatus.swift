@@ -274,7 +274,11 @@ final class SystemStatus {
         }
 
         await refresh()
-        if let row = CrossOverRow.listing(CrossOverSource.inspect(bundle: picked), in: crossOverRows) {
+        // Only the very same bundle is "already listed". Another copy of a build
+        // that is listed is a different source, and picking it by hand is how it
+        // becomes the one the runner is made from.
+        if let row = CrossOverRow.listing(CrossOverSource.inspect(bundle: picked), in: crossOverRows),
+           let listed = row.install, CrossOverSource.same(listed.bundle, picked) {
             AppLog.note("crossOver already listed: \(picked.path(percentEncoded: false))")
             highlight(row)
             return

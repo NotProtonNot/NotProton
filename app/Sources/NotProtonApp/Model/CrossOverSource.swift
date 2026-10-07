@@ -94,7 +94,8 @@ enum CrossOverSource {
         for root in searchRoots {
             let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
             for entry in entries where entry.pathExtension == "app" {
-                guard entry.deletingPathExtension().lastPathComponent.hasPrefix("CrossOver") else { continue }
+                // Recognised by what it carries, not by its name: copies made by
+                // other tools are called whatever those tools call them.
                 consider(entry, isManual: false)
             }
         }
