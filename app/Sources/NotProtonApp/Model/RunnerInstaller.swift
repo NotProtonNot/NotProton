@@ -30,6 +30,9 @@ enum RunnerInstaller {
                 .appending(path: ".\(target.lastPathComponent).new")
             try? fm.removeItem(at: staging)
             try copyPayload(from: install.crossOverRoot, to: staging)
+            if let toolkit = install.toolkit {
+                try useToolkit(toolkit, in: staging.appending(path: "CrossOver"))
+            }
             if occupied {
                 try fm.removeItem(at: target)
             }
@@ -257,6 +260,18 @@ enum RunnerInstaller {
             )
         }
         scrubDownloadMarkers(at: landing)
+    }
+
+    // Copies `toolkit` over the apple_gptk beside it, in the runner's copy only.
+    static func useToolkit(_ toolkit: String, in root: URL) throws {
+        let chosen = root.appending(path: toolkit)
+        let active = chosen.deletingLastPathComponent().appending(path: "apple_gptk")
+        guard chosen.lastPathComponent != "apple_gptk" else { return }
+        try? FileManager.default.removeItem(at: active)
+        let copied = try Shell.run("/bin/cp", ["-c", "-R", chosen.path(percentEncoded: false), active.path(percentEncoded: false)])
+        guard copied.status == 0 else {
+            throw StepFailure(step: step, detail: "Could not use \(toolkit) in the runner. \(copied.stderr)")
+        }
     }
 
     static func scrubDownloadMarkers(at payload: URL) {

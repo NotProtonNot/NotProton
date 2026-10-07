@@ -60,3 +60,58 @@ struct RunnerVariantTests {
                 == NtdllPatcher.patches(for: pinned).map(\.arch))
     }
 }
+
+@Suite("One runner per toolkit")
+struct RunnerToolkitTests {
+
+    private func scratch() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appending(path: "toolkits-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    private func toolkit(_ root: URL, _ path: String, _ version: String) throws {
+        let dir = root.appending(path: path)
+        let resources = dir.appending(path: "external/D3DMetal.framework/Versions/A/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        (["CFBundleShortVersionString": version] as NSDictionary).write(to: resources.appending(path: "Info.plist"), atomically: true)
+        try Data(version.utf8).write(to: dir.appending(path: "version"))
+    }
+
+    @Test("Other toolkits are offered once per D3DMetal major apple_gptk lacks")
+    func otherToolkits() throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        try toolkit(root, "lib64/apple_gptk", "4.0b2")
+        try toolkit(root, "lib64/apple_gptk_3", "3.0")
+        try toolkit(root, "lib64/apple_gptk_3b", "3.1")
+        try toolkit(root, "lib64/apple_gptk_4", "4.0")
+        let found = RunnerVariant.otherToolkits(crossOverRoot: root)
+        #expect(found.map(\.path) == ["lib64/apple_gptk_3"])
+        #expect(found.map(\.major) == ["3"])
+    }
+
+    @Test("A CrossOver that picks its D3DMetal itself (lib/) gets no extra runners")
+    func ignoresLib() throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        try toolkit(root, "lib/apple_gptk", "4.0b2")
+        try toolkit(root, "lib/apple_gptk3", "3.0")
+        #expect(RunnerVariant.otherToolkits(crossOverRoot: root).isEmpty)
+    }
+
+    @Test("The chosen toolkit replaces apple_gptk in the runner's copy")
+    func usesToolkit() throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        try toolkit(root, "lib/apple_gptk", "4.0")
+        try toolkit(root, "lib/apple_gptk3", "3.0")
+        try RunnerInstaller.useToolkit("lib/apple_gptk3", in: root)
+        #expect(try String(contentsOf: root.appending(path: "lib/apple_gptk/version"), encoding: .utf8) == "3.0")
+        #expect(FileManager.default.fileExists(atPath: root.appending(path: "lib/apple_gptk3").path(percentEncoded: false)))
+    }
+
+    @Test("Toolkit variants resolve and are labelled with their D3DMetal")
+    func toolkitIDs() throws {
+        let pinned = SupportedRunners.all[0]
+        #expect(SupportedRunners.build(id: "\(pinned.id)-d3dm3")?.displayVersion.hasSuffix(" · D3DMetal 3") == true)
+        #expect(SupportedRunners.build(id: "\(pinned.id)-patched-d3dm3")?.displayVersion.hasSuffix(" · patched · D3DMetal 3") == true)
+    }
+}

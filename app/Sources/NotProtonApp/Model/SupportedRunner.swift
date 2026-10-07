@@ -76,7 +76,34 @@ enum RunnerVariant {
         suffix.wholeMatch(of: #/[a-z0-9]+(-[a-z0-9]+)?/#) != nil
     }
 
-    static func label(_ variant: String) -> String { variant }
+    static func label(_ variant: String) -> String {
+        variant.split(separator: "-")
+            .map { $0.hasPrefix("d3dm") ? "D3DMetal \($0.dropFirst(4))" : String($0) }
+            .joined(separator: " · ")
+    }
+
+    static func d3dmetalMajor(_ toolkit: URL) -> String? {
+        let plist = toolkit.appending(path: "external/D3DMetal.framework/Versions/A/Resources/Info.plist")
+        let version = NSDictionary(contentsOf: plist)?["CFBundleShortVersionString"] as? String
+        return version?.split(separator: ".").first.map(String.init)
+    }
+
+    // Toolkit directories beside lib64/apple_gptk (apple_gptk_3, apple_gptk_4, ...),
+    // one per D3DMetal major that apple_gptk does not already have. Only lib64,
+    // where CrossOver 26 keeps its toolkit: CrossOver 27 (lib/) already picks a
+    // D3DMetal per game with CX_GRAPHICS_BACKEND_VERSION.
+    static func otherToolkits(crossOverRoot root: URL) -> [(path: String, major: String)] {
+        let dir = root.appending(path: "lib64")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false))
+        else { return [] }
+        var seen = Set([d3dmetalMajor(dir.appending(path: "apple_gptk"))].compactMap { $0 })
+        var found: [(path: String, major: String)] = []
+        for name in names.sorted() where name.hasPrefix("apple_gptk") && name != "apple_gptk" {
+            guard let major = d3dmetalMajor(dir.appending(path: name)), seen.insert(major).inserted else { continue }
+            found.append(("lib64/\(name)", major))
+        }
+        return found
+    }
 }
 
 struct CompatTool: Sendable, Hashable, Identifiable {
