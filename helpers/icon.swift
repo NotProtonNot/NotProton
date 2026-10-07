@@ -233,8 +233,48 @@ func group(for element: Element) -> [String: Any] {
     ]
 }
 
+// A conventional iconset works with macOS 15's iconutil and does not require
+// the macOS 26 Icon Composer format or actool from a full Xcode installation.
+func writeIconset(to root: URL) throws {
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let context = makeContext(size: canvas)
+    let background = CGRect(x: 64, y: 64, width: 896, height: 896)
+    context.saveGState()
+    context.addPath(CGPath(
+        roundedRect: background, cornerWidth: 200, cornerHeight: 200, transform: nil))
+    context.clip()
+    let colors = [
+        CGColor(red: 0.25882, green: 0.25882, blue: 0.26667, alpha: 1),
+        CGColor(red: 0.12549, green: 0.12549, blue: 0.13333, alpha: 1),
+    ]
+    let gradient = CGGradient(
+        colorsSpace: space, colors: colors as CFArray, locations: [0, 1])!
+    context.drawLinearGradient(
+        gradient, start: CGPoint(x: 512, y: 960), end: CGPoint(x: 512, y: 64), options: [])
+    context.restoreGState()
+    let artwork = render(Element.allCases)
+    let symbol = normalized(artwork, sharedInk: inkBounds(artwork))
+    context.draw(symbol, in: CGRect(x: 112, y: 112, width: 800, height: 800))
+    let image = context.makeImage()!
+    for size in [16, 32, 128, 256, 512] {
+        for scale in [1, 2] {
+            let pixels = CGFloat(size * scale)
+            let resized = makeContext(size: pixels)
+            resized.draw(image, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
+            let suffix = scale == 2 ? "@2x" : ""
+            try write(resized.makeImage()!, to: root.appendingPathComponent(
+                "icon_\(size)x\(size)\(suffix).png"))
+        }
+    }
+}
+
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--iconset" {
+    try writeIconset(to: URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true))
+    exit(0)
+}
+
 guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write("usage: icon <output.icon>\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: icon <output.icon> | --iconset <output.iconset>\n".data(using: .utf8)!)
     exit(2)
 }
 

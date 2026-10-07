@@ -30,7 +30,12 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
 
     var id: String { flavor.map { "\(bundleVersion)-\($0)" } ?? bundleVersion }
 
-    var flavorName: String { flavor?.uppercased() ?? "Rosetta" }
+    var usesFEX: Bool { flavor == "fex" }
+    var usesBundledRosetta: Bool { flavor == "bundled-rosetta" }
+
+    var flavorName: String {
+        usesBundledRosetta ? "Rosetta (bundled)" : (flavor?.uppercased() ?? "Rosetta")
+    }
 
     var displayVersion: String { "\(releaseVersion) \(flavorName)" }
 }
@@ -94,10 +99,36 @@ enum SupportedRunners {
                 .aarch64Windows: "89e4c9e7f0a0a60462c0231ec393168f8bdb04bc8ea1dc22211f25bf3ff2c6b3",
             ]
         ),
+        // The 20261006 combined distribution also carries a working x86 Wine
+        // runtime. Its Windows ntdll files differ from the older Rosetta-only
+        // distribution, so it needs its own pinned patch profile and clone.
+        RunnerBuild(
+            bundleVersion: "27.0.0.41069",
+            releaseVersion: "20261006",
+            flavor: "bundled-rosetta",
+            loaderSHA256: "ef2b9a0ad185d8caa2960a97c135a75b8b85ca62425599e35cf672f787fba64c",
+            cleanNtdll: [
+                .x86_64Windows: "1b02dcf6ad9d9490870f1127a421c4c0d1471c65ec1574e1e84c05d69801ac7e",
+                .i386Windows: "66b1a244a611795c59a93a9491d17f36c98cd8db9be495004a37864e0e5ed4a5",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "3c5451e61d43e6ceef50e300b7a93786f8fee737a975b5b70c77d138e0f3d191",
+                .i386Windows: "e16b0199db721a08201b1512476b9eff255624d2faf3696fa57ff74b1a54be5c",
+            ]
+        ),
     ]
 
+    static func runtimeBuild(for source: RunnerBuild, fexAvailable: Bool) -> RunnerBuild {
+        guard source.usesFEX, !fexAvailable else { return source }
+        return all.first {
+            $0.usesBundledRosetta && $0.loaderSHA256 == source.loaderSHA256
+        } ?? source
+    }
+
     static func build(loaderSHA256 hash: String) -> RunnerBuild? {
-        all.first { $0.loaderSHA256 == hash }
+        // The loader identifies the source distribution, not the selected
+        // runtime. Resolve its default profile first, then use runtimeBuild.
+        all.first { !$0.usesBundledRosetta && $0.loaderSHA256 == hash }
     }
 
     static func build(id: String) -> RunnerBuild? {

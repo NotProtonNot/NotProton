@@ -217,7 +217,10 @@ struct FailureRemedyTests {
         let pane = try #require(Remedy.appManagement.settingsPane)
 
         #expect(pane.scheme == "x-apple.systempreferences")
-        #expect(pane.query == "Privacy_AppBundles")
+        // Foundation on macOS 15 treats this non-hierarchical URL as opaque,
+        // so URL.query is nil even though the settings deep link is valid.
+        let components = try #require(URLComponents(url: pane, resolvingAgainstBaseURL: false))
+        #expect(components.query == "Privacy_AppBundles")
     }
 }
 

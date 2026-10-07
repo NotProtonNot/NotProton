@@ -14,6 +14,29 @@ env:
   DOBBY_COMMIT: "5dfc8546954ce3b3198132ab13fddb89ee92cdd7"
 
 jobs:
+  macos-15:
+    name: macOS 15 / Swift 6.1 compatibility
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the macOS 15 toolchain
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          swift --version
+
+      # Compiles the entire app and test target with the older SDK; these tests
+      # do not need CrossOver, Steam, or the separately built bridge payload.
+      - name: Check the app deployment requirements
+        run: swift test --package-path app --no-parallel --filter 'DeploymentTargetTests|FailureRemedyTests|AppResourcesTests|RunnerRuntimeTests|ShellTests'
+
+      - name: Build the legacy app icon
+        run: make icon ARCH="$(uname -m)" ICON_COMPOSER=0
+
+      - name: Test deployment validation
+        run: make deploymentcheck-tests
+
   build:
     name: full app build
     runs-on: xcode-27

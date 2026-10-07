@@ -49,12 +49,16 @@ struct PrefixesView: View {
             }
         }
         .toolbar {
+            #if compiler(>=6.2)
             if #available(macOS 26.1, *) {
                 ToolbarItemGroup(placement: .primaryAction) { strip }
                     .visibilityPriority(.high)
             } else {
                 ToolbarItemGroup(placement: .primaryAction) { strip }
             }
+            #else
+            ToolbarItemGroup(placement: .primaryAction) { strip }
+            #endif
         }
         .task { if model.prefixes.isEmpty { await model.load() } }
         .confirmationDialog(

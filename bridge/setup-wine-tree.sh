@@ -35,6 +35,10 @@ HOST="${HOST:-x86_64-apple-darwin}"
 HOST_CPU="${HOST%%-*}"
 HOST_CC="${HOST_CC:-clang -arch x86_64}"
 HOST_CXX="${HOST_CXX:-clang++ -arch x86_64}"
+# Wine's Unix libraries must remain loadable on macOS 15 even when built with
+# a newer SDK. Configure and its generated makefiles inherit this target.
+MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-15.0}"
+export MACOSX_DEPLOYMENT_TARGET
 
 # The bison and autoconf macOS ships are too old for wine's configure.
 PATH="/opt/homebrew/bin:/opt/homebrew/opt/bison/bin:/opt/homebrew/opt/autoconf/bin:$PATH"

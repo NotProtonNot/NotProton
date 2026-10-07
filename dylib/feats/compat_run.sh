@@ -39,12 +39,14 @@ export CX_HOME="$HOME/Library/Application Support/CrossOver"
 wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
 WINELOADER="$wine_unix/wine.app/Contents/MacOS/wine"
 WINESERVER="$CX_ROOT/bin/wineserver-arm64"
-if [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" ]; then
+runtime_selection=$(cat "$CX_ROOT/.notproton-runtime" 2>/dev/null || true)
+if [ "$runtime_selection" = rosetta ] || [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" ]; then
   wine_unix="$CX_ROOT/lib/wine/x86_64-unix"
   WINELOADER="$wine_unix/wine"
   WINESERVER="$CX_ROOT/bin/wineserver"
   [ -x "$WINESERVER" ] || WINESERVER="$CX_ROOT/bin/wineserver-x86"
 fi
+[ "$runtime_selection" != rosetta ] || export WINEARCH=win64
 export WINELOADER WINESERVER
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix"
 export PATH="$CX_ROOT/bin:$PATH"
@@ -77,6 +79,18 @@ report_early_exit() {
     >> "$log" 2>&1 || true
 }
 trap report_early_exit EXIT
+
+# The FEX loader unconditionally calls a macOS 26-only page-size API. Using
+# the bundled x86 runtime requires an explicit selection and its own pinned
+# ntdll patch profile, rather than merely substituting a different loader.
+if [ "${wine_unix##*/}" = aarch64-unix ]; then
+  macos_version=$(/usr/bin/sw_vers -productVersion)
+  macos_major=${macos_version%%.*}
+  if [ "$macos_major" -lt 26 ]; then
+    echo "=== FEX requires macOS 26; use CrossOver Preview 20261006, set up its bundled Rosetta runtime in NotProton, and rebuild FEX prefixes with a backup ===" >> "$log" 2>&1 || true
+    exit 1
+  fi
+fi
 
 while :; do
   case "$STEAM_COMPAT_INSTALL_PATH" in
@@ -318,6 +332,12 @@ verify_runner() {
     return
   fi
   for arch in x86_64-windows i386-windows aarch64-windows; do
+    # Combined distributions contain both 64-bit runtimes. Ignore a staged
+    # patch left by the other mode instead of reporting the clean, unused DLL
+    # as broken when switching between FEX and bundled Rosetta.
+    case "${wine_unix##*/}:$arch" in
+      x86_64-unix:aarch64-windows|aarch64-unix:x86_64-windows) continue ;;
+    esac
     staged="$bridge_src/wine/$arch/ntdll.dll"
     live="$CX_ROOT/lib/wine/$arch/ntdll.dll"
     [ -f "$staged" ] || continue

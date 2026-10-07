@@ -44,6 +44,9 @@
 
 set -eu
 
+MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-15.0}
+export MACOSX_DEPLOYMENT_TARGET
+
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
 

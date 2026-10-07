@@ -86,7 +86,9 @@ enum CrossOverSource {
         return a.id < b.id
     }
 
-    static func inspect(bundle: URL, isManual: Bool = false) -> CrossOverInstall {
+    static func inspect(
+        bundle: URL, isManual: Bool = false, fexAvailable: Bool = RunnerRuntime.supportsFEX
+    ) -> CrossOverInstall {
         guard let version = releaseVersion(of: bundle) else {
             return CrossOverInstall(bundle: bundle, releaseVersion: nil, support: .unreadable, isManual: isManual)
         }
@@ -96,12 +98,13 @@ enum CrossOverSource {
             )
         }
 
-        guard let build = SupportedRunners.build(loaderSHA256: hash) else {
+        guard let sourceBuild = SupportedRunners.build(loaderSHA256: hash) else {
             return CrossOverInstall(
                 bundle: bundle, releaseVersion: version,
                 support: .unsupportedBuild(version), isManual: isManual
             )
         }
+        let build = SupportedRunners.runtimeBuild(for: sourceBuild, fexAvailable: fexAvailable)
 
         return CrossOverInstall(
             bundle: bundle, releaseVersion: version, support: .supported(build), isManual: isManual

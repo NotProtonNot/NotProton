@@ -34,6 +34,9 @@ enum RunnerSetup {
         report: @Sendable (Phase) -> Void = { _ in }
     ) throws -> Outcome {
         try CrossOverLicense.requireValid(for: install)
+        if case .supported(let build) = install.support {
+            try RunnerRuntime.requireSupported(usesFEX: build.usesFEX)
+        }
 
         report(.cloning)
         let build = try RunnerInstaller.clone(from: install, replacingExisting: replacingExisting)
@@ -47,6 +50,9 @@ enum RunnerSetup {
         runners: URL = SupportPaths.runners,
         bridge: URL = SupportPaths.bridge,
         license: (URL) -> CrossOverLicense.Status = { CrossOverLicense.check(crossOverRoot: $0) },
+        runtimeCheck: (RunnerBuild) throws -> Void = {
+            try RunnerRuntime.requireSupported(usesFEX: $0.usesFEX)
+        },
         verify: (RunnerBuild, URL) throws -> Void = RunnerInstaller.verifyClone,
         stage: (RunnerBuild, URL, URL) throws -> [WineArch] = {
             try NtdllPatcher.stage(build: $0, runnerRoot: $1, bridge: $2)
@@ -67,6 +73,7 @@ enum RunnerSetup {
         guard status.licensed else {
             throw StepFailure(step: "Verify CrossOver license", detail: status.detail)
         }
+        try runtimeCheck(build)
 
         let previous = RunnerStore.currentBuild(runners: runners)
             .flatMap(SupportedRunners.build(id:))

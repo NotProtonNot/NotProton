@@ -419,6 +419,9 @@ struct NtdllPatcherTests {
 
     private static func expectStagingReproducesBridge(build: RunnerBuild, root: URL) throws {
         let fm = FileManager.default
+        // Combined distributions share their i386 input between profiles, so
+        // matching clean inputs alone does not identify the active bridge.
+        let compareLiveBridge = RunnerStore.currentBuild() == build.id
 
         let scratch = URL(filePath: NSTemporaryDirectory()).appending(path: "notproton-stage-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: scratch) }
@@ -432,17 +435,15 @@ struct NtdllPatcherTests {
             let existing = SupportPaths.bridge.appending(path: relative)
 
             #expect(Digest.sha256IfPresent(staged) == build.patchedNtdll[patch.arch])
+            guard compareLiveBridge else { continue }
             guard let live = Digest.sha256IfPresent(existing) else { continue }
             #expect(Digest.sha256IfPresent(staged) == live)
             compared.append(patch.arch)
         }
 
-        // A staged bridge that matched nothing is a test that skipped. Asked per build rather
-        // than against a fixed arch, so a bridge of another flavor does not stand this down.
-        let bridgeHoldsThisBuild = build.patchedNtdll.keys.contains { arch in
-            Digest.sha256IfPresent(SupportPaths.bridge.appending(path: "wine/\(arch.rawValue)/ntdll.dll")) != nil
-        }
-        if bridgeHoldsThisBuild {
+        // Every active patch must be present; inactive profiles still had their
+        // staged output checked against their pins above, not another profile.
+        if compareLiveBridge {
             #expect(compared.count == build.patchedNtdll.count)
         }
     }

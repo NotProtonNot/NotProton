@@ -34,6 +34,7 @@ enum PrefixTools {
         environment["CX_HOME"] = SupportPaths.applicationSupport
             .appending(path: "CrossOver").path(percentEncoded: false)
         let wine = layout(runner: runner)
+        if RunnerRuntime.usesBundledRosetta(in: runner) { environment["WINEARCH"] = "win64" }
         environment["WINELOADER"] = wine.loader.path(percentEncoded: false)
         environment["WINESERVER"] = wine.server.path(percentEncoded: false)
         environment["WINEDLLPATH"] = "\(root)/lib/wine/x86_64-windows:"
@@ -64,7 +65,7 @@ enum PrefixTools {
         let arm = runner.appending(path: "lib/wine/aarch64-unix")
         let armLoader = arm.appending(path: "wine.app/Contents/MacOS/wine")
         let armServer = bin.appending(path: "wineserver-arm64")
-        if executable(armLoader), executable(armServer) {
+        if !RunnerRuntime.usesBundledRosetta(in: runner), executable(armLoader), executable(armServer) {
             return WineLayout(loader: armLoader, server: armServer, unixDir: arm)
         }
 
@@ -92,6 +93,8 @@ enum PrefixTools {
                 detail: "\(prefix.title) has no prefix at \(prefix.pfx.path(percentEncoded: false))."
             )
         }
+        try RunnerRuntime.requireSupported(
+            usesFEX: layout(runner: runner).unixDir.lastPathComponent == "aarch64-unix")
         return loader
     }
 
@@ -100,7 +103,8 @@ enum PrefixTools {
         try Shell.detach(
             loader.path(percentEncoded: false),
             [tool.rawValue],
-            environment: environment(prefix: prefix, runner: runner)
+            environment: environment(prefix: prefix, runner: runner),
+            log: prefix.root.appending(path: "notproton-tools.log")
         )
     }
 
@@ -126,7 +130,8 @@ enum PrefixTools {
             loader.path(percentEncoded: false),
             arguments,
             environment: environment(prefix: prefix, runner: runner),
-            currentDirectory: executable.deletingLastPathComponent()
+            currentDirectory: executable.deletingLastPathComponent(),
+            log: prefix.root.appending(path: "notproton-tools.log")
         )
     }
 

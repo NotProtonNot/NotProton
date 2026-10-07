@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.1
 import Foundation
 import PackageDescription
 let testsPath = "Tests/NotProtonAppTests"
@@ -14,7 +14,7 @@ let hasPayload = FileManager.default.fileExists(
     atPath: packageRoot.appendingPathComponent(payloadPath).path)
 let package = Package(
     name: "NotProtonApp",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
     ],
@@ -31,6 +31,7 @@ let package = Package(
                 .copy("Resources/detour32-fex.bin"),
                 .copy("Resources/detour64-fex.bin"),
                 .copy("Resources/detour2-41069.bin"),
+                .copy("Resources/detour2-bundled-41069.bin"),
                 .copy("Resources/detour32-41069.bin"),
                 .copy("Resources/detour32-fex-41069.bin"),
                 .copy("Resources/detour64-fex-41069.bin"),

@@ -18,6 +18,7 @@ enum RunnerPatcher {
     }
 
     static func unixArch(in root: URL) -> String {
+        if RunnerRuntime.usesBundledRosetta(in: root) { return "x86_64-unix" }
         let arches = unixLoaders(in: root).compactMap { loader in
             loader.pathComponents.last { $0.hasSuffix("-unix") }
         }
@@ -46,6 +47,9 @@ enum RunnerPatcher {
         build: RunnerBuild, root: URL, bridge: URL = SupportPaths.bridge
     ) -> [String] {
         var wrong: [String] = []
+        if build.usesBundledRosetta, !RunnerRuntime.usesBundledRosetta(in: root) {
+            wrong.append("Rosetta runtime selection is missing")
+        }
         for arch in WineArch.allCases {
             guard let expected = build.patchedNtdll[arch] else { continue }
             let live = root.appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll")

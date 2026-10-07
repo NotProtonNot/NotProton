@@ -152,22 +152,7 @@ enum NtdllPatcher {
             ),
         ],
         "27.0.0.41069-fex": [
-            NtdllPatch(
-                arch: .i386Windows,
-                payloadResource: "detour32-fex-41069",
-                payloadSHA256: "6ff6c7289e639c4caad85c2670bfa849d9f36baa24152b6979896caede5e249b",
-                caveRVA: 0xa4000,
-                payloadRVA: 0xa4000,
-                hooks: [
-                    NtdllHook(rva: 0x2ede2, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02]),
-                ],
-                caveSize: 0x1000,
-                cavePad: 0x00,
-                machine: 0x14c,
-                magic: 0x10b,
-                imageBase: 0x7bc0_0000,
-                placement: .section
-            ),
+            fexI38641069,
             NtdllPatch(
                 arch: .aarch64Windows,
                 payloadResource: "detour64-fex-41069",
@@ -185,7 +170,42 @@ enum NtdllPatcher {
                 imageBase: 0x1_8000_0000
             ),
         ],
+        "27.0.0.41069-bundled-rosetta": [bundledRosetta41069, fexI38641069],
     ]
+
+    // Both runtime profiles in the combined distribution use this i386 DLL.
+    private static let fexI38641069 = NtdllPatch(
+        arch: .i386Windows,
+        payloadResource: "detour32-fex-41069",
+        payloadSHA256: "6ff6c7289e639c4caad85c2670bfa849d9f36baa24152b6979896caede5e249b",
+        caveRVA: 0xa4000,
+        payloadRVA: 0xa4000,
+        hooks: [NtdllHook(rva: 0x2ede2, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02])],
+        caveSize: 0x1000,
+        cavePad: 0x00,
+        machine: 0x14c,
+        magic: 0x10b,
+        imageBase: 0x7bc0_0000,
+        placement: .section
+    )
+
+    private static let bundledRosetta41069 = NtdllPatch(
+        arch: .x86_64Windows,
+        payloadResource: "detour2-bundled-41069",
+        payloadSHA256: "41a397d176aefdbbe1b795f25ab0bd891804e40c43fa44d25aeb3df45fa01a4a",
+        caveRVA: 0xb5000,
+        payloadRVA: 0xb5000,
+        hooks: [
+            NtdllHook(rva: 0x34aae,
+                      stolen: [0x48, 0x8b, 0x84, 0x24, 0x10, 0x01, 0x00, 0x00]),
+        ],
+        caveSize: 0x1000,
+        cavePad: 0x00,
+        machine: 0x8664,
+        magic: 0x20b,
+        imageBase: 0x1_7000_0000,
+        placement: .section
+    )
 
     static func patches(for build: RunnerBuild) -> [NtdllPatch] {
         byBuild[build.id] ?? []
@@ -471,7 +491,7 @@ enum NtdllPatcher {
     // Resources
 
     static func payload(for patch: NtdllPatch) throws -> Data {
-        guard let url = Bundle.module.url(forResource: patch.payloadResource, withExtension: "bin") else {
+        guard let url = AppResources.bundle.url(forResource: patch.payloadResource, withExtension: "bin") else {
             throw StepFailure(
                 step: step,
                 detail: "\(patch.payloadResource).bin is missing from the app's resources."

@@ -135,12 +135,16 @@ struct StatusView: View {
         }
         .navigationTitle("Status")
         .toolbar {
+            #if compiler(>=6.2)
             if #available(macOS 26.1, *) {
                 ToolbarItem(placement: .primaryAction) { refreshButton }
                     .visibilityPriority(.high)
             } else {
                 ToolbarItem(placement: .primaryAction) { refreshButton }
             }
+            #else
+            ToolbarItem(placement: .primaryAction) { refreshButton }
+            #endif
         }
         .confirmationDialog(
             "Block Steam client updates?",
@@ -582,6 +586,18 @@ struct StatusView: View {
     }
 
     private func runnerRow(_ state: RunnerState, payload: PayloadState) -> some View {
+        if let identifier = state.buildIdentifier,
+           SupportedRunners.build(id: identifier)?.usesFEX == true,
+           !RunnerRuntime.supportsFEX {
+            return StatusRow(
+                title: "Compatibility Tool",
+                value: "FEX cannot run on this version of macOS.",
+                tone: .bad,
+                detail: "Choose CrossOver Preview 20261006 to use its bundled Rosetta runtime here, "
+                    + "and set up the compatibility tool. Rebuild FEX prefixes with a backup.",
+                action: crossOverAction()
+            )
+        }
         let patchedMissing = !payload.missing(origin: .patched).isEmpty
 
         switch state {

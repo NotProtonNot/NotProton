@@ -92,7 +92,7 @@ struct RunnerInstallerTests {
     // A CrossOver bundle holding only the files the clone path hashes, with the build describing
     // those exact bytes, so verification passes without a real 1.2G install to copy.
     private func makeSupportedInstall(
-        in directory: URL, version: String = "27.0.0.40921"
+        in directory: URL, version: String = "27.0.0.40921", flavor: String? = nil
     ) throws -> (CrossOverInstall, RunnerBuild) {
         let bundle = directory.appending(path: "source/CrossOver Preview.app")
         let wine = bundle.appending(path: "Contents/SharedSupport/CrossOver/lib/wine")
@@ -121,7 +121,7 @@ struct RunnerInstallerTests {
         let build = RunnerBuild(
             bundleVersion: version,
             releaseVersion: "20260821",
-            flavor: nil,
+            flavor: flavor,
             loaderSHA256: try hash(wine.appending(path: "x86_64-unix/wine")),
             cleanNtdll: clean,
             patchedNtdll: [:]
@@ -263,6 +263,28 @@ struct RunnerInstallerTests {
         )
     }
 
+    @Test("An unexpected source is refused before replacing a working clone")
+    func keepsWorkingCloneWhenSourceVerificationFails() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let (install, build) = try makeSupportedInstall(in: runners)
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+        try RunnerInstaller.pointCurrent(atBuild: build.id, runners: runners)
+        let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        let loader = CrossOverSource.unixLoader(inRoot: root)
+        let before = try Data(contentsOf: loader)
+        try Data("unexpected loader".utf8).write(
+            to: CrossOverSource.unixLoader(inRoot: install.crossOverRoot))
+
+        #expect(throws: StepFailure.self) {
+            try RunnerInstaller.clone(from: install, replacingExisting: true, runners: runners)
+        }
+        #expect(try Data(contentsOf: loader) == before)
+        #expect(RunnerStore.currentBuild(runners: runners) == build.id)
+        #expect(!FileManager.default.fileExists(atPath: runners.appending(
+            path: ".crossover-\(build.id).new").path(percentEncoded: false)))
+    }
+
     @Test("The state reader agrees with what was just written")
     func stateAgreesWithInstaller() throws {
         let runners = try makeRunners()
@@ -277,5 +299,22 @@ struct RunnerInstallerTests {
 
         #expect(RunnerStore.state(runners: runners, verify: { _, _ in [] })
             == .cloned(build: version, supported: true))
+    }
+
+    @Test("A bundled Rosetta clone with a lost selection marker is repaired")
+    func repairsMissingRuntimeSelection() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let (install, build) = try makeSupportedInstall(
+            in: runners, version: "27.0.0.41069", flavor: "bundled-rosetta")
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+        let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        #expect(RunnerRuntime.usesBundledRosetta(in: root))
+        try FileManager.default.removeItem(at: root.appending(path: RunnerRuntime.selectionFile))
+        #expect(!RunnerInstaller.hasClone(forBuild: build.id, runners: runners))
+
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+        #expect(RunnerInstaller.hasClone(forBuild: build.id, runners: runners))
+        #expect(RunnerRuntime.usesBundledRosetta(in: root))
     }
 }

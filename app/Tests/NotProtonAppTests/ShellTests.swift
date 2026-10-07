@@ -6,6 +6,59 @@ import Testing
 @Suite("Shell")
 struct ShellTests {
 
+    @Test("A detached launcher that immediately fails reports its stderr and log")
+    func detachedFailureIsReported() throws {
+        let log = URL.temporaryDirectory.appending(path: "np-detach-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: log) }
+        let failure = try #require(throws: CommandFailure.self) {
+            try Shell.detach("/bin/sh", ["-c", "echo runtime-unavailable >&2; exit 17"],
+                             environment: ProcessInfo.processInfo.environment, log: log)
+        }
+        #expect(failure.status == 17)
+        #expect(failure.stderr.contains("runtime-unavailable"))
+        #expect(failure.stderr.contains(log.path(percentEncoded: false)))
+    }
+
+    @Test("A detached launch does not wait for a long-running application")
+    func detachedLaunchReturnsAfterStartup() throws {
+        let log = URL.temporaryDirectory.appending(path: "np-detach-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: log) }
+        let started = Date()
+        try Shell.detach("/bin/sleep", ["1"], environment: ProcessInfo.processInfo.environment,
+                         log: log, startupGrace: 0.05)
+        #expect(Date().timeIntervalSince(started) < 0.8)
+    }
+
+    @Test("A detached launch keeps output even when a descendant holds it open")
+    func detachedFailureDoesNotWaitForPipeEOF() throws {
+        let log = URL.temporaryDirectory.appending(path: "np-detach-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: log) }
+        let started = Date()
+        let failure = try #require(throws: CommandFailure.self) {
+            try Shell.detach("/bin/sh", ["-c", "echo early-failure >&2; sleep 2 & exit 7"],
+                             environment: ProcessInfo.processInfo.environment, log: log)
+        }
+        #expect(failure.status == 7)
+        #expect(failure.stderr.contains("early-failure"))
+        #expect(Date().timeIntervalSince(started) < 1.5)
+    }
+
+    @Test("A detached failure reports a bounded tail of a large launch log")
+    func detachedFailureKeepsOnlyRecentOutput() throws {
+        let log = URL.temporaryDirectory.appending(path: "np-detach-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: log) }
+        let failure = try #require(throws: CommandFailure.self) {
+            try Shell.detach(
+                "/bin/sh",
+                ["-c", "/usr/bin/yes repeated-output | /usr/bin/head -c 65536; echo last-error >&2; exit 17"],
+                environment: ProcessInfo.processInfo.environment, log: log)
+        }
+        #expect(failure.status == 17)
+        #expect(failure.stderr.contains("last-error"))
+        #expect(failure.stderr.utf8.count < 17 * 1024)
+        #expect(try Data(contentsOf: log).count > 64 * 1024)
+    }
+
     private func absentPath() -> String {
         URL.temporaryDirectory
             .appending(path: "np-absent-\(UUID().uuidString)")

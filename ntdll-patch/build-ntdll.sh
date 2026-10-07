@@ -33,6 +33,9 @@ FEX41069_CLEAN_AARCH64=77ca83b2e1a3a1242f9d2d8868328262b2bcfc3f59bacf8b9389ea7e7
 FEX41069_PATCHED_I386=e16b0199db721a08201b1512476b9eff255624d2faf3696fa57ff74b1a54be5c
 FEX41069_PATCHED_AARCH64=89e4c9e7f0a0a60462c0231ec393168f8bdb04bc8ea1dc22211f25bf3ff2c6b3
 
+BUNDLED_ROSETTA41069_CLEAN_X86_64=1b02dcf6ad9d9490870f1127a421c4c0d1471c65ec1574e1e84c05d69801ac7e
+BUNDLED_ROSETTA41069_PATCHED_X86_64=3c5451e61d43e6ceef50e300b7a93786f8fee737a975b5b70c77d138e0f3d191
+
 install=0
 [ "${1:-}" = "--install" ] && install=1
 
@@ -69,9 +72,10 @@ if [ -z "${FLAVOR:-}" ]; then
 fi
 
 case "$FLAVOR" in
-    rosetta|rosetta-41069) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc" ;;
+    rosetta|rosetta-41069|bundled-rosetta-41069)
+        tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc" ;;
     fex|fex-41069)         tools="i686-w64-mingw32-gcc clang ld.lld" ;;
-    *) die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, fex or fex-41069" ;;
+    *) die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, bundled-rosetta-41069, fex or fex-41069" ;;
 esac
 
 for t in $tools; do
@@ -137,6 +141,15 @@ case "$FLAVOR" in
             "$ROSETTA41069_CLEAN_X86_64" "$ROSETTA41069_PATCHED_X86_64"
         patch_one i386-windows   build32.sh 41069 detour32-41069.bin \
             "$ROSETTA41069_CLEAN_I386"   "$ROSETTA41069_PATCHED_I386"
+        ;;
+    bundled-rosetta-41069)
+        # The combined distribution has a distinct x86_64 ntdll but shares its
+        # i386 ntdll with the FEX profile. Neither runtime uses the other's 64-bit patch.
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh bundled-41069 detour2-bundled-41069.bin \
+            "$BUNDLED_ROSETTA41069_CLEAN_X86_64" "$BUNDLED_ROSETTA41069_PATCHED_X86_64"
+        patch_one i386-windows build32.sh fex-41069 detour32-fex-41069.bin \
+            "$FEX41069_CLEAN_I386" "$FEX41069_PATCHED_I386"
         ;;
     fex-41069)
         ARCHES="i386-windows aarch64-windows"

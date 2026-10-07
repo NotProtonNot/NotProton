@@ -274,7 +274,8 @@ struct PrefixToolsTests {
         let alert = try #require(source.range(of: "display alert"))
         let closing = try #require(
             source.range(of: "  fi\n", range: alert.upperBound..<source.endIndex))
-        let refusal = try #require(source.range(of: "  exit 1\n"))
+        let refusal = try #require(
+            source.range(of: "  exit 1\n", range: closing.upperBound..<source.endIndex))
 
         #expect(gate.upperBound < alert.lowerBound)
         #expect(alert.upperBound < closing.lowerBound)

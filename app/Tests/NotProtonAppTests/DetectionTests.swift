@@ -36,8 +36,14 @@ struct SupportedRunnerTests {
         let ids = SupportedRunners.all.map(\.id)
         #expect(Set(ids).count == ids.count)
 
-        let loaders = SupportedRunners.all.map(\.loaderSHA256)
+        // One combined distribution can have separate FEX and bundled Rosetta
+        // patch profiles, but its source lookup must still select one default.
+        let sources = SupportedRunners.all.filter { !$0.usesBundledRosetta }
+        let loaders = sources.map(\.loaderSHA256)
         #expect(Set(loaders).count == loaders.count)
+        for source in sources {
+            #expect(SupportedRunners.build(loaderSHA256: source.loaderSHA256) == source)
+        }
     }
 
     @Test("The first supported build keeps a bare version as its id")

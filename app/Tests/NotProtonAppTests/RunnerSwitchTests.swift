@@ -47,6 +47,7 @@ struct RunnerSwitchTests {
             runners: runners,
             bridge: runners.appending(path: "bridge"),
             license: { _ in license },
+            runtimeCheck: { _ in },
             verify: { _, _ in },
             stage: { build, _, _ in
                 calls.staged.append(build.id)
@@ -91,6 +92,28 @@ struct RunnerSwitchTests {
         #expect(calls.currentWhilePatching == Self.rosetta.id)
     }
 
+    @Test("An unsupported runtime is refused before staging or changing the active build")
+    func runtimeRefusalLeavesCurrentAlone() throws {
+        let runners = try makeRunners(cloning: [Self.rosetta, Self.fex])
+        defer { try? FileManager.default.removeItem(at: runners) }
+        try RunnerInstaller.pointCurrent(atBuild: Self.rosetta.id, runners: runners)
+        var staged = false
+        #expect(throws: StepFailure.self) {
+            try RunnerSetup.activate(
+                Self.fex, runners: runners,
+                license: { _ in Self.licensed },
+                runtimeCheck: { _ in
+                    try RunnerRuntime.requireSupported(usesFEX: true, fexAvailable: false)
+                },
+                verify: { _, _ in },
+                stage: { _, _, _ in staged = true; return [] },
+                patch: { _, _, _ in RunnerPatcher.Outcome() }
+            )
+        }
+        #expect(!staged)
+        #expect(RunnerStore.currentBuild(runners: runners) == Self.rosetta.id)
+    }
+
     @Test("A failed switch keeps the old build and restages its ntdll")
     func failedSwitchRestoresPrevious() throws {
         let runners = try makeRunners(cloning: [Self.rosetta, Self.fex])
@@ -118,6 +141,7 @@ struct RunnerSwitchTests {
                 Self.fex,
                 runners: runners,
                 license: { _ in Self.licensed },
+                runtimeCheck: { _ in },
                 verify: { _, _ in },
                 stage: { build, _, _ in
                     staged.append(build.id)

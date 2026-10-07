@@ -11,6 +11,13 @@ PAYLOAD = {0x8664: 864, 0x14c: 1376, 0xaa64: 868}  # detour2.bin, detour32.bin, 
 # Keyed by input sha256 so the comparison only runs against the build the tree pins, so a
 # new build will report derived values rather than a wall of expected mismatches
 PINNED = {
+    '1b02dcf6ad9d9490870f1127a421c4c0d1471c65ec1574e1e84c05d69801ac7e':
+        {'hookRVA': 0x34aae, 'stolen': '488b842410010000', 'caveRVA': 0xb5000,
+         'caveSize': 4096, 'resume': 0x34ab6, 'wm': 'rbx', 'load_path': 0x98,
+         'payload': '41a397d176aefdbbe1b795f25ab0bd891804e40c43fa44d25aeb3df45fa01a4a',
+         'exports': {'LdrGetDllHandle': 0x17002f4e0, 'LdrLoadDll': 0x17002ce20,
+                     'NtProtectVirtualMemory': 0x170055dbc, 'NtOpenFile': 0x170055a1c,
+                     'NtReadFile': 0x17005547c, 'NtClose': 0x17005559c}},
     '04c7200b6645decb7c2d1ba6b0195abc9af83257072558d11aa72cc067ac3377':
         {'hookRVA': 0x51f15, 'stolen': '4883bc24f000000000', 'caveRVA': 0x80be0, 'wm': 'rsi',
          'resume': 0x51f1e, 'load_path': 0xd0,

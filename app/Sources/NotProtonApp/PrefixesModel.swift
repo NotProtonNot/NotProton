@@ -115,7 +115,7 @@ final class PrefixesModel {
     func open(_ tool: WineTool, for prefix: WinePrefix) {
         act(on: prefix) {
             try PrefixTools.launch(tool, in: prefix)
-            return "Opened \(tool.label) in \(prefix.title)."
+            return "Launch requested for \(tool.label) in \(prefix.title)."
         }
     }
 
@@ -260,18 +260,21 @@ final class PrefixesModel {
     func run(_ executable: URL, in prefix: WinePrefix) {
         act(on: prefix) {
             try PrefixTools.run(executable, in: prefix)
-            return "Started \(executable.lastPathComponent) in \(prefix.title)."
+            return "Launch requested for \(executable.lastPathComponent) in \(prefix.title)."
         }
     }
 
-    private func act(on prefix: WinePrefix, _ body: () throws -> String) {
+    private func act(on prefix: WinePrefix, _ body: @escaping @Sendable () throws -> String) {
+        guard busy.isEmpty else { return }
         forgetOutcome()
         busy = [prefix.id]
-        defer { busy = [] }
-        do {
-            outcome = try body()
-        } catch {
-            report = FailureReport([error])
+        Task {
+            defer { busy = [] }
+            do {
+                outcome = try await Task.detached(operation: body).value
+            } catch {
+                report = FailureReport([error])
+            }
         }
     }
 }

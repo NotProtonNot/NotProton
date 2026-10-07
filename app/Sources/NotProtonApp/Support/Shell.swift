@@ -107,21 +107,66 @@ enum Shell {
         return result.stdout
     }
 
-    // For the wine tools
+    // For interactive Wine tools. Call off the main actor: startup is observed
+    // briefly, then the process is left running and later exits go to AppLog.
     static func detach(
         _ executable: String,
         _ arguments: [String],
         environment: [String: String],
-        currentDirectory: URL? = nil
+        currentDirectory: URL? = nil,
+        log: URL? = nil,
+        startupGrace: TimeInterval = 1
     ) throws {
         let process = Process()
         process.executableURL = URL(filePath: executable)
         process.arguments = arguments
         process.environment = environment
         if let currentDirectory { process.currentDirectoryURL = currentDirectory }
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let output: FileHandle
+        if let log {
+            // Replace the latest-launch log rather than truncating the inode
+            // a previously launched tool may still be writing to.
+            try Data().write(to: log, options: .atomic)
+            output = try FileHandle(forWritingTo: log)
+        } else {
+            output = .nullDevice
+        }
+        defer { if log != nil { try? output.close() } }
+        process.standardOutput = output
+        process.standardError = output
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { stopped in
+            AppLog.note("\(executable) exited status=\(stopped.terminationStatus)"
+                + (log.map { " log=\($0.path(percentEncoded: false))" } ?? ""))
+            exited.signal()
+        }
         try process.run()
+        // Do not wait for the application's whole lifetime, but catch immediate
+        // loader crashes rather than reporting that a window has opened.
+        _ = exited.wait(timeout: .now() + max(0, startupGrace))
+        if !process.isRunning, process.terminationStatus != 0 {
+            let captured = log.flatMap(launchOutput) ?? ""
+            throw CommandFailure(
+                command: (executable as NSString).lastPathComponent,
+                status: process.terminationStatus,
+                stderr: (process.terminationReason == .uncaughtSignal
+                    ? "Terminated by signal \(process.terminationStatus).\n" : "")
+                    + captured + (log.map { "\nLaunch log: \($0.path(percentEncoded: false))" } ?? "")
+            )
+        }
+    }
+
+    private static func launchOutput(in log: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: log) else { return nil }
+        defer { try? handle.close() }
+        do {
+            let size = try handle.seekToEnd()
+            let limit: UInt64 = 16 * 1024
+            try handle.seek(toOffset: size > limit ? size - limit : 0)
+            return String(decoding: try handle.read(upToCount: Int(limit)) ?? Data(), as: UTF8.self)
+        } catch {
+            return nil
+        }
     }
 
     static func processIsRunning(

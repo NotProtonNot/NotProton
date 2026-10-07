@@ -27,8 +27,16 @@ enum RunnerInstaller {
         if !existing || replacingExisting {
             let staging = target.deletingLastPathComponent()
                 .appending(path: ".\(target.lastPathComponent).new")
+            defer { try? fm.removeItem(at: staging) }
             try? fm.removeItem(at: staging)
             try copyPayload(from: install.crossOverRoot, to: staging)
+            if build.usesBundledRosetta {
+                try "rosetta\n".write(
+                    to: staging.appending(path: "CrossOver/\(RunnerRuntime.selectionFile)"),
+                    atomically: true, encoding: .utf8)
+            }
+            // Reject an unexpected source before replacing a working clone.
+            try verifyClone(build: build, root: staging.appending(path: "CrossOver"))
             if occupied {
                 try fm.removeItem(at: target)
             }
@@ -62,6 +70,8 @@ enum RunnerInstaller {
 
     static func hasClone(forBuild build: String, runners: URL = SupportPaths.runners) -> Bool {
         let root = SupportPaths.clonedRoot(forBuild: build, runners: runners)
+        if SupportedRunners.build(id: build)?.usesBundledRosetta == true,
+           !RunnerRuntime.usesBundledRosetta(in: root) { return false }
         return FileManager.default.fileExists(
             atPath: root.appending(path: "lib/wine").path(percentEncoded: false)
         )
@@ -99,6 +109,12 @@ enum RunnerInstaller {
     }
 
     static func verifyClone(build: RunnerBuild, root: URL) throws {
+        if build.usesBundledRosetta, !RunnerRuntime.usesBundledRosetta(in: root) {
+            throw StepFailure(
+                step: step,
+                detail: "The clone is missing its Rosetta runtime selection. Set it up again."
+            )
+        }
         let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
         guard let hash = Digest.sha256IfPresent(loader) else {
             throw StepFailure(step: step, detail: "The clone has no Wine loader at \(loader.lastPathComponent).")

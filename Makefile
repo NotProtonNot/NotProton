@@ -60,7 +60,7 @@ DEPS := $(OBJS:.o=.d)
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
-        compatsvc-check scriptcheck
+        compatsvc-check scriptcheck deploymentcheck-tests
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -71,10 +71,13 @@ all: $(TARGET) $(APP_PAYLOAD)
 $(APP_PAYLOAD):
 	@mkdir -p $(APP_PAYLOAD)
 
-TEST_PATHS := dylib/tests overlay-shim/tests app/Tests
+TEST_PATHS := dylib/tests overlay-shim/tests app/Tests helpers/tests
 
 tests-list:
 	@for p in $(TEST_PATHS); do echo $$p; done
+
+deploymentcheck-tests:
+	python3 -m unittest discover -s helpers/tests -p 'test_*.py'
 
 # A check with no inputs left is reported
 SKIP = echo "==> $(1): $(2) not present, skipped"
@@ -458,11 +461,11 @@ BRIDGE_FILES := \
 	$(WINE_BUILD)/dlls/lsteamclient/i386-windows/lsteamclient.dll:i386-windows-lsteamclient.dll
 
 bridge:
-	bridge/setup-wine-tree.sh
-	WINE_BUILD="$(CURDIR)/$(WINE_BUILD_ARM64)" HOST=aarch64-apple-darwin \
+	MACOSX_DEPLOYMENT_TARGET=$(MIN_VER) bridge/setup-wine-tree.sh
+	MACOSX_DEPLOYMENT_TARGET=$(MIN_VER) WINE_BUILD="$(CURDIR)/$(WINE_BUILD_ARM64)" HOST=aarch64-apple-darwin \
 		HOST_CC="clang -arch arm64" HOST_CXX="clang++ -arch arm64" bridge/setup-wine-tree.sh
-	lsteamclient/build.sh
-	UNIX_ARCH=arm64 WINE_BUILD="$(CURDIR)/$(WINE_BUILD_ARM64)" lsteamclient/build.sh --unix
+	MACOSX_DEPLOYMENT_TARGET=$(MIN_VER) lsteamclient/build.sh
+	MACOSX_DEPLOYMENT_TARGET=$(MIN_VER) UNIX_ARCH=arm64 WINE_BUILD="$(CURDIR)/$(WINE_BUILD_ARM64)" lsteamclient/build.sh --unix
 	steam-shim/build.sh
 	@echo "==> Built the bridge, now run: $(MAKE) app-payload"
 
@@ -483,34 +486,53 @@ app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
 	@echo "==> Staged app payload in $(APP_PAYLOAD)"
 
 APP_BUNDLE  := $(OUT_DIR)/NotProton.app
-APP_BUNDLE_PAYLOAD := $(APP_BUNDLE)/Contents/Resources/NotProtonApp_NotProtonApp.bundle/Contents/Resources/payload
+APP_RESOURCE_BUNDLE := $(APP_BUNDLE)/Contents/Resources/NotProtonApp_NotProtonApp.bundle
 APP_ZIP     := $(OUT_DIR)/NotProton.zip
 APP_VERSION := $(shell sed -n 's/^\#define NOTPROTON_VERSION "\(.*\)"/\1/p' dylib/version.h)
 
 APP_SIGN_ID ?= -
 
 ICONGEN  := $(OUT_DIR)/icongen
-ICON_DOC := $(OUT_DIR)/NotProton.icon
 ICON_DIR := $(OUT_DIR)/icon
-ICON_CAR := $(ICON_DIR)/Assets.car
+ICONSET  := $(ICON_DIR)/NotProton.iconset
+ICON_ICNS := $(ICON_DIR)/NotProton.icns
+ICON_DOC := $(OUT_DIR)/NotProton.icon
+ICON_COMPOSER_DIR := $(OUT_DIR)/icon-composer
+ICON_CAR := $(ICON_COMPOSER_DIR)/Assets.car
 
-icon: $(ICON_CAR)
+# Keep the layered macOS 26 icon when the toolchain supports it, with an
+# independent .icns fallback for macOS 15 and Command Line Tools-only builds.
+ICON_COMPOSER ?= $(shell if xcrun --find actool >/dev/null 2>&1; then \
+                         xcrun --sdk macosx --show-sdk-version 2>/dev/null \
+                         | awk -F. '{print ($$1 >= 26) ? 1 : 0}'; fi)
+ifeq ($(ICON_COMPOSER),1)
+APP_ICON_ASSETS := $(ICON_CAR)
+endif
+
+icon: $(ICON_ICNS) $(APP_ICON_ASSETS)
 
 $(ICONGEN): helpers/icon.swift
 	@mkdir -p $(OUT_DIR)
-	swiftc -O -o $@ $<
+	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) -o $@ $<
+	@echo "==> Built $@"
+
+$(ICON_ICNS): $(ICONGEN)
+	@mkdir -p "$(ICON_DIR)"
+	$(ICONGEN) --iconset "$(ICONSET)"
+	iconutil -c icns "$(ICONSET)" -o "$@"
 	@echo "==> Built $@"
 
 $(ICON_CAR): $(ICONGEN)
-	rm -rf "$(ICON_DOC)" "$(ICON_DIR)"
 	$(ICONGEN) "$(ICON_DOC)"
-	@mkdir -p "$(ICON_DIR)"
-	xcrun actool "$(ICON_DOC)" --compile "$(ICON_DIR)" --platform macosx \
+	@mkdir -p "$(ICON_COMPOSER_DIR)"
+	xcrun actool "$(ICON_DOC)" --compile "$(ICON_COMPOSER_DIR)" --platform macosx \
 		--minimum-deployment-target 26.0 --app-icon NotProton \
-		--output-partial-info-plist "$(ICON_DIR)/partial.plist" >/dev/null
+		--output-partial-info-plist "$(ICON_COMPOSER_DIR)/partial.plist" >/dev/null
 	@echo "==> Built $@"
 
-app: app-payload $(ICON_CAR)
+# Re-evaluate hasPayload if SwiftPM previously built this checkout without it.
+app: app-payload $(ICON_ICNS) $(APP_ICON_ASSETS)
+	touch app/Package.swift
 	swift build --package-path app -c release
 	rm -rf "$(APP_BUNDLE)"
 	@mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources"
@@ -528,11 +550,15 @@ app: app-payload $(ICON_CAR)
 		"$(APP_BUNDLE)/Contents/MacOS/NotProtonApp"
 	cp -R "$$(swift build --package-path app -c release --show-bin-path)/NotProtonApp_NotProtonApp.bundle" \
 		"$(APP_BUNDLE)/Contents/Resources/"
-	cp "$(ICON_DIR)/Assets.car" "$(ICON_DIR)/NotProton.icns" \
+	cp "$(ICON_ICNS)" \
 		"$(APP_BUNDLE)/Contents/Resources/"
-	@missing=$$(cd "$(APP_PAYLOAD)" && find . -type f ! -name '.DS_Store' | sed 's|^\./||' \
+	@if [ -n "$(APP_ICON_ASSETS)" ]; then \
+		cp "$(APP_ICON_ASSETS)" "$(APP_BUNDLE)/Contents/Resources/"; fi
+	@payload_dir="$(CURDIR)/$(APP_RESOURCE_BUNDLE)/Contents/Resources/payload"; \
+	if [ ! -d "$$payload_dir" ]; then payload_dir="$(CURDIR)/$(APP_RESOURCE_BUNDLE)/payload"; fi; \
+	missing=$$(cd "$(APP_PAYLOAD)" && find . -type f ! -name '.DS_Store' | sed 's|^\./||' \
 		| while read -r rel; do \
-			[ -s "$(CURDIR)/$(APP_BUNDLE_PAYLOAD)/$$rel" ] || echo "$$rel"; \
+			[ -s "$$payload_dir/$$rel" ] || echo "$$rel"; \
 		done); \
 	if [ -n "$$missing" ]; then \
 		echo "==> the bundle is missing staged payload, so the app would ship without it:" >&2; \
@@ -541,6 +567,7 @@ app: app-payload $(ICON_CAR)
 		exit 1; \
 	fi
 	@echo "==> Payload complete in the bundle"
+	python3 helpers/check-deployment.py "$(APP_BUNDLE)" $(MIN_VER)
 	codesign -f -s "$(APP_SIGN_ID)" "$(APP_BUNDLE)"
 	codesign --verify --strict "$(APP_BUNDLE)"
 	@echo "==> Built $(APP_BUNDLE) ($(APP_VERSION))"

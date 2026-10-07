@@ -14,7 +14,7 @@ enum InstallPayload {
         let signatures: [URL]
     }
 
-    static func root(in bundle: Bundle = .module) throws -> URL {
+    static func root(in bundle: Bundle = AppResources.bundle) throws -> URL {
         guard let url = bundle.url(forResource: "payload", withExtension: nil) else {
             throw StepFailure(
                 step: step,
@@ -24,7 +24,7 @@ enum InstallPayload {
         return url
     }
 
-    static func locate(in bundle: Bundle = .module) throws -> Located {
+    static func locate(in bundle: Bundle = AppResources.bundle) throws -> Located {
         try locate(root: try root(in: bundle))
     }
 
