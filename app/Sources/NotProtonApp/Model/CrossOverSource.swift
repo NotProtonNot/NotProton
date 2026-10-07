@@ -128,8 +128,10 @@ enum CrossOverSource {
             )
         }
 
+        let variant = RunnerVariant.declared(crossOverRoot: SupportPaths.crossOverRoot(inBundle: bundle))
         return CrossOverInstall(
-            bundle: bundle, releaseVersion: version, support: .supported(build), isManual: isManual
+            bundle: bundle, releaseVersion: version, support: .supported(build.withVariant(variant)),
+            isManual: isManual
         )
     }
 
