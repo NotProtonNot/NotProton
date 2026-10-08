@@ -22,6 +22,7 @@ enum PinnedDownload {
         bases: [URL],
         into downloads: URL,
         step: String,
+        from source: String = "Valve",
         report: @Sendable (Progress) -> Void = { _ in }
     ) async throws -> URL {
         let archive = downloads.appending(path: file)
@@ -65,7 +66,7 @@ enum PinnedDownload {
         }
 
         AppLog.note("\(file) refused by all \(bases.count) hosts: \(refusals.joined(separator: ". "))")
-        throw StepFailure(step: step, detail: reason(kinds))
+        throw StepFailure(step: step, detail: reason(kinds, from: source))
     }
 
     private enum Refusal {
@@ -74,14 +75,14 @@ enum PinnedDownload {
         case answered
     }
 
-    private static func reason(_ kinds: Set<Refusal>) -> String {
+    private static func reason(_ kinds: Set<Refusal>, from source: String) -> String {
         if kinds == [.mismatch] {
             return "Something is wrong with the downloaded files. Please check for a NotProton update."
         }
         if kinds == [.unreachable] {
-            return "NotProton could not reach Valve's servers. Please check your internet "
+            return "NotProton could not reach \(source)'s servers. Please check your internet "
                 + "connection and try again."
         }
-        return "NotProton could not download the files it needs from Valve. Please try again later."
+        return "NotProton could not download the files it needs from \(source). Please try again later."
     }
 }

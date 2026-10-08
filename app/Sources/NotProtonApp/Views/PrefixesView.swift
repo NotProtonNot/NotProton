@@ -7,6 +7,8 @@ struct PrefixesView: View {
     @Environment(PrefixesModel.self) private var model
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var sortOrder = [KeyPathComparator(\PrefixRow.lastUsed, order: .reverse)]
+    @State private var winetricksPrefix: WinePrefix?
+    @State private var winetricksVerbs = ""
 
     var body: some View {
         Group {
@@ -103,6 +105,25 @@ struct PrefixesView: View {
             Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
         } message: {
             Text(PrefixPrompt.backUpMessage(backingUp))
+        }
+        .alert(
+            "Winetricks",
+            isPresented: Binding(
+                get: { winetricksPrefix != nil },
+                set: { if !$0 { winetricksPrefix = nil } }
+            ),
+            presenting: winetricksPrefix
+        ) { prefix in
+            TextField("vcrun2022 corefonts", text: $winetricksVerbs)
+            Button("Install") {
+                let verbs = winetricksVerbs
+                Task { await model.winetricks(verbs, in: prefix) }
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(PrefixTools.winetricksVerbs(winetricksVerbs).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: { prefix in
+            Text("Enter the Winetricks verbs to install in \(prefix.title), separated by spaces.")
         }
     }
 
@@ -353,6 +374,9 @@ struct PrefixesView: View {
     private func toolButtons(for prefix: WinePrefix?) -> some View {
         Button("Run Program…") {
             if let prefix { model.chooseExecutable(for: prefix) }
+        }
+        Button("Winetricks…") {
+            winetricksPrefix = prefix
         }
         Divider()
         ForEach(WineTool.allCases, id: \.self) { tool in

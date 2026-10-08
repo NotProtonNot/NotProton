@@ -229,6 +229,71 @@ enum PrefixTools {
         )
     }
 
+    // Winetricks is LGPL, so it is downloaded on first use rather than shipped in the app.
+    static let winetricksRelease = "20260125"
+    static let winetricksSHA256 = "431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b"
+    static let winetricksLogName = "winetricks.log"
+
+    // Splits what the user typed into verbs, e.g. "vcrun2022 corefonts".
+    static func winetricksVerbs(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    static func winetricks(_ verbs: [String], in prefix: WinePrefix) async throws -> URL {
+        let step = "Run Winetricks"
+        let chosen = try resolvedTool(step: step, for: prefix)
+        let script = try await PinnedDownload.obtain(
+            file: "winetricks",
+            sha256: winetricksSHA256,
+            bases: [URL(string: "https://raw.githubusercontent.com/Winetricks/winetricks/\(winetricksRelease)/src")!],
+            into: SupportPaths.winetricksDownloads,
+            step: step,
+            from: "GitHub"
+        )
+        return try winetricks(
+            verbs, in: prefix, script: script,
+            runner: SupportPaths.clonedRoot(forBuild: chosen.build), flavor: chosen.tool.flavor
+        )
+    }
+
+    // Runs winetricks unattended and waits for it. Returns the log in the prefix root.
+    static func winetricks(
+        _ verbs: [String], in prefix: WinePrefix, script: URL, runner: URL,
+        flavor: CompatTool.Flavor = .fex
+    ) throws -> URL {
+        let step = "Run Winetricks"
+        guard !verbs.isEmpty else {
+            throw StepFailure(step: step, detail: "Enter at least one verb, like vcrun2022.")
+        }
+        // annihilate wipes the prefix and its saves without asking under -q, and prefix= points
+        // winetricks at another prefix. Delete Prefix covers the first, so neither is offered.
+        if let refused = verbs.first(where: { $0 == "annihilate" || $0.hasPrefix("prefix=") }) {
+            throw StepFailure(step: step, detail: "NotProton does not run the \(refused) verb.")
+        }
+        guard !PrefixStore.isInUse(prefix) else {
+            throw StepFailure(step: step, detail: "\(prefix.title) is running. Quit the game first.")
+        }
+        let loader = try readyLoader(step: step, prefix: prefix, runner: runner, flavor: flavor)
+
+        // The runner's bin, which environment() puts on PATH, has the cabextract winetricks needs.
+        var environment = environment(prefix: prefix, runner: runner, flavor: flavor)
+        environment["WINE"] = loader.path(percentEncoded: false)
+
+        let log = prefix.root.appending(path: winetricksLogName)
+        let status = try Shell.logged(
+            "/bin/sh", [script.path(percentEncoded: false), "-q"] + verbs,
+            environment: environment, to: log
+        )
+        guard status == 0 else {
+            throw StepFailure(
+                step: step,
+                detail: "Winetricks stopped with status \(status). "
+                    + "Its output is in \(log.path(percentEncoded: false))."
+            )
+        }
+        return log
+    }
+
     static func arguments(for executable: URL) -> [String]? {
         let path = executable.path(percentEncoded: false)
         switch executable.pathExtension.lowercased() {

@@ -124,6 +124,30 @@ enum Shell {
         try process.run()
     }
 
+    // Waits for the command and writes everything it prints to the log file.
+    static func logged(
+        _ executable: String,
+        _ arguments: [String],
+        environment: [String: String],
+        to log: URL
+    ) throws -> Int32 {
+        guard FileManager.default.createFile(atPath: log.path(percentEncoded: false), contents: nil)
+        else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: log.path(percentEncoded: false)]) }
+        let handle = try FileHandle(forWritingTo: log)
+        defer { try? handle.close() }
+
+        let process = Process()
+        process.executableURL = URL(filePath: executable)
+        process.arguments = arguments
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = handle
+        process.standardError = handle
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
     static func processIsRunning(
         named name: String, pgrep: String = "/usr/bin/pgrep",
         drainTimeout: DispatchTimeInterval = outputDrainTimeout
