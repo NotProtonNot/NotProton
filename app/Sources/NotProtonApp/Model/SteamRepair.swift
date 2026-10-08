@@ -178,12 +178,26 @@ enum SteamRepair {
     static func replace(_ app: URL, with staged: URL) throws {
         let files = FileManager.default
         try WriteRefused.catching(app) {
+            // The swap below cannot cross drives, so Steam on an external drive gets a copy beside it first.
+            var staged = staged
+            let folder = app.deletingLastPathComponent()
+            if volume(of: staged) != volume(of: folder) {
+                let copy = folder.appending(path: ".\(app.lastPathComponent).\(UUID().uuidString)")
+                try files.copyItem(at: staged, to: copy)
+                staged = copy
+            }
+            defer { try? files.removeItem(at: staged) }
+
             guard files.fileExists(atPath: app.path(percentEncoded: false)) else {
                 try files.moveItem(at: staged, to: app)
                 return
             }
             _ = try files.replaceItemAt(app, withItemAt: staged)
         }
+    }
+
+    private static func volume(of url: URL) -> URL? {
+        try? url.resourceValues(forKeys: [.volumeURLKey]).volume
     }
 
     static func clearInsert(at plist: URL) throws -> Bool {

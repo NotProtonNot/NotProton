@@ -284,6 +284,46 @@ final class SystemStatus {
         await refresh()
     }
 
+    func chooseSteam() async {
+        let current = SupportPaths.Steam.app
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.application]
+        panel.prompt = "Choose"
+        panel.message = "Select your copy of Steam."
+        panel.directoryURL = current.deletingLastPathComponent()
+
+        guard panel.runModal() == .OK, let picked = panel.url else { return }
+
+        clearFailure()
+        outcome = nil
+
+        guard Bundle(url: picked)?.bundleIdentifier == SteamRepair.valveIdentifier else {
+            setFailure("\(picked.lastPathComponent) is not Steam.")
+            AppLog.note("steam choice refused: \(picked.path(percentEncoded: false))")
+            return
+        }
+        guard !CrossOverSource.same(picked, current) else { return }
+
+        // Moving on would leave the old copy patched, out of reach of Repair and Remove Everything.
+        let deployed = SupportPaths.Steam.deployedDylib(inBundle: current).path(percentEncoded: false)
+        if let insert = SteamBundle.currentInsert(), insert.split(separator: ":").contains(Substring(deployed)) {
+            setFailure("NotProton is installed in \(current.path(percentEncoded: false)). "
+                + "Use Repair Steam to remove it before choosing another copy of Steam.")
+            return
+        }
+
+        if CrossOverSource.same(picked, SupportPaths.Steam.defaultApp) {
+            UserDefaults.standard.removeObject(forKey: SupportPaths.Steam.appPathKey)
+        } else {
+            UserDefaults.standard.set(picked.path(percentEncoded: false), forKey: SupportPaths.Steam.appPathKey)
+        }
+        AppLog.note("steam chosen: \(picked.path(percentEncoded: false))")
+        await refresh()
+    }
+
     private func highlight(_ row: CrossOverRow) {
         AccessibilityNotification.Announcement("\(row.title) is already listed.").post()
         highlightReset?.cancel()

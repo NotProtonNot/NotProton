@@ -322,6 +322,15 @@ struct StatusView: View {
             }
 
             Section("Steam") {
+                StatusRow(
+                    title: "Location",
+                    value: SupportPaths.Steam.app.path(percentEncoded: false),
+                    action: StatusAction(
+                        label: "Choose\u{2026}",
+                        help: "Use a copy of Steam from another folder or drive.",
+                        isEnabled: status.isIdle
+                    ) { Task { await status.chooseSteam() } }
+                )
                 steamRow(snapshot.steam, payload: snapshot.payload)
                 if snapshot.steamRunning {
                     StatusRow(

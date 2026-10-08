@@ -70,7 +70,13 @@ enum SupportPaths {
     static let bridgeCacheFolder = "bridge"
 
     enum Steam {
-        static var app: URL { URL(filePath: "/Applications/Steam.app") }
+        static let defaultApp = URL(filePath: "/Applications/Steam.app")
+        // Set from the Status page when Steam lives somewhere else, like an external drive.
+        static let appPathKey = "steamAppPath"
+
+        static var app: URL {
+            UserDefaults.standard.string(forKey: appPathKey).map { URL(filePath: $0) } ?? defaultApp
+        }
         static var infoPlist: URL { infoPlist(inBundle: app) }
         static var executable: URL { app.appending(path: "Contents/MacOS/steam_osx") }
         static var deployedDylib: URL { deployedDylib(inBundle: app) }
