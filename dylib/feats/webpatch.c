@@ -13,7 +13,11 @@
 #define NP_C6 "\006"
 #define NP_C7 "\007"
 #define NP_C8 "\010"
-#define NP_CAP_MAX 8
+#define NP_C9 "\011"
+#define NP_C10 "\012"
+#define NP_C11 "\013"
+#define NP_C12 "\014"
+#define NP_CAP_MAX 12
 
 // Stands for the name set by np_webpatch_set_fallback_tool.
 #define NP_FALLBACK_TOOL "\021"
@@ -52,6 +56,9 @@ static size_t match_at(const char *src, size_t len, size_t pos,
                        const char *find, np_cap_t *caps) {
     for (int i = 0; i < NP_CAP_MAX; i++) { caps[i].at = NULL; caps[i].len = 0; }
 
+    if (cap_index((unsigned char)find[0]) >= 0 && pos &&
+        is_ident_char((unsigned char)src[pos - 1])) return 0;
+
     size_t s = pos;
     for (const char *f = find; *f; f++) {
         if (*f == NP_FALLBACK_TOOL[0]) {
@@ -67,6 +74,7 @@ static size_t match_at(const char *src, size_t len, size_t pos,
             continue;
         }
 
+        if (s >= len || (src[s] >= '0' && src[s] <= '9')) return 0;
         size_t run = 0;
         while (s + run < len && is_ident_char((unsigned char)src[s + run])) run++;
         if (run == 0) return 0;
@@ -230,12 +238,15 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T([\"NOTPROTON_RAW_CONTROLLERS\"],\"Let games read controllers directly\",\"1\",\"\")},\"ctl\")" \
     "]})})}"
 
+#define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \
+    "((npReact,npUI)=>" NP_CX_OPTIONS_BODY("np", "npReact", "npUI") ")(" RT "," BARREL ")"
+
 #define NP_CX_OPTIONS_COMPONENT \
-    "MSCXOpts=" NP_CX_OPTIONS_BODY("e", "i", "c") ","
+    "MSCXOpts=" NP_CX_OPTIONS_CAPTURE("i", "c") ","
 
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
 #define NP_CX_OPTIONS_STATEMENT \
-    "var MSCXOpts=" NP_CX_OPTIONS_BODY("np", NP_C3, NP_C4) ";"
+    "var MSCXOpts=" NP_CX_OPTIONS_CAPTURE(NP_C3, NP_C4) ";"
 
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \
@@ -268,39 +279,43 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 static const np_gate_t g_gates_forcetool[] = {
     // SteamPlay settings section
-    { "function ue(e){return(0,T.CI)()?",
-      "function ue(e){return true?", 1 },
-    // AppProperties Compatibility tab (app and non-Steam-shortcut variants)
-    { "(0,f.CI)()&&o.push({title:(0,A.we)(\"#AppProperties_CompatibilityPage\")",
-      "true&&o.push({title:(0,A.we)(\"#AppProperties_CompatibilityPage\")", 2 },
-    // Settings page Compatibility entry, keeping the SteamOS exclusion (!rf())
-    { "Compatibility:{visible:t&&(0,f.CI)()&&!(0,f.rf)()",
-      "Compatibility:{visible:t&&true&&!(0,f.rf)()", 1 },
-    { "return(0,i.jsxs)(i.Fragment,{children:[0!=a.length&&(0,i.jsx)(_r,{label:(0,A.we)"
-      "(\"#AppProperties_CompatilibityForceTool\"),checked:g,onChange:C,disabled:!r||0===a.length}),"
-      "g&&a.length>0&&(0,i.jsx)(c.m,{strClassName:K().TopGap,rgOptions:d,"
-      "selectedOption:t.strCompatToolName,onChange:e=>SteamClient.Apps.SpecifyCompatTool"
-      "(t.unAppID,e.data)})]})",
-      "return(0,i.jsxs)(i.Fragment,{children:[0!=a.length&&(0,i.jsx)(_r,{label:(0,A.we)"
-      "(\"#AppProperties_CompatilibityForceTool\"),checked:g,onChange:C,disabled:!r||0===a.length}),"
-      "g&&a.length>0&&(0,i.jsx)(c.m,{strClassName:K().TopGap+\" MSCXNoBottomGap\",rgOptions:d,"
-      "selectedOption:t.strCompatToolName,onChange:e=>SteamClient.Apps.SpecifyCompatTool"
-      "(t.unAppID,e.data)})]})", 1 },
+    { "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".CI)()?",
+      "function " NP_C1 "(" NP_C2 "){return true?", 1 },
+    // Match local identifiers, preserving stable API/property/localization names.
+    { "(0," NP_C1 ".CI)()&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")",
+      "true&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")", 2 },
+    { "Compatibility:{visible:" NP_C1 "&&(0," NP_C2 ".CI)()&&!(0," NP_C2 ".rf)()",
+      "Compatibility:{visible:" NP_C1 "&&true&&!(0," NP_C2 ".rf)()", 1 },
+    { "return(0," NP_C1 ".jsxs)(" NP_C1 ".Fragment,{children:[0!=" NP_C2 ".length&&(0," NP_C1 ".jsx)(" NP_C3 ",{label:(0," NP_C4 ".we)"
+      "(\"#AppProperties_CompatilibityForceTool\"),checked:" NP_C5 ",onChange:" NP_C6 ",disabled:!" NP_C7 "||0===" NP_C2 ".length}),"
+      NP_C5 "&&" NP_C2 ".length>0&&(0," NP_C1 ".jsx)(" NP_C8 ".m,{strClassName:" NP_C9 "().TopGap,rgOptions:" NP_C10 ","
+      "selectedOption:" NP_C11 ".strCompatToolName,onChange:" NP_C12 "=>SteamClient.Apps.SpecifyCompatTool"
+      "(" NP_C11 ".unAppID," NP_C12 ".data)})]})",
+      "return(0," NP_C1 ".jsxs)(" NP_C1 ".Fragment,{children:[0!=" NP_C2 ".length&&(0," NP_C1 ".jsx)(" NP_C3 ",{label:(0," NP_C4 ".we)"
+      "(\"#AppProperties_CompatilibityForceTool\"),checked:" NP_C5 ",onChange:" NP_C6 ",disabled:!" NP_C7 "||0===" NP_C2 ".length}),"
+      NP_C5 "&&" NP_C2 ".length>0&&(0," NP_C1 ".jsx)(" NP_C8 ".m,{strClassName:" NP_C9 "().TopGap+\" MSCXNoBottomGap\",rgOptions:" NP_C10 ","
+      "selectedOption:" NP_C11 ".strCompatToolName,onChange:" NP_C12 "=>SteamClient.Apps.SpecifyCompatTool"
+      "(" NP_C11 ".unAppID," NP_C12 ".data)})]})", 1 },
     // Compatibility page container
-    { "Rt=(0,a.PA)(e=>(0,i.jsxs)(c.nB,{children:[(0,i.jsx)(\"div\",{className:K().HiddenIfNotLast,"
-      "children:(0,A.we)(\"#AppProperties_CompatibilityNoOptions\")}),(0,i.jsx)(It,{...e}),"
-      "(0,i.jsx)(xt,{...e})]}));",
-      NP_CX_OPTIONS_COMPONENT
-      "Rt=(0,a.PA)(e=>(0,i.jsxs)(c.nB,{children:[(0,i.jsx)(\"div\",{className:K().HiddenIfNotLast,"
-      "children:(0,A.we)(\"#AppProperties_CompatibilityNoOptions\")}),(0,i.jsx)(It,{...e}),"
-      "(0,i.jsx)(xt,{...e}),(0,i.jsx)(MSCXOpts,{...e})]}));", 1 },
+    { NP_C1 "=(0," NP_C2 ".PA)(" NP_C3 "=>(0," NP_C4 ".jsxs)(" NP_C5
+      ".nB,{children:[(0," NP_C4 ".jsx)(\"div\",{className:" NP_C6
+      "().HiddenIfNotLast,children:(0," NP_C7 ".we)(\"#AppProperties_CompatibilityNoOptions\")}),"
+      "(0," NP_C4 ".jsx)(" NP_C8 ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(" NP_C9
+      ",{..." NP_C3 "})]}));",
+      "MSCXOpts=" NP_CX_OPTIONS_CAPTURE(NP_C4, NP_C5) ","
+      NP_C1 "=(0," NP_C2 ".PA)(" NP_C3 "=>(0," NP_C4 ".jsxs)(" NP_C5
+      ".nB,{children:[(0," NP_C4 ".jsx)(\"div\",{className:" NP_C6
+      "().HiddenIfNotLast,children:(0," NP_C7 ".we)(\"#AppProperties_CompatibilityNoOptions\")}),"
+      "(0," NP_C4 ".jsx)(" NP_C8 ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(" NP_C9
+      ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(MSCXOpts,{..." NP_C3 "})]}));", 1 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
       "get is_invalid_os_type(){return false}", 1 },
     // Reminder banner for 32 bit Mac games
-    { "s.is_invalid_os_type&&(0,n.jsx)(U,{})",
-      "!s.local_per_client_data?.installed&&"
-      "s.most_available_per_client_data?.is_invalid_os_type&&(0,n.jsx)(U,{})", 1 },
-    { "(0,h.we)(\"#GameList_Entry_Invalid_OSType2\")",
+    { NP_C1 ".is_invalid_os_type&&(0," NP_C2 ".jsx)(" NP_C3 ",{})",
+      "!" NP_C1 ".local_per_client_data?.installed&&"
+      NP_C1 ".most_available_per_client_data?.is_invalid_os_type&&"
+      "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1 },
+    { "(0," NP_C1 ".we)(\"#GameList_Entry_Invalid_OSType2\")",
       "\"Enable CrossOver under Properties > Compatibility to install and run "
       "the Windows version.\"", 1 },
 };

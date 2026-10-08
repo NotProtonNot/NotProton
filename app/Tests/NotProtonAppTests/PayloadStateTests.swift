@@ -160,6 +160,27 @@ struct PayloadStateTests {
         #expect(payload.missing(origin: .patched) == [patched])
     }
 
+    @Test("Issue 39: an installed Steam remains complete before runner setup")
+    func steamDoesNotRequireRunnerFiles() {
+        let runnerFiles = [PayloadEntry(origin: .patched, path: "wine/i386-windows/ntdll.dll"),
+                           PayloadEntry(origin: .valve, path: "steamclient.dll")]
+        #expect(state(missing: runnerFiles).isSteamComplete)
+        #expect(!state(missing: runnerFiles).isComplete)
+        #expect(!state(missing: [PayloadEntry(origin: .built, path: "steam.exe")]).isSteamComplete)
+        #expect(!state(overlay: false).isSteamComplete)
+        #expect(!state(signatures: nil).isSteamComplete)
+        #expect(!state(problem: "Invalid manifest").isSteamComplete)
+    }
+
+    @Test("Repair text names missing files and clarifies macOS user")
+    func actionableRepairText() {
+        let payload = state(missing: [PayloadEntry(origin: .built, path: "steam.exe")], overlay: false)
+        #expect(payload.steamRepairDetail.contains("steam.exe"))
+        #expect(payload.steamRepairDetail.contains("overlay-shim.dylib"))
+        #expect(payload.steamRepairDetail.contains("macOS user"))
+        #expect(state(problem: "Invalid manifest").steamRepairDetail == "Invalid manifest")
+    }
+
     @Test("An origin with nothing missing reports nothing")
     func emptyOriginIsEmpty() {
         let payload = state(missing: [PayloadEntry(origin: .valve, path: "steamclient64.dll")])

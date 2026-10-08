@@ -6,7 +6,7 @@ final class AppUpdater {
     private let controller: SPUStandardUpdaterController
 
     init() {
-        #if DEBUG
+        #if DEBUG || NOTPROTON_LOCAL_TEST
         let scheduling = false
         #else
         let scheduling = true
@@ -19,7 +19,7 @@ final class AppUpdater {
     }
 
     func check() {
-        #if !DEBUG
+        #if !DEBUG && !NOTPROTON_LOCAL_TEST
         controller.checkForUpdates(nil)
         #endif
     }

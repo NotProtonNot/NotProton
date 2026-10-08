@@ -238,6 +238,12 @@ static uintptr_t scan_for_insn(uintptr_t text, size_t text_sz,
     return 0;
 }
 
+static int is_fn_start(const struct mach_header_64 *mh, intptr_t slide, uintptr_t fn) {
+    uintptr_t start, end;
+    if (np_function_bounds(mh, slide, fn, &start, &end) != 0) return 0;
+    return start == fn;
+}
+
 // The sole matching instruction pair inside one function body
 static uintptr_t body_end(const struct mach_header_64 *mh, intptr_t slide,
                           uintptr_t fn, uintptr_t text, size_t text_sz) {
@@ -555,7 +561,7 @@ uintptr_t np_locate_anchor(const struct mach_header_64 *mh, intptr_t slide,
     } else {
         fn = containing_fn(mh, slide, text_base, text_size, ref);
     }
-    if (!fn) return 0;
+    if (!fn || !is_fn_start(mh, slide, fn)) return 0;
 
     if (anchor->kind == NP_MATCH_INSN_PAIR_IN_FN)
         return sole_insn_pair(mh, slide, fn, text_base, text_size, &anchor->pair);

@@ -254,6 +254,7 @@ webpatch-fixtures:
 	rm -rf $$tmp; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "==> gate table and $$n webpatch fixtures: anchors intact, drift refused"
+	python3 dylib/tests/webpatch-renaming.py $(GATECHECK)
 
 LAUNCH_SHELL := $(OUT_DIR)/launch-shell
 

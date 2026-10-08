@@ -160,12 +160,9 @@ struct StatusRow: View {
 
 struct StatusView: View {
     @Environment(SystemStatus.self) private var status
-
-    private static let updateBlockPrompt =
-        "Steam client updates may break NotProton. If you don't want to wait for "
-            + "NotProton to be updated to be compatible with future Steam versions at the "
-            + "cost of not getting updates to the Steam client, you can stop the Steam "
-            + "client from updating itself."
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Binding var showGuide: Bool
+    @State private var maintenanceExpanded = false
 
     var body: some View {
         Group {
@@ -185,100 +182,7 @@ struct StatusView: View {
                 ToolbarItem(placement: .primaryAction) { refreshButton }
             }
         }
-        .confirmationDialog(
-            "Block Steam client updates?",
-            isPresented: asking(.blockUpdates),
-            titleVisibility: .visible
-        ) {
-            Button("Block Updates", role: .destructive) {
-                Task { await status.setUpdateBlock(true) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(Self.updateBlockPrompt)
-        }
-        .confirmationDialog(
-            "Replace Steam with Valve's bundle?",
-            isPresented: asking(.replaceSteam),
-            titleVisibility: .visible
-        ) {
-            Button("Replace Steam", role: .destructive) {
-                Task { await status.repairSteam() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "This will restore Steam itself to its original state but does not remove "
-                    + "the support components used by NotProton."
-            )
-        }
-        .confirmationDialog(
-            status.pendingRemoval.map {
-                "Remove the \(SupportedRunners.displayVersion(forID: $0)) copy?"
-            } ?? "",
-            isPresented: asking(.removeBuild),
-            titleVisibility: .visible
-        ) {
-            Button("Remove Copy", role: .destructive) {
-                Task { await status.removePendingBuild() }
-            }
-            Button("Cancel", role: .cancel) { status.cancelBuildRemoval() }
-        } message: {
-            Text("CrossOver itself is not removed.")
-        }
-        .confirmationDialog(
-            "Remove everything NotProton has created?",
-            isPresented: asking(.removeEverything),
-            titleVisibility: .visible
-        ) {
-            Button("Remove Everything", role: .destructive) {
-                Task { await status.removeEverything() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "Steam is restored to its unmodified state and NotProton is removed, including "
-                    + "the compatibility tool that lives inside the Steam folder. Windows games "
-                    + "and Steam Play prefixes are not removed."
-            )
-        }
-        .confirmationDialog(
-            CrossOverLicense.notActivatedTitle,
-            isPresented: asking(.installUnlicensed),
-            titleVisibility: .visible
-        ) {
-            Button("Continue Anyway") {
-                Task { await status.installIntoSteam() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                CrossOverLicense.notActivatedAdvice
-                    + " NotProton can be deployed, but the CrossOver compatibility tool "
-                    + "cannot be installed without a valid license."
-            )
-        }
-        .task { if status.snapshot == nil { await status.refresh() } }
-        .confirmationDialog(
-            CrossOverLicense.notActivatedTitle,
-            isPresented: asking(.toolUnlicensed),
-            titleVisibility: .visible
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CrossOverLicense.notActivatedAdvice)
-        }
-    }
-
-    private func asking(_ confirmation: SystemStatus.Confirmation) -> Binding<Bool> {
-        Binding(
-            get: { status.pendingConfirmation == confirmation },
-            set: { shown in
-                if !shown, status.pendingConfirmation == confirmation {
-                    status.pendingConfirmation = nil
-                }
-            }
-        )
+        .modifier(StatusConfirmations(enabled: !showGuide))
     }
 
     private func statusForm(_ snapshot: StatusSnapshot) -> some View {
@@ -286,13 +190,35 @@ struct StatusView: View {
             form(snapshot)
                 .onChange(of: status.highlightedRow) { _, row in
                     guard let row else { return }
-                    withAnimation { proxy.scrollTo(row, anchor: .center) }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: GuideMotion.duration)) {
+                        proxy.scrollTo(row, anchor: .center)
+                    }
                 }
         }
     }
 
     private func form(_ snapshot: StatusSnapshot) -> some View {
         Form {
+            Section {
+                HStack(alignment: .top, spacing: 12) {
+                    let ready = SetupGuide(snapshot).isReady
+                    Image(systemName: ready ? "checkmark.circle.fill" : "gamecontroller")
+                        .font(.system(size: 28))
+                        .foregroundStyle(ready ? Color.green : Color.accentColor)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(GuideCopy.text(ready ? "Ready for your next game" : "Let's get you playing"))
+                            .font(.title2.weight(.semibold))
+                        Text(GuideCopy.text(ready
+                            ? "Your integration and runtime are ready. Choose a Windows game in Steam."
+                            : "Follow the setup guide to check requirements, permissions and installation."))
+                            .foregroundStyle(.secondary)
+                        Button(GuideCopy.text(ready ? "Setup guide" : "Continue setup")) { showGuide = true }
+                            .buttonStyle(.bordered)
+                            .padding(.top, 4)
+                    }
+                }.padding(.vertical, 6)
+            }
             if let failure = status.failure {
                 StatusRow(
                     title: "Failed",
@@ -356,13 +282,17 @@ struct StatusView: View {
 
             componentsSection(snapshot.payload)
 
-            dangerSection
+            Section {
+                DisclosureGroup(GuideCopy.text("Maintenance"), isExpanded: $maintenanceExpanded) {
+                    dangerSection
+                }.disclosureGroupStyle(WholeRowDisclosureStyle())
+            }
         }
         .formStyle(.grouped)
     }
 
     private var dangerSection: some View {
-        Section {
+        VStack(spacing: 12) {
             StatusRow(
                 title: "Repair Steam",
                 value: "Restore Steam to its original state.",
@@ -468,7 +398,7 @@ struct StatusView: View {
                 action: installAction(prominent: true)
             )
         case .installed(let version):
-            if payload.isComplete {
+            if payload.isSteamComplete {
                 StatusRow(
                     title: "NotProton",
                     value: "Installed" + (version.map { " (\($0))" } ?? ""),
@@ -477,10 +407,9 @@ struct StatusView: View {
             } else {
                 StatusRow(
                     title: "NotProton",
-                    value: "Installed, but not for this account.",
+                    value: "Steam integration needs repair.",
                     tone: .warning,
-                    detail: "Steam is set up for NotProton, but this account is missing its "
-                        + "components. Install to add them.",
+                    detail: payload.steamRepairDetail,
                     action: installAction(prominent: true)
                 )
             }
@@ -532,8 +461,9 @@ struct StatusView: View {
         if rows.isEmpty {
             StatusRow(
                 title: "CrossOver",
-                value: "Not found. Supported: \(SupportedRunners.versionList).",
-                tone: .bad
+                value: "Not found.",
+                tone: .bad,
+                detail: "Install CrossOver or choose its app. Supported: \(SupportedRunners.versionList)."
             )
         }
         let tools = SupportedRunners.tools(for: snapshot.installedRunners)
@@ -553,7 +483,7 @@ struct StatusView: View {
                     .padding(-6)
                     .opacity(status.highlightedRow == row.id ? 1 : 0)
             }
-            .animation(.easeInOut(duration: 0.3), value: status.highlightedRow == row.id)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: status.highlightedRow == row.id)
             .id(row.id)
         }
         if case .ready = snapshot.runner, !snapshot.payload.missing(origin: .patched).isEmpty {
@@ -573,9 +503,10 @@ struct StatusView: View {
 
     private func crossOverValue(_ row: CrossOverRow) -> String {
         if let version = row.unsupportedVersion {
-            return "Version \(version) not supported (supported: \(SupportedRunners.versionList))"
+            return "Version \(version) has no verified support profile (supported: \(SupportedRunners.versionList))"
         }
-        let build = "Build \(SupportedRunners.displayVersion(forID: row.buildID))"
+        let build = "\(SupportedRunners.displayVersion(forID: row.buildID))"
+            + (SupportedRunners.build(id: row.buildID).map { " (build \($0.bundleVersion))" } ?? "")
         switch row.copy {
         case .ready: return build
         case .none: return build + (row.licensed == false ? ", not set up or activated" : ", not set up")

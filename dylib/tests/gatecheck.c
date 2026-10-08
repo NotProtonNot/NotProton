@@ -251,6 +251,22 @@ static int extract(const char *chunk, const char *out_path) {
 }
 
 int main(int argc, char **argv) {
+    if (argc == 4 && strcmp(argv[1], "--write") == 0) {
+        size_t len = 0, out_len = 0;
+        uint8_t *buf = slurp(argv[2], &len);
+        if (!buf) return 1;
+        char *out = np_webpatch_transform(buf, len, &out_len, NULL);
+        free(buf);
+        if (!out) return 1;
+        check_output(out, out_len);
+        FILE *file = fopen(argv[3], "wb");
+        if (!file) { free(out); return 1; }
+        int failed = fwrite(out, 1, out_len, file) != out_len;
+        failed |= fclose(file) != 0;
+        free(out);
+        return failed || g_wrong;
+    }
+
     if (argc == 4 && strcmp(argv[1], "--extract") == 0)
         return extract(argv[2], argv[3]);
 

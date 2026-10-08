@@ -14,6 +14,23 @@ struct PayloadState: Sendable {
     var legacyCompatExpected: Int
     var manifestProblem: String?
 
+    // SteamInstaller stages built bridge files and helpers. Valve binaries and
+    // patched ntdlls belong to runner setup, and cannot be repaired by Install.
+    var isSteamComplete: Bool {
+        manifestProblem == nil && missing(origin: .built).isEmpty
+            && overlayShimPresent && iconmakerPresent && appinfoPresent && signatureDatabase != nil
+    }
+
+    var steamRepairDetail: String {
+        if let manifestProblem { return manifestProblem }
+        var names = missing(origin: .built).map(\.path)
+        if !overlayShimPresent { names.append("overlay-shim.dylib") }
+        if !iconmakerPresent { names.append("iconmaker") }
+        if !appinfoPresent { names.append("appinfo") }
+        if signatureDatabase == nil { names.append("Steam signatures") }
+        return "Missing: \(names.joined(separator: ", ")). Install to restore these files for your macOS user."
+    }
+
     var isComplete: Bool {
         manifestProblem == nil && missing.isEmpty && overlayShimPresent && iconmakerPresent
             && appinfoPresent && signatureDatabase != nil
