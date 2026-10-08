@@ -1,3 +1,5 @@
+# Improve installation checks and add guided CrossOver setup
+
 I came across NotProton through Andrew Tsai's YouTube video and wanted to try it on my Mac. Being able to use the normal Steam app for Windows games looked like exactly what I had been missing.
 
 While setting it up I ran into a few things that were hard to understand. My CrossOver version did not match what the app seemed to expect, the installation status said it was not installed for my account, and the compatibility controls in Steam were not behaving as expected. I also had a black game window on the first attempt. I have not treated that last one as a general bug fix, since a retry worked and game compatibility has its own limits.
@@ -22,7 +24,7 @@ A support summary uses a deliberate field allowlist and can be previewed before 
 
 ## Validation
 
-The local package before the larger UI changes was installed manually and A Windows game was confirmed visible and playable on Apple Silicon with CrossOver 26.3 Rosetta. The newer UI package and its visual checks are recorded separately in docs/VALIDATION.md.
+The local package before the larger UI changes was installed manually and a Windows game was confirmed visible and playable on Apple Silicon with CrossOver 26.3 Rosetta. The newer UI package and its visual checks are recorded separately in docs/VALIDATION.md.
 
 Installer, status and signing checks passed with a complete staged payload. Steam interface checks cover three fixtures and ninety seeded identifier renamings, ambiguous matches, changed exports and colliding dependency names. The installed Steam JavaScript chunk was also patched offline and passed Node syntax checking.
 

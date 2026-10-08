@@ -12,7 +12,7 @@ This contribution is based on upstream dev-1.1.0 at `950059dc382d62c8e29dc2a3f94
 
 ## Manual evidence
 
-The earlier package 1.1.0-local.1 was installed manually after removal of the integration. The user confirmed A Windows game was visible and playable in native Steam on Apple Silicon with CrossOver Stable 26.3 Rosetta and Steam build 1788652215. The first attempt had a black window; a retry succeeded. This is not claimed as a general black-screen fix.
+The earlier package 1.1.0-local.1 was installed manually after removal of the integration. The user confirmed a Windows game was visible and playable in native Steam on Apple Silicon with CrossOver Stable 26.3 Rosetta and Steam build 1788652215. The first attempt had a black window; a retry succeeded. This is not claimed as a general black-screen fix.
 
 The later UI was inspected in an isolated native preview. Its first page and integration page showed installed app icons, centered text, status boxes and the primary action. The preview did not install anything. The final whole-row disclosure change and the new permission-flow changes compiled and passed regression tests, but were not visually rechecked at the user's request. Screenshots from the user show the previous downloadable build reaching the final setup page and Steam’s working CrossOver 26.3 Compatibility options. They do not prove the new permission check, native-only filter or automatic dismissal. Light appearance, intermediate animation frames and a complete manual installation of the downloadable version remain unverified.
 
