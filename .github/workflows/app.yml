@@ -108,6 +108,7 @@ jobs:
           make -s routecheck
           make -s bridgecheck
           make -s gamedrivecheck
+          make -s crossoverenvcheck
           make -s seedcheck
 
       - name: Run the Swift tests

@@ -49,6 +49,40 @@ if [ "$np_flavor" = rosetta ] || [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" 
 fi
 export WINELOADER WINESERVER
 
+# CrossOver's own launcher applies the [EnvironmentVariables] of etc/CrossOver.conf
+# to every bottle, and tools such as GPTK Patcher put their MetalFX, frame cap and
+# HUD settings there. Wine is started directly here, so the graphics keys are read
+# from the runner's copy. A key already set, by a launch option, is left alone.
+# Prints NAME=value lines, the last assignment of a key winning as in CrossOver.
+crossover_env() {
+  [ -r "$1" ] || return 0
+  awk '
+    /^[[:space:]]*\[/ {
+      line = $0; sub(/^[[:space:]]*/, "", line); sub(/[[:space:]]*([;#].*)?$/, "", line)
+      inside = (tolower(line) == "[environmentvariables]"); next
+    }
+    !inside { next }
+    match($0, /^[[:space:]]*"[A-Za-z_][A-Za-z0-9_]*"[[:space:]]*=[[:space:]]*"[^"$`\\]*"[[:space:]]*$/) {
+      split($0, part, "\"")
+      if (part[2] ~ /^(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*$/) value[part[2]] = part[4]
+    }
+    END { for (key in value) print key "=" value[key] }
+  ' "$1" 2>/dev/null | sort
+}
+
+import_crossover_env() {
+  pairs=$(crossover_env "$1")
+  [ -n "$pairs" ] || return 0
+  while IFS= read -r pair; do
+    name=${pair%%=*}
+    eval "[ -z \"\${$name+set}\" ]" || continue
+    export "${pair?}"
+    echo "CrossOver.conf: $pair" >> "$log" 2>&1 || true
+  done <<EOF
+$pairs
+EOF
+}
+
 # Keeps Wine from inheriting the prefix and template locks (fd 8 and 9).
 without_lock_fds() {
   "$@" 8>&- 9>&-
@@ -76,6 +110,7 @@ fi
   echo "-- steam env passed through --"
   env | grep -iE '^(Steam|SDL_)' | sort
 } >> "$log" 2>&1 || true
+import_crossover_env "$CX_ROOT/etc/CrossOver.conf"
 
 stage_step="startup"
 # shellcheck disable=SC2329 # the trap below invokes this

@@ -116,6 +116,10 @@ bridgecheck:
 	@if [ ! -f dylib/tests/bridgecheck.sh ]; then $(call SKIP,bridgecheck,dylib/tests/bridgecheck.sh); exit 0; fi; \
 	sh dylib/tests/bridgecheck.sh dylib/feats/compat_run.sh
 
+crossoverenvcheck:
+	@if [ ! -f dylib/tests/crossoverenvcheck.sh ]; then $(call SKIP,crossoverenvcheck,dylib/tests/crossoverenvcheck.sh); exit 0; fi; \
+	sh dylib/tests/crossoverenvcheck.sh dylib/feats/compat_run.sh
+
 gamedrivecheck:
 	@if [ ! -f dylib/tests/gamedrivecheck.sh ]; then $(call SKIP,gamedrivecheck,dylib/tests/gamedrivecheck.sh); exit 0; fi; \
 	sh dylib/tests/gamedrivecheck.sh dylib/feats/compat_run.sh
