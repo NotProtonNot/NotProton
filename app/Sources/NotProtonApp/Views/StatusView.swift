@@ -584,7 +584,13 @@ struct StatusView: View {
         if let version = row.unsupportedVersion {
             return "Version \(version) not supported (supported: \(SupportedRunners.versionList))"
         }
-        let build = "Build \(SupportedRunners.displayVersion(forID: row.buildID))"
+        var build = "Build \(SupportedRunners.displayVersion(forID: row.buildID))"
+        // A toolkit row already names its D3DMetal; the bundle's own row does not.
+        // Once set up, the copy says what the runner gets, whatever the bundle has now.
+        if let install = row.install, install.toolkit == nil,
+           let major = status.snapshot?.runnerD3DMetal[row.buildID] ?? install.d3dmetal {
+            build += " · D3DMetal \(major)"
+        }
         switch row.copy {
         case .ready: return build
         case .none: return build + (row.licensed == false ? ", not set up or activated" : ", not set up")

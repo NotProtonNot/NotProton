@@ -82,10 +82,21 @@ enum RunnerVariant {
             .joined(separator: " · ")
     }
 
+    // The D3DMetal major a toolkit runner was set up with: 3 for "<build>-d3dm3".
+    static func d3dmetal(of build: RunnerBuild) -> String? {
+        guard let last = build.variant?.split(separator: "-").last, last.hasPrefix("d3dm") else { return nil }
+        return String(last.dropFirst(4))
+    }
+
     static func d3dmetalMajor(_ toolkit: URL) -> String? {
         let plist = toolkit.appending(path: "external/D3DMetal.framework/Versions/A/Resources/Info.plist")
         let version = NSDictionary(contentsOf: plist)?["CFBundleShortVersionString"] as? String
         return version?.split(separator: ".").first.map(String.init)
+    }
+
+    // The D3DMetal major in lib64/apple_gptk, the one CrossOver 26 loads.
+    static func activeMajor(crossOverRoot root: URL) -> String? {
+        d3dmetalMajor(root.appending(path: "lib64/apple_gptk"))
     }
 
     // Toolkit directories beside lib64/apple_gptk (apple_gptk_3, apple_gptk_4, ...),
@@ -96,7 +107,7 @@ enum RunnerVariant {
         let dir = root.appending(path: "lib64")
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false))
         else { return [] }
-        var seen = Set([d3dmetalMajor(dir.appending(path: "apple_gptk"))].compactMap { $0 })
+        var seen = Set([activeMajor(crossOverRoot: root)].compactMap { $0 })
         var found: [(path: String, major: String)] = []
         for name in names.sorted() where name.hasPrefix("apple_gptk") && name != "apple_gptk" {
             guard let major = d3dmetalMajor(dir.appending(path: name)), seen.insert(major).inserted else { continue }

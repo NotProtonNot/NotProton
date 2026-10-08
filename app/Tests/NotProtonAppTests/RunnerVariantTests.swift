@@ -90,6 +90,28 @@ struct RunnerToolkitTests {
         #expect(found.map(\.major) == ["3"])
     }
 
+    @Test("The D3DMetal in apple_gptk is the one the bundle's own runner gets")
+    func activeToolkit() throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        try toolkit(root, "lib64/apple_gptk", "4.0b2")
+        try toolkit(root, "lib64/apple_gptk_3", "3.0")
+        #expect(RunnerVariant.activeMajor(crossOverRoot: root) == "4")
+    }
+
+    @Test("A toolkit runner whose copy runs another D3DMetal is refused")
+    func cloneRunsWrongToolkit() throws {
+        let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }
+        let build = try #require(SupportedRunners.all.first { $0.flavor == nil }).withVariant("mycopy-d3dm3")
+        #expect(RunnerVariant.d3dmetal(of: build) == "3")
+        try toolkit(root, "lib64/apple_gptk", "4.0b2")
+        let wrong = #expect(throws: StepFailure.self) { try RunnerInstaller.verifyClone(build: build, root: root) }
+        #expect(wrong?.detail.contains("D3DMetal 4, not 3") == true)
+
+        try toolkit(root, "lib64/apple_gptk", "3.0")
+        let next = #expect(throws: StepFailure.self) { try RunnerInstaller.verifyClone(build: build, root: root) }
+        #expect(next?.detail.contains("D3DMetal") == false)
+    }
+
     @Test("A CrossOver that picks its D3DMetal itself (lib/) gets no extra runners")
     func ignoresLib() throws {
         let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }

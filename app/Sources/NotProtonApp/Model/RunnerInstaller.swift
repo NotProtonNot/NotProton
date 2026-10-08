@@ -281,6 +281,16 @@ enum RunnerInstaller {
     }
 
     static func verifyClone(build: RunnerBuild, root: URL) throws {
+        if let wanted = RunnerVariant.d3dmetal(of: build) {
+            let found = RunnerVariant.activeMajor(crossOverRoot: root)
+            guard found == wanted else {
+                throw StepFailure(
+                    step: step,
+                    detail: "The clone runs D3DMetal \(found ?? "unknown"), not \(wanted). Reinstall it."
+                )
+            }
+        }
+
         let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
         guard let hash = Digest.sha256IfPresent(loader) else {
             throw StepFailure(step: step, detail: "The clone has no Wine loader at \(loader.lastPathComponent).")

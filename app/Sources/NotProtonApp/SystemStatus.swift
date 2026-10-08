@@ -24,6 +24,8 @@ struct StatusSnapshot: Sendable {
     var installedRunners: [RunnerBuild] = []
     var orphanedRunners: [String] = []
     var damagedRunners: [String] = []
+    // The D3DMetal major each runner copy actually carries, by build id.
+    var runnerD3DMetal: [String: String] = [:]
     var installContent: DeploymentContent.Status = .unchecked
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
@@ -47,6 +49,9 @@ struct StatusSnapshot: Sendable {
             installedRunners: installed,
             orphanedRunners: RunnerStore.orphanedClones(),
             damagedRunners: RunnerStore.damagedClones(),
+            runnerD3DMetal: installed.reduce(into: [:]) { found, build in
+                found[build.id] = RunnerVariant.activeMajor(crossOverRoot: SupportPaths.clonedRoot(forBuild: build.id))
+            },
             installContent: DeploymentContent.current(version: bundledVersion)
         )
     }
