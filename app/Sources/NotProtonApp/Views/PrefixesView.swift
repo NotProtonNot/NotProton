@@ -321,6 +321,12 @@ struct PrefixesView: View {
                 toolButtons(for: prefix)
                 Divider()
                 Button("Reveal in Finder") { model.reveal(prefix) }
+                Menu("Open Log") {
+                    ForEach(PrefixLog.allCases, id: \.self) { log in
+                        Button(log.label) { model.open(log, for: prefix) }
+                            .disabled(!model.hasLog(log, for: prefix))
+                    }
+                }
             }
             if !targets.isEmpty {
                 Divider()

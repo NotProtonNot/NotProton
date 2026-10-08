@@ -19,6 +19,26 @@ enum WineTool: String, CaseIterable, Sendable {
     }
 }
 
+// The logs compat_run.sh writes for a game, for attaching to bug reports.
+enum PrefixLog: CaseIterable, Sendable {
+    case launch
+    case wine
+
+    var label: String {
+        switch self {
+        case .launch: "Launch Log"
+        case .wine: "Wine Log"
+        }
+    }
+
+    func url(for prefix: WinePrefix, launchers: URL = SupportPaths.launchers) -> URL {
+        switch self {
+        case .launch: prefix.root.appending(path: "notproton-run.log")
+        case .wine: launchers.appending(path: prefix.appID).appending(path: "notproton-wine.log")
+        }
+    }
+}
+
 // What compat_run.sh writes to notproton-build when a tool first runs a prefix.
 struct PrefixBuildRecord: Sendable, Equatable {
     let build: String
@@ -247,6 +267,14 @@ enum PrefixTools {
             prefix.pfx.path(percentEncoded: false),
             inFileViewerRootedAtPath: prefix.root.path(percentEncoded: false)
         )
+    }
+
+    static func hasLog(_ log: PrefixLog, for prefix: WinePrefix) -> Bool {
+        FileManager.default.fileExists(atPath: log.url(for: prefix).path(percentEncoded: false))
+    }
+
+    static func open(_ log: PrefixLog, for prefix: WinePrefix) {
+        NSWorkspace.shared.open(log.url(for: prefix))
     }
 
     static func reveal(at url: URL) {
