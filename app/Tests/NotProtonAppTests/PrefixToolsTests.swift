@@ -227,7 +227,7 @@ struct PrefixToolsTests {
     func dialogNamesBothBuilds() throws {
         let source = try Self.compatSource()
 
-        // Written in compat_run.sh as: aa64) printf 'the FEX build of CrossOver' ;;
+        // Written in compat_run.sh as: aa64) printf 'an arm64 (FEX) Wine engine' ;;
         func name(of word: String) throws -> String {
             let match = try #require(
                 source.firstMatch(of: try Regex("\(word)\\) printf '([^']+)'")),

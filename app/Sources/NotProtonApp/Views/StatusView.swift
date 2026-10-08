@@ -442,10 +442,28 @@ struct StatusView: View {
             }
         } else {
             StatusRow(
-                title: "CrossOver",
-                value: "Not found. Supported: \(SupportedRunners.versionList).",
+                title: "Wine Engine",
+                value: "None found. Download the free WineHQ engine, or use CrossOver "
+                    + "(\(SupportedRunners.versionList)).",
                 tone: .bad,
                 action: crossOverAction()
+            )
+        }
+        if !status.freeEngineInstalled {
+            let outdated = installs.contains(where: \.isFree)
+            StatusRow(
+                title: "Free Wine Engine",
+                value: outdated
+                    ? "Needs \(FreeEngine.current.renderer.name) for fast Direct3D 11."
+                    : "\(FreeEngine.current.bundleName.replacingOccurrences(of: ".app", with: "")) with \(FreeEngine.current.renderer.name), "
+                        + "no CrossOver license needed.",
+                tone: outdated ? .warning : .neutral,
+                action: StatusAction(
+                    label: outdated ? "Update & Set Up" : "Download & Set Up",
+                    isProminent: installs.isEmpty,
+                    help: "Download WineHQ and set the compatibility tool up from it.",
+                    isEnabled: status.isIdle
+                ) { Task { await status.installFreeEngine() } }
             )
         }
     }
@@ -454,13 +472,13 @@ struct StatusView: View {
         if status.chosenCrossOver != nil {
             return StatusAction(
                 label: "Use Search",
-                help: "Use the default CrossOver.",
+                help: "Use the default Wine engine search.",
                 isEnabled: status.isIdle
             ) { Task { await status.clearCrossOverChoice() } }
         }
         return StatusAction(
             label: chooseLabel,
-            help: "Pick a CrossOver install.",
+            help: "Pick a CrossOver install or Wine engine.",
             isEnabled: status.isIdle
         ) { Task { await status.chooseCrossOver() } }
     }
@@ -540,7 +558,7 @@ struct StatusView: View {
         StatusAction(
             label: "Copy",
             isProminent: true,
-            help: "Copy this CrossOver build and use it.",
+            help: "Copy this Wine build and use it.",
             isEnabled: status.isIdle
         ) {
             Task { await status.requestCompatibilityTool(from: available.install) }
@@ -550,7 +568,7 @@ struct StatusView: View {
     private func useAction(_ build: RunnerBuild) -> StatusAction {
         StatusAction(
             label: "Use",
-            help: "Launch games with this CrossOver build.",
+            help: "Launch games with this Wine build.",
             isEnabled: status.isIdle
         ) {
             Task { await status.switchRunner(to: build) }
@@ -574,7 +592,7 @@ struct StatusView: View {
         StatusAction(
             label: label,
             isProminent: true,
-            help: "Set up the compatibility tool from CrossOver.",
+            help: "Set up the compatibility tool from the selected Wine engine.",
             isEnabled: status.isIdle && status.setupSource != nil
         ) {
             Task { await status.requestCompatibilityTool(replacingExisting: replacingExisting) }

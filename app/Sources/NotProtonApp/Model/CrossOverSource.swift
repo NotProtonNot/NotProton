@@ -22,6 +22,11 @@ struct CrossOverInstall: Sendable, Identifiable {
 
     var isPreview: Bool { name.localizedCaseInsensitiveContains("Preview") }
 
+    var isFree: Bool {
+        if case .supported(let build) = support { return build.isFree }
+        return false
+    }
+
     var isUsable: Bool {
         if case .supported = support { return true }
         return false
@@ -34,6 +39,8 @@ enum CrossOverSource {
         URL(filePath: "/Applications", directoryHint: .isDirectory),
         SupportPaths.home.appending(path: "Applications", directoryHint: .isDirectory),
     ]
+
+    static var engineRoot: URL { SupportPaths.engines }
 
     private static let manualKey = "manualCrossOverPath"
 
@@ -75,12 +82,18 @@ enum CrossOverSource {
             }
         }
 
+        let engines = (try? fm.contentsOfDirectory(at: engineRoot, includingPropertiesForKeys: nil)) ?? []
+        for entry in engines where entry.pathExtension == "app" {
+            consider(entry, isManual: false)
+        }
+
         return found.sorted(by: preferred)
     }
 
     static func preferred(_ a: CrossOverInstall, _ b: CrossOverInstall) -> Bool {
         if a.isManual != b.isManual { return a.isManual }
         if a.isUsable != b.isUsable { return a.isUsable }
+        if a.isFree != b.isFree { return a.isFree }
         if a.isPreview != b.isPreview { return a.isPreview }
         if a.name != b.name { return a.name < b.name }
         return a.id < b.id

@@ -72,7 +72,7 @@ enum RunnerPatcher {
             }
         }
 
-        for loader in unixLoaders(in: root) {
+        for loader in unixLoaders(in: root) where isHardened(loader) {
             let granted = entitlements(of: loader)
             if granted?.contains(restrictedEntitlement) == true {
                 if !signatureIsValid(signingTarget(for: loader)) {
@@ -139,7 +139,7 @@ enum RunnerPatcher {
     private static func grantLoaderEntitlement(root: URL) throws -> [String] {
         var signed: [String] = []
 
-        for loader in unixLoaders(in: root) {
+        for loader in unixLoaders(in: root) where isHardened(loader) {
             let existing = entitlements(of: loader)
             if existing?.contains(restrictedEntitlement) == true { continue }
             if existing?.contains(dyldEntitlement) == true,
@@ -235,6 +235,19 @@ enum RunnerPatcher {
             candidate = candidate.deletingLastPathComponent()
         }
         return nil
+    }
+
+    // WineHQ's loader is ad hoc signed without the hardened runtime, so dyld already
+    // honours the DYLD_* variables and there is nothing to grant. Re-signing it
+    // with the runtime on would take away the JIT and library freedoms Wine needs.
+    static func isHardened(_ loader: URL) -> Bool {
+        guard let result = try? Shell.run(
+            "/usr/bin/codesign", ["-dv", signingTarget(for: loader).path(percentEncoded: false)]
+        ), result.status == 0 else { return true }
+        let described = result.stderr + result.stdout
+        return described.split(separator: "\n").contains {
+            $0.hasPrefix("CodeDirectory") && $0.contains("runtime")
+        }
     }
 
     static let restrictedEntitlement = "com.apple.developer.cross-architecture-support"

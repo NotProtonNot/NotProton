@@ -9,7 +9,7 @@ ntdll="${1:?usage: build64.sh <target ntdll.dll> [variant]}"
 variant="${2:-fex}"
 out="detour64-$variant.bin"
 
-eval "$(python3 resolve.py --sh "$ntdll")"
+eval "$(${PYTHON:-python3} resolve.py --sh "$ntdll")"
 [ "$NP_MACHINE" = 0xaa64 ] || { echo "$ntdll is machine $NP_MACHINE, not aarch64" >&2; exit 1; }
 
 [ "${NP_SITES:-0}" = 2 ] || { echo "$ntdll has ${NP_SITES:-0} hooks, shim64.S serves two" >&2; exit 1; }

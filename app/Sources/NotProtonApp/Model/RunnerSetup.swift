@@ -12,7 +12,7 @@ enum RunnerSetup {
 
         var label: String {
             switch self {
-            case .cloning: "Copying CrossOver"
+            case .cloning: "Copying Wine"
             case .staging: "Patching"
             case .patching: "Installing compatibility tool"
             case .finished: "Done"

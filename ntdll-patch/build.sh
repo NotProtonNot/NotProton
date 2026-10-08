@@ -9,7 +9,7 @@ ntdll="${1:?usage: build.sh <target ntdll.dll> [variant]}"
 variant="${2:-rosetta}"
 [ "$variant" = rosetta ] && out=detour2.bin || out="detour2-$variant.bin"
 
-eval "$(python3 resolve.py --sh "$ntdll")"
+eval "$(${PYTHON:-python3} resolve.py --sh "$ntdll")"
 [ "$NP_MACHINE" = 0x8664 ] || { echo "$ntdll is machine $NP_MACHINE, not x86_64" >&2; exit 1; }
 
 CC=x86_64-w64-mingw32-gcc

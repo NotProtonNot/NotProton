@@ -107,8 +107,8 @@ prefix_machine() {
 
 tool_name() {
   case "$1" in
-    aa64) printf 'the FEX build of CrossOver' ;;
-    8664) printf 'the Rosetta build of CrossOver' ;;
+    aa64) printf 'an arm64 (FEX) Wine engine' ;;
+    8664) printf 'a Rosetta (x86_64) Wine engine' ;;
     *) printf 'an older 32-bit setup' ;;
   esac
 }
@@ -348,6 +348,27 @@ install_lsteamclient_trigger() {
   fi
 }
 
+# A builtin Wine only finds through a placeholder in the prefix, and prefixes made
+# before the runner carried it have none. DXMT's dxgi imports winemetal, so without
+# it every D3D11 game fails to start in such a prefix.
+install_runner_builtins() {
+  for pair in x86_64-windows:system32 i386-windows:syswow64; do
+    arch=${pair%%:*}
+    dir="$WINEPREFIX/drive_c/windows/${pair##*:}"
+    [ -d "$dir" ] || continue
+    for name in winemetal.dll; do
+      src="$CX_ROOT/lib/wine/$arch/$name"
+      [ -f "$src" ] || continue
+      cmp -s "$src" "$dir/$name" && continue
+      if cp -f "$src" "$dir/$name"; then
+        echo "=== installed $arch/$name into the prefix ===" >> "$log" 2>&1 || true
+      else
+        echo "=== could not install $arch/$name into the prefix ===" >> "$log" 2>&1 || true
+      fi
+    done
+  done
+}
+
 # A fix to match Proton
 install_legacy_steam_dll() {
   src="$bridge_src/legacycompat/Steam.dll"
@@ -405,6 +426,7 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   verify_runner
   install_lsteamclient_trigger
   install_legacy_steam_dll
+  install_runner_builtins
   export WINEDLLPATH="$prefix_steam:$WINEDLLPATH"
   export WINEDLLOVERRIDES="steamclient=n;steamclient64=n;lsteamclient=b"
   native_client="$STEAM_COMPAT_CLIENT_INSTALL_PATH"

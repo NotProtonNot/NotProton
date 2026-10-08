@@ -324,9 +324,13 @@ struct NtdllPatcherTests {
 
     // The point of the port: the same input has to come out as the bytes apply.py and
     // apply32.py produced, which SupportedRunners records. Needs an unpatched CrossOver.
-    @Test("Patching the unpatched ntdll reproduces the recorded hashes")
-    func realNtdllReproducesRecordedHashes() throws {
-        let root = URL(filePath: "/Applications/CrossOver Preview.app/Contents/SharedSupport/CrossOver")
+    @Test("Patching the unpatched ntdll reproduces the recorded hashes", arguments: [
+        URL(filePath: "/Applications/CrossOver Preview.app/Contents/SharedSupport/CrossOver"),
+        // The free engine, once NotProton or NOTPROTON_WINEHQ_ROOT has provided one.
+        ProcessInfo.processInfo.environment["NOTPROTON_WINEHQ_ROOT"].map { URL(filePath: $0) }
+            ?? SupportPaths.crossOverRoot(inBundle: FreeEngine.bundle()),
+    ])
+    func realNtdllReproducesRecordedHashes(root: URL) throws {
         guard FileManager.default.fileExists(atPath: root.path(percentEncoded: false)),
               let installed = Digest.sha256IfPresent(CrossOverSource.unixLoader(inRoot: root)),
               let build = SupportedRunners.build(loaderSHA256: installed)

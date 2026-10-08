@@ -275,10 +275,16 @@ def amd64_load_path(pe, body, hook):
     # Neither build keeps the argument in rcx. One spills it to the stack right away,
     # the other stashes it in a callee-saved register and reuses that a few instructions
     # later.
-    src, slot, stored_at = 'rcx', None, None
+    # WineHQ builds spill it rbp-relative instead, with rbp pinned to rsp+N by the
+    # prologue, so the slot is translated back to rsp.
+    src, slot, stored_at, rbp_off = 'rcx', None, None, None
     for i in body:
         if i.address >= hook:
             break
+        m = re.fullmatch(r'rbp, \[rsp \+ (0x[0-9a-f]+)\]', i.op_str)
+        if i.mnemonic == 'lea' and m:
+            rbp_off = int(m.group(1), 16)
+            continue
         if i.mnemonic != 'mov' or ',' not in i.op_str:
             continue
         dst, rhs = (x.strip() for x in i.op_str.split(',', 1))
@@ -286,6 +292,12 @@ def amd64_load_path(pe, body, hook):
             continue
         if dst.startswith('qword ptr [rsp'):
             slot = 0 if '+' not in dst else int(dst.split('+')[1].strip().rstrip(']'), 16)
+            stored_at = i.address
+            break
+        m = re.fullmatch(r'qword ptr \[rbp(?: ([+-]) (0x[0-9a-f]+))?\]', dst)
+        if m and rbp_off is not None:
+            disp = int(m.group(2), 16) * (-1 if m.group(1) == '-' else 1) if m.group(2) else 0
+            slot = rbp_off + disp
             stored_at = i.address
             break
         if re.fullmatch(r'r[a-z0-9]+', dst):
@@ -300,7 +312,11 @@ def amd64_load_path(pe, body, hook):
             continue
         if i.mnemonic in ('push', 'pop') or (i.mnemonic in ('sub', 'add') and i.op_str.startswith('rsp,')):
             raise SystemExit(f"{pe.path}: rsp moves at {i.address:#x}, load_path slot not rsp-stable")
-        if i.mnemonic == 'mov' and i.op_str.startswith(f'qword ptr [rsp + {slot:#x}],'):
+        aliases = [f'qword ptr [rsp + {slot:#x}],']
+        if rbp_off is not None:
+            d = slot - rbp_off
+            aliases.append(f'qword ptr [rbp {"-" if d < 0 else "+"} {abs(d):#x}],' if d else 'qword ptr [rbp],')
+        if i.mnemonic == 'mov' and any(i.op_str.startswith(a) for a in aliases):
             raise SystemExit(f"{pe.path}: load_path slot rewritten at {i.address:#x}")
     return slot
 

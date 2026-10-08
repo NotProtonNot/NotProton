@@ -35,6 +35,15 @@ enum CrossOverLicense {
         searchDirs: [URL] = defaultSearchDirs,
         openssl: String = defaultOpenssl
     ) -> Status {
+        if let build = freeBuild(at: crossOverRoot) {
+            let status = Status(
+                licensed: true,
+                detail: "\(build.releaseVersion) is free software and needs no license.",
+                diagnostic: "free engine \(build.id), no license required"
+            )
+            AppLog.note("license: \(status.diagnostic)")
+            return status
+        }
         let status = evaluate(
             crossOverRoot: crossOverRoot, searchDirs: searchDirs, openssl: openssl
         )
@@ -121,6 +130,16 @@ enum CrossOverLicense {
             detail: notActivated,
             diagnostic: rejection ?? "no CrossOver license file found"
         )
+    }
+
+    // Only a loader whose hash pins a free build counts, so this never applies to
+    // a CrossOver install, wherever it sits.
+    static func freeBuild(at root: URL) -> RunnerBuild? {
+        let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
+        guard let hash = Digest.sha256IfPresent(loader),
+              let build = SupportedRunners.build(loaderSHA256: hash), build.isFree
+        else { return nil }
+        return build
     }
 
     static func requireValid(for install: CrossOverInstall) throws {

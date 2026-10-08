@@ -34,6 +34,9 @@ let package = Package(
                 .copy("Resources/detour32-41069.bin"),
                 .copy("Resources/detour32-fex-41069.bin"),
                 .copy("Resources/detour64-fex-41069.bin"),
+                .copy("Resources/detour2-winehq-11.15.bin"),
+                .copy("Resources/detour32-winehq-11.15.bin"),
+                .copy("Resources/winemac-winehq-11.15.so"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

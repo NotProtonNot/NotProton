@@ -24,6 +24,8 @@ enum SupportPaths {
     static var runners: URL { support.appending(path: "runners") }
     static var backups: URL { support.appending(path: "backups") }
     static var launchers: URL { support.appending(path: "launchers") }
+    // Free WineHQ engines NotProton downloaded, laid out like a CrossOver bundle.
+    static var engines: URL { support.appending(path: "engines") }
 
     static var signatures: URL {
         support.appending(path: "signatures/macos.arm64")

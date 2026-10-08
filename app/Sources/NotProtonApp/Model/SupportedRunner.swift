@@ -28,6 +28,10 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
     let cleanNtdll: [WineArch: String]
     let patchedNtdll: [WineArch: String]
 
+    // A free WineHQ engine NotProton downloads itself rather than a CrossOver
+    // install. It has no license to check.
+    var isFree = false
+
     var id: String { flavor.map { "\(bundleVersion)-\($0)" } ?? bundleVersion }
 
     var flavorName: String { flavor?.uppercased() ?? "Rosetta" }
@@ -93,6 +97,21 @@ enum SupportedRunners {
                 .i386Windows: "e16b0199db721a08201b1512476b9eff255624d2faf3696fa57ff74b1a54be5c",
                 .aarch64Windows: "89e4c9e7f0a0a60462c0231ec393168f8bdb04bc8ea1dc22211f25bf3ff2c6b3",
             ]
+        ),
+        RunnerBuild(
+            bundleVersion: "winehq-11.15",
+            releaseVersion: "WineHQ 11.15",
+            flavor: nil,
+            loaderSHA256: "8aa25e55f28a0634a7df04c02dd719d4bc20de645cf42b9ba7d0e3b7d8f66a80",
+            cleanNtdll: [
+                .x86_64Windows: "682181234a55f5b7eed5b2ffa691fbdef1b488734337ef67ea7b5ce17adf43a2",
+                .i386Windows: "49396e7ad804a5345b1b968d02fdb6697ddbb7428e61e20e62806c50c37589d1",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "08a825e8236e79c909fae3934ca5e8a195a344d06f8affb6e13cdf1bd9ffa783",
+                .i386Windows: "88f9a1d16dd7127100eab902156390ec2a5ec67770cfddd3fd3f1237c9965309",
+            ],
+            isFree: true
         ),
     ]
 

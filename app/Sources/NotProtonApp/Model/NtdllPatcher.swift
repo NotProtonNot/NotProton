@@ -185,6 +185,39 @@ enum NtdllPatcher {
                 imageBase: 0x1_8000_0000
             ),
         ],
+        "winehq-11.15": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-winehq-11.15",
+                payloadSHA256: "d394a6b7f4c55e2bb8b99aeb51cd4555527f8e10fa49339e95a8156486c5e2e5",
+                caveRVA: 0xb3000,
+                payloadRVA: 0xb3000,
+                hooks: [
+                    NtdllHook(rva: 0x3512c, stolen: [0x48, 0x8b, 0x85, 0x90, 0x00, 0x00, 0x00]),
+                ],
+                caveSize: 0x1000,
+                cavePad: 0x00,
+                machine: 0x8664,
+                magic: 0x20b,
+                imageBase: 0x1_7000_0000,
+                placement: .section
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-winehq-11.15",
+                payloadSHA256: "527431a3a74e9dff7bc3582277ddfa7b44bcac6fba285c028fd2c94fd9202418",
+                caveRVA: 0x6a075,
+                payloadRVA: 0x6a080,
+                hooks: [
+                    NtdllHook(rva: 0x2edcd, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02]),
+                ],
+                caveSize: 3979,
+                cavePad: 0xcc,
+                machine: 0x14c,
+                magic: 0x10b,
+                imageBase: 0x7bc0_0000
+            ),
+        ],
     ]
 
     static func patches(for build: RunnerBuild) -> [NtdllPatch] {

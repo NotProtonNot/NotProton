@@ -336,7 +336,7 @@ final class SystemStatus {
 
     private func setUpRunner(from install: CrossOverInstall?, replacingExisting: Bool = false) async {
         guard let install else {
-            setFailure("No supported copy of CrossOver found.")
+            setFailure("No supported Wine engine found. Download the free WineHQ engine first.")
             AppLog.note("run refused: no supported CrossOver")
             outcome = nil
             return
@@ -349,6 +349,23 @@ final class SystemStatus {
                 }
             }.value
 
+            return runnerOutcome(result)
+        }
+    }
+
+    var freeEngineInstalled: Bool {
+        snapshot?.crossOver.contains { $0.isFree && FreeEngine.hasRenderer(root: $0.crossOverRoot) } ?? false
+    }
+
+    // Downloads the free WineHQ engine and sets the compatibility tool up from it,
+    // so no CrossOver install or license is needed.
+    func installFreeEngine() async {
+        guard isIdle else { return }
+        await perform(from: FreeEngine.step) { progress in
+            let install = try await FreeEngine.install { progress($0.label) }
+            let result = try await Task.detached(priority: .userInitiated) {
+                try RunnerSetup.run(from: install, replacingExisting: true) { progress($0.label) }
+            }.value
             return runnerOutcome(result)
         }
     }
