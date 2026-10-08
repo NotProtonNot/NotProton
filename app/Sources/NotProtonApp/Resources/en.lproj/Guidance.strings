@@ -91,7 +91,7 @@
 "About" = "About";
 "Open guide" = "Open guide";
 "Walk through setup again. Your installation is checked, not reset." = "Walk through setup again. Your installation is checked, not reset.";
-"The guide follows macOS Reduce Motion. New guidance uses your app language, in English or German." = "The guide follows macOS Reduce Motion. New guidance uses your app language, in English or German.";
+"The guide follows macOS Reduce Motion. All guidance is in English." = "The guide follows macOS Reduce Motion. All guidance is in English.";
 "Your Steam. More games." = "Your Steam. More games.";
 "Let NotProton set up Steam" = "Let NotProton set up Steam";
 "Steam is ready" = "Steam is ready";

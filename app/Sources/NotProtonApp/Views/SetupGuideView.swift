@@ -5,10 +5,12 @@ struct SetupGuideView: View {
     @Environment(SystemStatus.self) private var status
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     let initialSnapshot: StatusSnapshot
     @State private var step: SetupGuide.Step = .requirements
     @State private var sourceID: String?
     @State private var detailsExpanded = false
+    @State private var writeAccess = SteamWriteAccess()
 
     private var snapshot: StatusSnapshot { status.snapshot ?? initialSnapshot }
     private var guide: SetupGuide { SetupGuide(snapshot) }
@@ -45,7 +47,7 @@ struct SetupGuideView: View {
         guard status.isIdle else { return false }
         switch step {
         case .requirements: return guide.requirementsReady && sourceReady
-        case .permissions: return true
+        case .permissions: return writeAccess.isReady
         case .integration: return guide.integrationReady
         case .runtime: return guide.runtimeReady
         case .play: return guide.isReady
@@ -169,6 +171,12 @@ struct SetupGuideView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .interactiveDismissDisabled(status.isBusy)
         .modifier(StatusConfirmations())
+        .task(id: step) {
+            if step == .permissions { writeAccess.check() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, step == .permissions { writeAccess.check() }
+        }
         .onChange(of: status.usableCrossOvers.map(\.id)) { _, ids in
             if let sourceID, !ids.contains(sourceID) { self.sourceID = nil }
         }
@@ -206,23 +214,34 @@ struct SetupGuideView: View {
         case .permissions:
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    Image(systemName: "lock.shield.fill").font(.title2).foregroundStyle(Color.orange)
+                    Image(systemName: writeAccess.isReady ? "checkmark.circle.fill" : "lock.shield.fill")
+                        .font(.title2).foregroundStyle(writeAccess.isReady ? Color.green : Color.orange)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(GuideCopy.text("App Management")).font(.headline)
-                        Text(GuideCopy.text("Allow NotProton if it appears in this list."))
+                        Text(writeAccess.isReady ? "Steam access is ready" : "App Management").font(.headline)
+                        Text(writeAccess.isReady ? "You can continue." : "Allow NotProton to update Steam.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
-                if let pane = Remedy.appManagement.settingsPane {
-                    Button(GuideCopy.text("Open System Settings")) { Remedy.openSettings(pane) }
-                        .buttonStyle(.bordered).tint(.accentColor).disabled(!status.isIdle)
+                if !writeAccess.isReady {
+                    if let pane = Remedy.appManagement.settingsPane {
+                        Button("Open System Settings") {
+                            writeAccess.check()
+                            Remedy.openSettings(pane)
+                        }.buttonStyle(.bordered).tint(.accentColor).disabled(!status.isIdle)
+                    }
+                    Button("Check again") { writeAccess.check() }.disabled(!status.isIdle)
+                    if case .blocked(let reason) = writeAccess.state {
+                        Text(reason).font(.callout).foregroundStyle(.secondary)
+                    }
                 }
             }.padding(16).frame(maxWidth: 470, alignment: .leading)
-                .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.2)))
-            Text(GuideCopy.text("Not listed yet? Continue. macOS may ask during installation."))
+                .background((writeAccess.isReady ? Color.green : Color.orange).opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke((writeAccess.isReady ? Color.green : Color.orange).opacity(0.2)))
+            if !writeAccess.isReady {
+                Text("Not listed? Click + and add NotProton from Applications. Return here after enabling it.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
         case .integration:
             readinessBox("Steam integration", detail: guide.integrationReady ? "Checked and ready" : "Games and saves are kept",
                          ready: guide.integrationReady, icon: nil) { EmptyView() }.frame(maxWidth: 470)
@@ -234,8 +253,9 @@ struct SetupGuideView: View {
                          ready: guide.runtimeReady, icon: source?.bundle) { EmptyView() }.frame(maxWidth: 470)
         case .play:
             VStack(alignment: .leading, spacing: 12) {
-                instruction(1, "Choose an installed NotProton / CrossOver tool.")
-                instruction(2, "Start the game. Check picture, controls and saves.")
+                instruction(1, "Enable Force the use of a specific Steam Play compatibility tool.")
+                instruction(2, "Choose CrossOver in the dropdown, then start the game.")
+                instruction(3, "Check picture, controls and saves.")
             }.padding(16).frame(maxWidth: 470, alignment: .leading)
                 .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
             Text(GuideCopy.text("The first game launch may take longer."))
@@ -280,7 +300,8 @@ struct SetupGuideView: View {
                 }
                 Button(GuideCopy.text("Check again")) { Task { await status.refresh() } }.disabled(!status.isIdle)
             case .permissions:
-                Text(GuideCopy.text("Open Privacy & Security → App Management. Enable the NotProton app you are using if it is listed. NotProton cannot reliably read whether this permission has been granted."))
+                Text("Open System Settings → Privacy & Security → App Management. If NotProton is missing, click +, select /Applications/NotProton.app and click Open. Enable NotProton and return to this app. If macOS asks you to restart NotProton, do so and reopen setup from Settings.")
+                Text("The check creates and removes a unique temporary file in Steam's app bundle. It does not install or replace anything. The green check means Steam write access was verified, not that a particular macOS permission switch was read. macOS may allow access without adding a new entry.")
                 Text(GuideCopy.text("Steam may later request Input Monitoring for controllers. Full Disk Access is not a general setup requirement."))
             case .integration:
                 Text(GuideCopy.text(guide.integrationDetail))
@@ -306,8 +327,17 @@ struct SetupGuideView: View {
             return
         }
         if step == .play {
-            NSWorkspace.shared.openApplication(at: SupportPaths.Steam.app, configuration: .init())
+            NSWorkspace.shared.openApplication(at: SupportPaths.Steam.app, configuration: .init()) { _, error in
+                Task { @MainActor in
+                    if let error { status.setFailure(error.localizedDescription) }
+                    else { dismiss() }
+                }
+            }
             return
+        }
+        if step == .permissions {
+            writeAccess.check()
+            guard writeAccess.isReady else { return }
         }
         move(1)
     }

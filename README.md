@@ -6,7 +6,7 @@ NotProton enables Steam Play in the native Steam client and provides the bridge 
 
 **This repository is a contribution fork of [NotProton](https://github.com/NotProtonNot/NotProton), based on its `dev-1.1.0` branch.** It adds installation fixes, clearer status messages, guided setup and help. These changes have not been merged upstream. An experimental Apple Silicon test build is available from this fork’s releases.
 
-[Download test build](https://github.com/schroedernils/NotProton/releases/tag/v1.1.0-contribution.1) · [Deutsche Anleitung](docs/DE.md) · [Compatibility and troubleshooting](#when-something-does-not-work) · [Build from source](#for-developers)
+[Download test build](https://github.com/schroedernils/NotProton/releases/tag/v1.1.0-preview.2) · [Compatibility and troubleshooting](#when-something-does-not-work) · [Build from source](#for-developers)
 
 ## What you can do
 
@@ -19,7 +19,7 @@ NotProton enables Steam Play in the native Steam client and provides the bridge 
 
 You can expand help, setup details and maintenance by clicking anywhere on their heading row. Steam and CrossOver icons are read from your installed apps, with a fallback when an app is missing. No separate logo assets are distributed.
 
-The new setup and help pages are available in English and German. Existing advanced tools retain their current English labels.
+The app and repository documentation are in English. Steam keeps its own language setting.
 
 ## What you need
 
@@ -47,16 +47,18 @@ Steam also needs compatible native hooks and interface patches. Steam client bui
 
 For the released upstream version, use the assets from the [official release page](https://github.com/NotProtonNot/NotProton/releases). Its requirements may differ from this development fork. Do not assume that the released version includes the changes described here.
 
-For this fork, download `NotProton-1.1.0-contribution.1-macos-arm64.zip` from the [test release](https://github.com/schroedernils/NotProton/releases/tag/v1.1.0-contribution.1), or build from source. Unzip it and copy NotProton.app into Applications. This is an experimental, ad hoc signed build, without Apple notarization. macOS may block the first launch. If you trust this exact download, use the individual Open Anyway option in Privacy & Security. Keep Gatekeeper enabled. Automatic app updates are disabled in this test build. The redesigned build still needs a manual installation and game test.
+For this fork, download `NotProton.zip` from the [test release](https://github.com/schroedernils/NotProton/releases/tag/v1.1.0-preview.2), or build from source. Unzip it and copy NotProton.app into Applications. This is an experimental, ad hoc signed build, without Apple notarization. macOS may block the first launch. If you trust this exact download, use the individual Open Anyway option in Privacy & Security. Keep Gatekeeper enabled. Automatic app updates are disabled in this test build. The prior contribution build was manually installed and reached Steam’s working Compatibility page. The new permission flow and setup dismissal still need manual confirmation.
 
 1. Copy the app into Applications and open it. The setup guide opens on the first app launch. You can reopen it from Settings at the bottom of the sidebar or from Status.
 2. **Check requirements.** Confirm Steam and a supported CrossOver source. Use Choose CrossOver if it is in another folder. Activate CrossOver in its own app if necessary.
-3. **Prepare macOS permissions.** Read the App Management explanation and use its System Settings button. Enable the NotProton app you are using if macOS lists it. If it is not listed yet, macOS may add it after the installation request. The app cannot reliably read this permission's state and does not claim it is granted merely because you continued.
+3. **Check Steam write access.** The permissions page tests a unique temporary file in Steam’s app bundle and removes it. This requests the access installation needs without installing anything. If access is denied, use Open System Settings → Privacy & Security → App Management. If NotProton is missing, click **+**, select `/Applications/NotProton.app`, click **Open** and enable it. Return to NotProton; it rechecks automatically and shows a green check when Steam write access succeeds. Continue stays disabled until that check passes. If macOS requires a restart, restart NotProton and reopen setup in Settings. Ownership errors still need the account that owns Steam. The app checks write access, not the private macOS permission database.
 4. **Install the integration.** Quit your games first. Installation may close Steam. For an activated source, it can also prepare the runtime automatically. A failed operation stays on the current page with the error and relevant settings link.
 5. **Set up the runtime.** Follow the page if a runtime or required components are still missing. The original CrossOver app remains the source; NotProton uses its own copy.
-6. **Start a game.** Open or restart the normal macOS Steam app. In Library, open a Windows game's **Properties → Compatibility** and choose an installed NotProton/CrossOver tool. Start the game and check picture, controls and saves.
+6. **Start a game.** Open or restart the normal macOS Steam app. In Library, open a Windows game's **Properties → Compatibility** then enable **Force the use of a specific Steam Play compatibility tool**. Choose **CrossOver 26.3**, or your installed CrossOver profile, in the dropdown below it. Start the game and check picture, controls and saves. The setup closes after Open Steam successfully opens Steam.
 
 The first launch can take longer while the Windows environment is created. A ready installation means the required files and runtime passed the checks. It does not guarantee compatibility with every game.
+
+NotProton does not require macOS **Accessibility** permission to choose CrossOver. The checkbox above belongs to Steam’s **Compatibility** page.
 
 If Steam requests Input Monitoring for controller support, allow it for Steam when prompted and restart Steam. Full Disk Access is not a general setup requirement.
 

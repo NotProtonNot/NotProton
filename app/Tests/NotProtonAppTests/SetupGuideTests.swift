@@ -90,7 +90,7 @@ struct SetupGuideTests {
         #expect(HelpTopic.all.filter { $0.matches("not-a-real-symptom") }.isEmpty)
     }
 
-    @Test("English and German guidance resources contain the same nonempty keys")
+    @Test("English guidance resources contain nonempty help and step text")
     func localizationCoverage() throws {
         let sources = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appending(path: "Sources/NotProtonApp/Resources")
@@ -98,10 +98,9 @@ struct SetupGuideTests {
             let data = try Data(contentsOf: sources.appending(path: "\(language).lproj/Guidance.strings"))
             return try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String])
         }
-        let en = try table("en"), de = try table("de")
-        #expect(Set(en.keys) == Set(de.keys))
-        #expect(de.values.allSatisfy { !$0.isEmpty })
-        for step in SetupGuide.Step.allCases { #expect(de[step.title] != nil) }
-        for topic in HelpTopic.all { #expect(de[topic.title] != nil); #expect(de[topic.body] != nil) }
+        let en = try table("en")
+        #expect(en.values.allSatisfy { !$0.isEmpty })
+        for step in SetupGuide.Step.allCases { #expect(en[step.title] != nil) }
+        for topic in HelpTopic.all { #expect(en[topic.title] != nil); #expect(en[topic.body] != nil) }
     }
 }

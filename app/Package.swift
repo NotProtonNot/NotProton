@@ -26,7 +26,6 @@ let package = Package(
             path: "Sources/NotProtonApp",
             resources: (hasPayload ? [.copy("Resources/payload")] : []) + [
                 .process("Resources/en.lproj"),
-                .process("Resources/de.lproj"),
                 .copy("Resources/payload.manifest"),
                 .copy("Resources/valve-packages.manifest"),
                 .copy("Resources/detour2.bin"),

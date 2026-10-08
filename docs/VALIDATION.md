@@ -5,7 +5,7 @@ This contribution is based on upstream dev-1.1.0 at `950059dc382d62c8e29dc2a3f94
 ## Automated checks on 8 October 2026
 
 * The complete Swift test command completed successfully with 481 tests in 57 suites. The real Wine prefix rebuild suite was skipped because its opt-in was unset. It is not counted as a real runtime validation.
-* The complete staged installer payload was used for the Swift checks. Coverage includes deployment content guards, signing metadata recovery, prefix and backup safety, supported profiles, setup readiness, localization parity, help search and the support summary allowlist.
+* The complete staged installer payload was used for the Swift checks. Coverage includes deployment content guards, signing metadata recovery, prefix and backup safety, supported profiles, setup readiness, English help-resource coverage, help search and the support summary allowlist.
 * `make webpatch-fixtures panel-behavior launch-shell` completed successfully. This includes three webpatch fixtures, ninety seeded identifier renamings, ambiguous patch refusal, preserved panel exports, dependency name collisions, launch quoting and migration, and shell behavior.
 * A locally installed Steam JavaScript chunk was separately patched offline and syntax checked during development.
 * The downloadable app uses the production entry point and real installer actions, not the no-op design preview. It is built with optimization and `NOTPROTON_LOCAL_TEST`, which disables app updates. Its ad hoc signature, archive contents and staged payload hashes are checked during packaging.
@@ -14,7 +14,7 @@ This contribution is based on upstream dev-1.1.0 at `950059dc382d62c8e29dc2a3f94
 
 The earlier package 1.1.0-local.1 was installed manually after removal of the integration. The user confirmed Normal Golf Game was visible and playable in native Steam on Apple Silicon with CrossOver Stable 26.3 Rosetta and Steam build 1788652215. The first attempt had a black window; a retry succeeded. This is not claimed as a general black-screen fix.
 
-The later UI was inspected in an isolated native preview. Its first page and integration page showed installed app icons, centered text, status boxes and the primary action. The preview did not install anything. The final whole-row disclosure change compiled and passed regression tests, but was not visually rechecked at the user's request. German layouts, light appearance, intermediate animation frames and a complete manual installation of the downloadable version remain unverified.
+The later UI was inspected in an isolated native preview. Its first page and integration page showed installed app icons, centered text, status boxes and the primary action. The preview did not install anything. The final whole-row disclosure change compiled and passed regression tests, but was not visually rechecked at the user's request. Light appearance, intermediate animation frames and a complete manual installation of the downloadable version remain unverified.
 
 ## Compatibility limits
 

@@ -279,9 +279,9 @@ enum SteamInstaller {
 
     static func assertBundleIsWritable(_ app: URL) throws {
         let directory = app.appending(path: "Contents/MacOS")
-        let probe = directory.appending(path: ".notproton-write-probe")
+        let probe = directory.appending(path: ".notproton-write-probe-\(UUID().uuidString)")
         do {
-            try Data("probe".utf8).write(to: probe)
+            try Data("probe".utf8).write(to: probe, options: .withoutOverwriting)
             try FileManager.default.removeItem(at: probe)
         } catch let error as NSError where error.code == NSFileWriteNoPermissionError {
             throw WriteRefused(path: directory.path(percentEncoded: false))

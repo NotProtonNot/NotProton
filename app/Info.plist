@@ -30,6 +30,8 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSAppBundlesUsageDescription</key>
+	<string>NotProton needs to update the Steam app to enable Windows games in native macOS Steam.</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/NotProtonNot/NotProton/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

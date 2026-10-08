@@ -14,7 +14,7 @@ struct HelpTopic: Identifiable, Sendable {
 
     static let all: [HelpTopic] = [
         .init(id: "first-game", title: "Where do I choose NotProton?",
-              body: "Use the macOS Steam app. In Library, open the game's Properties → Compatibility and choose the installed NotProton / CrossOver tool. Restart Steam after adding a runtime. You do not need Windows Steam in a separate bottle.",
+              body: "Use the macOS Steam app. In Library, open the game's Properties → Compatibility, enable Force the use of a specific Steam Play compatibility tool, then choose the installed NotProton / CrossOver tool from the dropdown. This is Steam's Compatibility page, not macOS Accessibility settings. Restart Steam after adding a runtime. You do not need Windows Steam in a separate bottle.",
               url: URL(string: "https://github.com/NotProtonNot/NotProton")),
         .init(id: "builds", title: "Why is my CrossOver version unsupported?",
               body: "Stable and Preview are release channels, not compatibility guarantees. NotProton patches specific Wine binaries. Each exact build needs verified hashes and hook locations. Compare the build number in Status with the supported profiles. Do not rename an app to force support.", url: URL(string: "https://github.com/NotProtonNot/NotProton/issues/40")),

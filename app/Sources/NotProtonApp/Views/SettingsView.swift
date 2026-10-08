@@ -23,7 +23,7 @@ struct SettingsView: View {
             }
             Section(GuideCopy.text("About")) {
                 LabeledContent("NotProton", value: AppVersion.bundled)
-                Text(GuideCopy.text("The guide follows macOS Reduce Motion. New guidance uses your app language, in English or German."))
+                Text(GuideCopy.text("The guide follows macOS Reduce Motion. All guidance is in English."))
                     .foregroundStyle(.secondary)
             }
         }
