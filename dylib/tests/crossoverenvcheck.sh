@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=SC2034,SC2154
+# shellcheck disable=SC2016,SC2034,SC2154 # the grep pattern matches a literal $CX_ROOT
 set -e
 SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "crossoverenvcheck: $SRC not present, skipped"; exit 0; }
