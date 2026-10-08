@@ -184,6 +184,32 @@ struct ManualCrossOverTests {
         #expect(!CrossOverSource.looksLikeCrossOver(other))
     }
 
+    @Test("Copies in a folder inside Applications, on a mounted drive or known to Spotlight are found")
+    func searchReachesOtherPlaces() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appending(path: "cx-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: dir) }
+        let apps = dir.appending(path: "Applications")
+        let volumes = dir.appending(path: "Volumes")
+        let made = [
+            apps.appending(path: "CrossOver.app"),
+            apps.appending(path: "Games/CrossOver (GPTK 4.0b2).app"),
+            volumes.appending(path: "Spare/CrossOver.app"),
+            volumes.appending(path: "Spare/Applications/CrossOver Preview.app"),
+        ]
+        for bundle in made {
+            try fm.createDirectory(at: bundle.appending(path: "Contents"), withIntermediateDirectories: true)
+        }
+        // Deeper than one folder is not searched, and the boot volume's link back to / is skipped.
+        try fm.createDirectory(at: apps.appending(path: "A/B/Deep.app"), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: volumes.appending(path: "Macintosh HD"), withDestinationURL: URL(filePath: "/"))
+        let spotted = URL(filePath: "/Somewhere/CrossOver.app")
+
+        let found = CrossOverSource.candidates(roots: [apps], volumes: volumes) { [spotted] }
+        #expect(found.map { $0.standardizedFileURL.path(percentEncoded: false) }
+                == (made + [spotted]).map { $0.standardizedFileURL.path(percentEncoded: false) })
+    }
+
     @Test("A remembered copy in a folder the search covers is not treated as added by hand")
     func searchedFolderIsNotManual() {
         #expect(CrossOverSource.isSearched(URL(filePath: "/Applications/CrossOver.app/")))

@@ -85,12 +85,12 @@ enum CrossOverSource {
     }
 
     static func discover() -> [CrossOverInstall] {
-        let fm = FileManager.default
         var found: [CrossOverInstall] = []
         var seen: Set<String> = []
 
         func consider(_ bundle: URL, isManual: Bool) {
-            let key = bundle.standardizedFileURL.path(percentEncoded: false)
+            // /Volumes/Macintosh HD links back to /, so a copy can turn up under two paths.
+            let key = bundle.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
             guard !seen.contains(key), looksLikeCrossOver(bundle) else { return }
             seen.insert(key)
             found += inspectAll(bundle: bundle, isManual: isManual)
@@ -98,16 +98,56 @@ enum CrossOverSource {
 
         for manual in manualBundles() where !isSearched(manual) { consider(manual, isManual: true) }
 
-        for root in searchRoots {
-            let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-            for entry in entries where entry.pathExtension == "app" {
-                // Recognised by what it carries, not by its name: copies made by
-                // other tools are called whatever those tools call them.
-                consider(entry, isManual: false)
-            }
-        }
+        // Recognised by what it carries, not by its name: copies made by other
+        // tools are called whatever those tools call them.
+        for candidate in candidates() { consider(candidate, isManual: false) }
 
         return found.sorted(by: preferred)
+    }
+
+    // Every .app worth checking. Besides the Applications folders themselves that is
+    // a folder inside them (/Applications/Games), the top of a mounted drive and its
+    // Applications folder, and whatever Spotlight knows by CrossOver's bundle id.
+    static func candidates(
+        roots: [URL] = searchRoots,
+        volumes: URL = URL(filePath: "/Volumes", directoryHint: .isDirectory),
+        spotlight: () -> [URL] = spotlightBundles
+    ) -> [URL] {
+        let fm = FileManager.default
+        func children(_ dir: URL) -> [URL] {
+            (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?
+                .sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
+        }
+        func isFolder(_ url: URL) -> Bool {
+            var isDir: ObjCBool = false
+            return url.pathExtension != "app"
+                && fm.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDir) && isDir.boolValue
+        }
+
+        var direct: [URL] = []
+        var nested: [URL] = []
+        for root in roots {
+            for entry in children(root) {
+                if entry.pathExtension == "app" { direct.append(entry) }
+                else if isFolder(entry) { nested += children(entry).filter { $0.pathExtension == "app" } }
+            }
+        }
+        var mounted: [URL] = []
+        for volume in children(volumes) where volume.resolvingSymlinksInPath().path(percentEncoded: false) != "/" {
+            mounted += children(volume).filter { $0.pathExtension == "app" }
+            mounted += children(volume.appending(path: "Applications")).filter { $0.pathExtension == "app" }
+        }
+        return direct + nested + mounted + spotlight()
+    }
+
+    // Spotlight can be off or still indexing, so this only adds to the folder search.
+    static func spotlightBundles() -> [URL] {
+        guard let result = try? Shell.run(
+            "/usr/bin/mdfind", ["kMDItemCFBundleIdentifier == 'com.codeweavers.CrossOver*'"]
+        ), result.succeeded else { return [] }
+        return result.stdout.split(whereSeparator: \.isNewline).map(String.init)
+            .filter { $0.hasSuffix(".app") && !$0.contains("/.Trash/") && !$0.contains(".app/") }
+            .map { URL(filePath: $0, directoryHint: .isDirectory) }
     }
 
     static func preferred(_ a: CrossOverInstall, _ b: CrossOverInstall) -> Bool {
