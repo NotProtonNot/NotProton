@@ -98,6 +98,16 @@ struct RunnerToolkitTests {
         #expect(RunnerVariant.activeMajor(crossOverRoot: root) == "4")
     }
 
+    @Test("Every tool names the D3DMetal its runner's copy runs, once")
+    func toolsNameTheirD3DMetal() throws {
+        let pinned = try #require(SupportedRunners.all.first { $0.flavor == nil })
+        let toolkit = pinned.withVariant("d3dm3")
+        let tools = SupportedRunners.tools(for: [pinned, toolkit]) { $0.id == pinned.id ? "4" : "3" }
+        #expect(tools.filter { $0.build == pinned.id }.allSatisfy { $0.display.hasSuffix(" · D3DMetal 4") })
+        #expect(tools.filter { $0.build == toolkit.id }.allSatisfy { $0.display.hasSuffix(" · D3DMetal 3") })
+        #expect(!tools.contains { $0.display.contains("D3DMetal 3 · D3DMetal") })
+    }
+
     @Test("A toolkit runner whose copy runs another D3DMetal is refused")
     func cloneRunsWrongToolkit() throws {
         let root = try scratch(); defer { try? FileManager.default.removeItem(at: root) }

@@ -545,7 +545,7 @@ struct StatusView: View {
                 tone: .bad
             )
         }
-        let tools = SupportedRunners.tools(for: snapshot.installedRunners)
+        let tools = SupportedRunners.tools(for: snapshot.installedRunners) { snapshot.runnerD3DMetal[$0.id] }
         ForEach(rows) { row in
             StatusRow(
                 title: row.title,
