@@ -1,6 +1,6 @@
 # Install NotProton
 
-1. Download **NotProton.zip** from this fork’s latest linked preview release.
+1. Download **NotProton.zip** from the [latest release](https://github.com/NotProtonNot/NotProton/releases/latest).
 2. Unzip it and copy **NotProton.app** to **Applications**. Open that copy.
 3. In the setup guide, confirm native Steam and an activated, supported CrossOver build.
 4. The permission page checks write access to Steam. If it shows a green check, click **Continue**. Otherwise click **Open System Settings** and go to **Privacy & Security → App Management**.
@@ -13,4 +13,4 @@
 
 The Steam checkbox in step 9 is required before its runtime dropdown appears. This is **Compatibility**, not macOS Accessibility. NotProton does not need Accessibility access to choose a runtime. Steam may separately request Input Monitoring for a controller; grant that to Steam only when needed. Full Disk Access is not a general setup requirement.
 
-This fork’s preview is ad hoc signed, not Apple-notarized. If macOS blocks it and you trust this download, use the individual **Open Anyway** option under Privacy & Security. Keep Gatekeeper enabled. These changes remain a contribution, not an official upstream release.
+If macOS blocks the app and you trust the download, use the individual **Open Anyway** option under Privacy & Security. Keep Gatekeeper enabled. Test builds may be ad hoc signed and lack Apple notarization; check their release notes before installing.

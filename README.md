@@ -2,9 +2,7 @@
 
 Play Windows games from the native macOS Steam app, powered by CrossOver.
 
-**[Download NotProton.zip](https://github.com/schroedernils/NotProton/releases/download/v1.1.0-preview.2/NotProton.zip)** · [Release notes](https://github.com/schroedernils/NotProton/releases/tag/v1.1.0-preview.2)
-
-This is a contribution fork of [NotProton](https://github.com/NotProtonNot/NotProton), with installation fixes, clearer status messages and guided setup. It is not an official upstream release.
+**[Download NotProton](https://github.com/NotProtonNot/NotProton/releases/latest)**
 
 ## Requirements
 
@@ -24,15 +22,15 @@ Supported profiles are **CrossOver 26.3** (`26.3.0.39832`) and **Preview 2026082
 
 That checkbox is in Steam’s **Compatibility** page. macOS Accessibility permission is not required to select CrossOver. Reopen setup from **Settings** at the bottom of the sidebar.
 
-The download is ad hoc signed and not Apple-notarized. If macOS blocks it and you trust the download, use the individual **Open Anyway** option under Privacy & Security. Keep Gatekeeper enabled. Automatic app updates are disabled in this preview.
+If macOS blocks the app and you trust the download, use the individual **Open Anyway** option under Privacy & Security. Keep Gatekeeper enabled.
 
 ## Help and limits
 
 Use **Help** for setup and game issues. **Game environments** contains Windows components and prefix tools; **Backups** protects those environments before changes.
 
-Game compatibility varies. Anti-cheat and some launchers can fail. This fork does not add free Wine runtimes, import existing CrossOver bottles or support every CrossOver version. Native-only Mac library filtering is [not yet fixed](docs/ISSUE_48.md).
+Game compatibility varies. Anti-cheat and some launchers can fail. Free Wine runtimes, existing CrossOver bottle imports and unlisted CrossOver builds are not supported. Native-only Mac library filtering is [not yet fixed](docs/ISSUE_48.md).
 
-[Full installation steps](docs/INSTALLATION.md) · [Validation and build notes](docs/VALIDATION.md) · [Contribution proposal](docs/PR_PROPOSAL.md)
+[Full installation steps](docs/INSTALLATION.md) · [Validation and build notes](docs/VALIDATION.md)
 
 ## Source and licenses
 
