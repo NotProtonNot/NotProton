@@ -37,6 +37,10 @@ enum SupportPaths {
         home.appending(path: "Library/Caches/\(supportDirName)/valve-packages")
     }
 
+    static var winetricksDownloads: URL {
+        home.appending(path: "Library/Caches/\(supportDirName)/winetricks")
+    }
+
     static var deployedVersion: URL { support.appending(path: "dylib.version") }
 
     // Read by the dylib at Steam launch, in np_compat_load_tool_list.
