@@ -597,3 +597,39 @@ struct PinnedPatchPayloadTests {
         }
     }
 }
+
+// Runs only where the release CrossOver 26.3 is installed, so a machine without
+// the Preview proves the stable build sets up on its own.
+@Suite("CrossOver 26.3 on this machine")
+struct InstalledStableBuildTests {
+
+    private static let bundle = URL(filePath: "/Applications/CrossOver.app")
+
+    private static var build: RunnerBuild? {
+        guard case .supported(let build) = CrossOverSource.inspect(bundle: bundle).support,
+              build.bundleVersion == "26.3.0.39832" else { return nil }
+        return build
+    }
+
+    @Test("Its ntdll patches to the pinned hashes", .enabled(if: build != nil))
+    func patchesToPinnedHashes() throws {
+        let build = try #require(Self.build)
+        let root = SupportPaths.crossOverRoot(inBundle: Self.bundle)
+        try CrossOverSource.verifyPatchInputs(root: root, build: build)
+        let patches = NtdllPatcher.patches(for: build)
+        #expect(Set(patches.map(\.arch)) == Set(build.patchedNtdll.keys))
+        for patch in patches {
+            let clean = try Data(contentsOf: NtdllPatcher.cleanSource(inRoot: root, arch: patch.arch))
+            let patched = try NtdllPatcher.apply(patch, to: clean, payload: try NtdllPatcher.payload(for: patch))
+            #expect(Digest.sha256(of: patched) == build.patchedNtdll[patch.arch], "\(patch.arch.rawValue)")
+        }
+    }
+
+    @Test("It gets a tool of its own, without any Preview installed", .enabled(if: build != nil))
+    func servesItsOwnTool() throws {
+        let build = try #require(Self.build)
+        let tools = SupportedRunners.tools(for: [build])
+        #expect(tools.map(\.name) == ["notproton-26.3"])
+        #expect(tools.allSatisfy { $0.tool.flavor == .rosetta })
+    }
+}
