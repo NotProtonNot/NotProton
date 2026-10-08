@@ -23,6 +23,7 @@ const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle' };
 const FORMS = {
   component: { arg: 'component', react: 'i',  barrel: 'c'  },
   statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
+  collision: { arg: 'collision', react: 't', barrel: 'g' },
 };
 
 function panel(emit, form) {

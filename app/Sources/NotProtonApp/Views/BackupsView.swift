@@ -20,7 +20,7 @@ struct BackupsView: View {
                 table
             }
         }
-        .navigationTitle("Prefix Backups")
+        .navigationTitle(GuideCopy.text("Backups"))
         .navigationSubtitle(summary)
         .safeAreaInset(edge: .bottom) {
             if let failed = model.report {

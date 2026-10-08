@@ -1,6 +1,7 @@
 // 'Install' logic for the Steam patch componen
 
 import Foundation
+import Darwin
 
 enum InstallPhase: Sendable {
     case checkingPayload
@@ -340,13 +341,40 @@ enum SteamInstaller {
 
     static func adHocSign(_ url: URL, step: String = step) throws {
         let path = url.path(percentEncoded: false)
-        let result = try Shell.run("/usr/bin/codesign", ["-f", "-s", "-", path])
+        var result = try Shell.run("/usr/bin/codesign", ["-f", "-s", "-", path])
+        if !result.succeeded && result.stderr.contains("resource fork, Finder information, or similar detritus not allowed") {
+            try removeSigningDetritus(at: url, step: step)
+            result = try Shell.run("/usr/bin/codesign", ["-f", "-s", "-", path])
+        }
         guard result.succeeded else {
             throw StepFailure(
                 step: step,
                 detail: "\(path) could not be signed. "
                     + result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             )
+        }
+    }
+
+    // codesign rejects these two Finder attributes. Keep quarantine, provenance
+    // and every other attribute; do not use xattr -cr or follow external symlinks.
+    static func removeSigningDetritus(at url: URL, step: String = step) throws {
+        var targets = [url]
+        if let contents = FileManager.default.enumerator(at: url,
+            includingPropertiesForKeys: [.isSymbolicLinkKey]) {
+            targets += contents.compactMap { $0 as? URL }
+        }
+        for target in targets {
+            if (try target.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink == true { continue }
+            for name in ["com.apple.FinderInfo", "com.apple.ResourceFork"] {
+                let result = target.path.withCString { path in
+                    name.withCString { removexattr(path, $0, XATTR_NOFOLLOW) }
+                }
+                let errorNumber = errno
+                if result != 0 && errorNumber != ENOATTR {
+                    throw StepFailure(step: step, detail: "Could not remove signing metadata from \(target.path): "
+                        + String(cString: strerror(errorNumber)))
+                }
+            }
         }
     }
 

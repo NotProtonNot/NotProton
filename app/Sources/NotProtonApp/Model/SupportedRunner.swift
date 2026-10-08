@@ -215,8 +215,12 @@ enum SupportedRunners {
 
     static var versionList: String {
         var seen = Set<String>()
-        return all.map(\.releaseVersion)
-            .filter { seen.insert($0).inserted }
-            .joined(separator: ", ")
+        return all.filter { seen.insert($0.bundleVersion).inserted }
+            .map {
+                let channel = $0.releaseVersion.count == 8 && $0.releaseVersion.allSatisfy(\.isNumber)
+                    ? "Preview " : ""
+                return "\(channel)\($0.releaseVersion) (\($0.bundleVersion))"
+            }
+            .joined(separator: "; ")
     }
 }

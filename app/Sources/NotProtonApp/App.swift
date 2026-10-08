@@ -40,23 +40,25 @@ struct NotProtonApp: App {
         CommandGroup(after: .sidebar) {
             Button("Status") { pane = .status }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Prefixes") { pane = .prefixes }
+            Button(GuideCopy.text("Game environments")) { pane = .prefixes }
                 .keyboardShortcut("2", modifiers: .command)
-            Button("Prefix Backups") { pane = .backups }
+            Button(GuideCopy.text("Backups")) { pane = .backups }
                 .keyboardShortcut("3", modifiers: .command)
+            Button(GuideCopy.text("Help")) { pane = .help }
+                .keyboardShortcut("4", modifiers: .command)
 
             Divider()
 
             Button("Refresh") {
                 Task {
                     switch pane {
-                    case .status: await status.refresh()
+                    case .status, .help, .settings: await status.refresh()
                     case .prefixes, .backups: await prefixes.load()
                     }
                 }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(pane == .status ? !status.isIdle : prefixes.isLoading)
+            .disabled(pane == .status || pane == .help || pane == .settings ? !status.isIdle : prefixes.isLoading)
 
             Divider()
         }

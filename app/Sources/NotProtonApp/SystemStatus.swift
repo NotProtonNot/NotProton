@@ -192,18 +192,18 @@ final class SystemStatus {
         }
     }
 
-    func requestInstall() async {
+    func requestInstall(from chosen: CrossOverInstall? = nil) async {
         guard canInstall else { return }
         checkingLicense = true
         defer { checkingLicense = false }
         if let question = Self.activationQuestion(
             .install,
-            licensed: await checkLicense()?.licensed,
+            licensed: await checkLicense(for: chosen)?.licensed,
             runner: snapshot?.runner ?? RunnerState.none
         ) {
             pendingConfirmation = question
         } else {
-            await installIntoSteam()
+            await installIntoSteam(from: chosen)
         }
     }
 
@@ -401,7 +401,7 @@ final class SystemStatus {
         }
     }
 
-    func installIntoSteam() async {
+    func installIntoSteam(from chosen: CrossOverInstall? = nil) async {
         await perform(from: InstallPhase.checkingPayload.label) { progress in
             let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
             defer { close(lock) }
@@ -411,7 +411,7 @@ final class SystemStatus {
 
             var parts = ["NotProton successfully installed."]
             if result.stoppedClient { parts.append(Self.restartHint) }
-            let install = usableCrossOver
+            let install = chosen ?? usableCrossOver
             let state = await Task.detached(priority: .userInitiated) {
                 (runner: RunnerStore.state(),
                  payload: PayloadInspector.inspect(),

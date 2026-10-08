@@ -15,10 +15,10 @@ struct PrefixesView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.prefixes.isEmpty {
                 ContentUnavailableView(
-                    "No Prefixes",
+                    GuideCopy.text("No game environments yet"),
                     systemImage: "externaldrive",
                     description: Text(
-                        "A prefix appears here once a Windows game has been launched through NotProton."
+                        GuideCopy.text("Launch a Windows game through NotProton in Steam first. Its Windows environment (prefix) will appear here, with tools and backup actions.")
                     )
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -26,7 +26,7 @@ struct PrefixesView: View {
                 table
             }
         }
-        .navigationTitle("Prefixes")
+        .navigationTitle(GuideCopy.text("Game environments"))
         .safeAreaInset(edge: .bottom) {
             if let failed = model.report {
                 report(
