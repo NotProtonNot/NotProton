@@ -43,6 +43,9 @@ final class PrefixesModel {
 
     var pendingConfirmation: Confirmation?
 
+    // Set by the Tools menus and the Prefix menu, so either can ask for verbs.
+    var winetricksTarget: WinePrefix?
+
     private(set) var backups: [PrefixBackup] = []
 
     var backupBytes: Int64 { backups.reduce(into: Int64(0)) { $0 += $1.bytes } }

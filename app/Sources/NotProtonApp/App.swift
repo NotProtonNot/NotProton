@@ -97,6 +97,11 @@ struct NotProtonApp: App {
             }
             .disabled(prefixTarget == nil)
 
+            Button("Winetricks…") {
+                if let prefix = prefixTarget { prefixes.winetricksTarget = prefix }
+            }
+            .disabled(prefixTarget == nil)
+
             Divider()
 
             ForEach(WineTool.allCases, id: \.self) { tool in

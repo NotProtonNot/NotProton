@@ -7,7 +7,6 @@ struct PrefixesView: View {
     @Environment(PrefixesModel.self) private var model
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var sortOrder = [KeyPathComparator(\PrefixRow.lastUsed, order: .reverse)]
-    @State private var winetricksPrefix: WinePrefix?
     @State private var winetricksVerbs = ""
 
     var body: some View {
@@ -109,10 +108,10 @@ struct PrefixesView: View {
         .alert(
             "Winetricks",
             isPresented: Binding(
-                get: { winetricksPrefix != nil },
-                set: { if !$0 { winetricksPrefix = nil } }
+                get: { model.winetricksTarget != nil },
+                set: { if !$0 { model.winetricksTarget = nil } }
             ),
-            presenting: winetricksPrefix
+            presenting: model.winetricksTarget
         ) { prefix in
             TextField("vcrun2022 corefonts", text: $winetricksVerbs)
             Button("Install") {
@@ -382,7 +381,7 @@ struct PrefixesView: View {
             if let prefix { model.chooseExecutable(for: prefix) }
         }
         Button("Winetricks…") {
-            winetricksPrefix = prefix
+            model.winetricksTarget = prefix
         }
         Divider()
         ForEach(WineTool.allCases, id: \.self) { tool in
