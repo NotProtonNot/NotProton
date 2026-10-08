@@ -10,6 +10,7 @@ let hasTests = FileManager.default.fileExists(
 // make app-payload stages the payload, so a checkout that has not been built does
 // not have it. A declared resource that is missing is a build error, while an app
 // missing the payload is a condition InstallPayload already reports.
+// Stage payload before the first build: SwiftPM may cache manifest evaluation.
 let hasPayload = FileManager.default.fileExists(
     atPath: packageRoot.appendingPathComponent(payloadPath).path)
 let package = Package(

@@ -2,7 +2,7 @@ I came across NotProton through Andrew Tsai's YouTube video and wanted to try it
 
 While setting it up I ran into a few things that were hard to understand. My CrossOver version did not match what the app seemed to expect, the installation status said it was not installed for my account, and the compatibility controls in Steam were not behaving as expected. I also had a black game window on the first attempt. I have not treated that last one as a general bug fix, since a retry worked and game compatibility has its own limits.
 
-I wanted to spend some time working through the problems rather than leave them as another confusing setup experience. After the fixes, I installed the local package again myself and got Normal Golf Game running through native Steam with CrossOver 26.3. I also used the issue reports to make setup clearer for the next person, with a guide that explains permissions before installation and walks through one page at a time.
+I wanted to spend some time working through the problems rather than leave them as another confusing setup experience. After the fixes, I installed the local package again myself and got a Windows game running through native Steam with CrossOver 26.3. I also used the issue reports to make setup clearer for the next person, with a guide that explains permissions before installation and walks through one page at a time.
 
 ## What changed
 
@@ -22,11 +22,13 @@ A support summary uses a deliberate field allowlist and can be previewed before 
 
 ## Validation
 
-The local package before the larger UI changes was installed manually and Normal Golf Game was confirmed visible and playable on Apple Silicon with CrossOver 26.3 Rosetta. The newer UI package and its visual checks are recorded separately in docs/VALIDATION.md.
+The local package before the larger UI changes was installed manually and A Windows game was confirmed visible and playable on Apple Silicon with CrossOver 26.3 Rosetta. The newer UI package and its visual checks are recorded separately in docs/VALIDATION.md.
 
 Installer, status and signing checks passed with a complete staged payload. Steam interface checks cover three fixtures and ninety seeded identifier renamings, ambiguous matches, changed exports and colliding dependency names. The installed Steam JavaScript chunk was also patched offline and passed Node syntax checking.
 
-The current setup, privacy and regression test totals are recorded in docs/VALIDATION.md so that the numbers reflect the final commit.
+The current setup, privacy and regression test totals are recorded in docs/VALIDATION.md so that the numbers reflect the final commit. The branch also includes the current main history, with conflicts resolved while preserving the newer development runtime profiles.
+
+The native Mac library filter requested in issue 48 was investigated separately. Steam’s global compatibility check and the patched invalid-OS getter prevent a simple native-only predicate. This contribution does not claim to fix it; docs/ISSUE_48.md records the evidence and follow-up requirements.
 
 ## Scope
 
