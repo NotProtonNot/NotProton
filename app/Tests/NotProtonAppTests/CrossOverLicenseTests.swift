@@ -202,28 +202,6 @@ struct CrossOverLicenseTests {
         #expect(status.detail == CrossOverLicense.notActivated)
     }
 
-    // The reason reaches the user only through the thrown failure. requireValid searches the
-    // machine's own directories, so only the two agreeing is fixed, not the text itself.
-    @Test("The refusal carries the reason the check found and nothing else")
-    func refusalCarriesTheReason() throws {
-        let fix = try Self.fixture()
-        defer { fix.remove() }
-        let install = CrossOverInstall(
-            bundle: fix.bundle, releaseVersion: nil, support: .unreadable
-        )
-
-        // A key generated for this fixture verifies no license on this machine, and a
-        // machine with no license has nothing to find either.
-        let expected = CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
-        #expect(!expected.licensed)
-
-        do {
-            try CrossOverLicense.requireValid(for: install)
-            Issue.record("requireValid accepted a bundle whose key verifies nothing")
-        } catch let failure as StepFailure {
-            #expect(failure.detail == expected.detail)
-        }
-    }
 
     // An unreadable key exits the same status as a signature that does not match, which
     // leaves the log as the only place the two are told apart.

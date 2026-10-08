@@ -30,11 +30,6 @@ struct StatusSnapshot: Sendable {
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
         let installs = CrossOverSource.discover()
-        var licenses: [String: CrossOverLicense.Status] = [:]
-        for install in installs where install.isUsable {
-            licenses[install.id] = CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
-        }
-
         let runner = RunnerStore.state()
         let installed = RunnerStore.installedBuilds()
 
@@ -43,7 +38,7 @@ struct StatusSnapshot: Sendable {
             steamRunning: SteamBundle.isRunning,
             updateBlocked: UpdateBlock.isPresent(),
             crossOver: installs,
-            crossOverLicense: licenses,
+            crossOverLicense: [:],
             runner: runner,
             payload: PayloadInspector.inspect(builds: installed),
             installedRunners: installed,
@@ -190,44 +185,20 @@ final class SystemStatus {
     nonisolated static func activationQuestion(
         _ request: Request, licensed: Bool?, runner: RunnerState
     ) -> Confirmation? {
-        guard licensed == false else { return nil }
-        switch request {
-        case .install: return runner == RunnerState.none ? .installUnlicensed : nil
-        case .compatibilityTool: return .toolUnlicensed
-        }
+        nil
     }
 
     func requestInstall() async {
         guard canInstall else { return }
-        checkingLicense = true
-        defer { checkingLicense = false }
-        if let question = Self.activationQuestion(
-            .install,
-            licensed: await checkLicense()?.licensed,
-            runner: snapshot?.runner ?? RunnerState.none
-        ) {
-            pendingConfirmation = question
-        } else {
-            await installIntoSteam()
-        }
+        await installIntoSteam()
     }
 
     func requestCompatibilityTool(
         from chosen: CrossOverInstall? = nil, replacingExisting: Bool = false
     ) async {
         guard canInstall else { return }
-        checkingLicense = true
-        defer { checkingLicense = false }
         let install = chosen ?? setupSource
-        if let question = Self.activationQuestion(
-            .compatibilityTool,
-            licensed: await checkLicense(for: install)?.licensed,
-            runner: snapshot?.runner ?? RunnerState.none
-        ) {
-            pendingConfirmation = question
-        } else {
-            await setUpRunner(from: install, replacingExisting: replacingExisting)
-        }
+        await setUpRunner(from: install, replacingExisting: replacingExisting)
     }
 
     private(set) var pendingRemoval: String?
@@ -426,9 +397,6 @@ final class SystemStatus {
 
     private static let restartHint = "Steam was stopped, so start it again."
 
-    private static let toolNotActivated =
-        "The compatibility tool was not set up because CrossOver is not activated."
-
     private func requireInstallableContent() async throws {
         try await requireUnblockedContent()
         let running = await Task.detached(priority: .utility) {
@@ -466,20 +434,14 @@ final class SystemStatus {
             let install = usableCrossOver
             let state = await Task.detached(priority: .userInitiated) {
                 (runner: RunnerStore.state(),
-                 payload: PayloadInspector.inspect(),
-                 license: install.map { CrossOverLicense.check(crossOverRoot: $0.crossOverRoot) })
+                 payload: PayloadInspector.inspect())
             }.value
 
-            if let install, state.license?.licensed == true, state.runner == .none {
+            if let install, state.runner == .none {
                 progress("Setting up compatibility tool")
-                // A tool that came up is the expected case and goes unsaid. Failure
-                // throws, and an unactivated CrossOver is reported below.
                 _ = try await Task.detached(priority: .userInitiated) {
                     try RunnerSetup.run(from: install) { progress($0.label) }
                 }.value
-            } else if install != nil, state.license?.licensed == false, state.runner == .none {
-                // Not a failure, NotProton was installed but without a compatibility tool
-                parts.append(Self.toolNotActivated)
             }
 
             // Fetch binaries from Valve

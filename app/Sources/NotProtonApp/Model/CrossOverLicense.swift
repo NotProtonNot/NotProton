@@ -1,8 +1,3 @@
-// Checks whether the user's CrossOver install is licensed.
-// CodeWeavers, I hope this doesn't bother you. You don't validate
-// license when the Wine binary itself is invoked, so I wanted to
-// do something to prevent skids from doing really trivial piracy.
-
 import Foundation
 
 enum CrossOverLicense {
@@ -121,16 +116,6 @@ enum CrossOverLicense {
             detail: notActivated,
             diagnostic: rejection ?? "no CrossOver license file found"
         )
-    }
-
-    static func requireValid(for install: CrossOverInstall) throws {
-        let status = check(crossOverRoot: install.crossOverRoot)
-        guard status.licensed else {
-            throw StepFailure(
-                step: "Verify CrossOver license",
-                detail: status.detail
-            )
-        }
     }
 
     private static func sidecars(in dir: URL) -> [(path: String, digest: String)] {

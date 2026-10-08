@@ -242,32 +242,7 @@ struct StatusView: View {
                     + "and Steam Play prefixes are not removed."
             )
         }
-        .confirmationDialog(
-            CrossOverLicense.notActivatedTitle,
-            isPresented: asking(.installUnlicensed),
-            titleVisibility: .visible
-        ) {
-            Button("Continue Anyway") {
-                Task { await status.installIntoSteam() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                CrossOverLicense.notActivatedAdvice
-                    + " NotProton can be deployed, but the CrossOver compatibility tool "
-                    + "cannot be installed without a valid license."
-            )
-        }
         .task { if status.snapshot == nil { await status.refresh() } }
-        .confirmationDialog(
-            CrossOverLicense.notActivatedTitle,
-            isPresented: asking(.toolUnlicensed),
-            titleVisibility: .visible
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CrossOverLicense.notActivatedAdvice)
-        }
     }
 
     private func asking(_ confirmation: SystemStatus.Confirmation) -> Binding<Bool> {
@@ -593,7 +568,7 @@ struct StatusView: View {
         }
         switch row.copy {
         case .ready: return build
-        case .none: return build + (row.licensed == false ? ", not set up or activated" : ", not set up")
+        case .none: return build + ", not set up"
         case .unpatched: return build + ", not patched"
         case .damaged: return build + ", copy damaged"
         case .unsupported: return build + ", not supported"
@@ -603,7 +578,7 @@ struct StatusView: View {
     private func crossOverTone(_ row: CrossOverRow) -> StatusTone {
         if row.unsupportedVersion != nil { return .neutral }
         switch row.copy {
-        case .none: return row.licensed == false ? .warning : .neutral
+        case .none: return .neutral
         case .ready: return .ok
         case .unpatched, .damaged, .unsupported: return .warning
         }
@@ -615,7 +590,6 @@ struct StatusView: View {
             let names = tools.filter { $0.build == row.buildID }.map(\.display)
             lines.append(contentsOf: names)
         }
-        if row.copy == .none, row.licensed == false { lines.append("Open CrossOver to activate it.") }
         if let install = row.install {
             var path = install.bundle.path(percentEncoded: false)
             if path.count > 1, path.hasSuffix("/") { path.removeLast() }

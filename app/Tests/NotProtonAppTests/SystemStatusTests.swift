@@ -402,65 +402,6 @@ struct LicenseFreshnessTests {
     }
 }
 
-// Four entry points share one answer here. The menu items used to skip it: Install dropped
-// the tool without saying so, and Set Up hit the refusal inside RunnerSetup as a failed step.
-@Suite("Activation questions")
-struct ActivationQuestionTests {
-
-    @Test("An install that would build a tool asks before going ahead unactivated")
-    func unactivatedInstallAsks() {
-        #expect(
-            SystemStatus.activationQuestion(.install, licensed: false, runner: .none)
-                == .installUnlicensed
-        )
-    }
-
-    // The dialog warns that the tool cannot be installed. With one already set up none
-    // would have been built, so the warning described something that could not happen.
-    @Test("An install asks nothing when the tool it would skip is already set up")
-    func installWithToolAsksNothing() {
-        #expect(
-            SystemStatus.activationQuestion(
-                .install, licensed: false, runner: .ready(builds: ["27.0.0.40921"])
-            ) == nil
-        )
-    }
-
-    @Test("An activated install goes straight ahead")
-    func activatedInstallProceeds() {
-        #expect(SystemStatus.activationQuestion(.install, licensed: true, runner: .none) == nil)
-    }
-
-    // Unlike an install there is no reduced version to go ahead with, so this one asks
-    // whatever is already set up.
-    @Test("Setting up the tool asks whenever CrossOver is unactivated")
-    func unactivatedToolAsks() {
-        for runner in [RunnerState.none, .ready(builds: ["27.0.0.40921"])] {
-            #expect(
-                SystemStatus.activationQuestion(.compatibilityTool, licensed: false, runner: runner)
-                    == .toolUnlicensed
-            )
-        }
-    }
-
-    @Test("Setting up the tool goes straight ahead when CrossOver is activated")
-    func activatedToolProceeds() {
-        #expect(
-            SystemStatus.activationQuestion(.compatibilityTool, licensed: true, runner: .none)
-                == nil
-        )
-    }
-
-    // A check that could not run is not a refusal. Reading it as one would turn away every
-    // user whose CrossOver the app cannot inspect.
-    @Test("An install that could not be checked is not treated as a refusal")
-    func uncheckedProceeds() {
-        #expect(SystemStatus.activationQuestion(.install, licensed: nil, runner: .none) == nil)
-        #expect(
-            SystemStatus.activationQuestion(.compatibilityTool, licensed: nil, runner: .none) == nil
-        )
-    }
-}
 
 @MainActor
 @Suite("Run bookkeeping")

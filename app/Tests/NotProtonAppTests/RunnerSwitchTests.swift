@@ -11,14 +11,6 @@ struct RunnerPrepareTests {
     private static let release = SupportedRunners.all.first { $0.id == "26.3.0.39832" }!
     private static let preview41069 = SupportedRunners.all.first { $0.id == "27.0.0.41069" }!
     private static let fex41069 = SupportedRunners.all.first { $0.id == "27.0.0.41069-fex" }!
-
-    private static let licensed = CrossOverLicense.Status(
-        licensed: true, detail: "CrossOver is activated.", diagnostic: "test"
-    )
-    private static let unlicensed = CrossOverLicense.Status(
-        licensed: false, detail: CrossOverLicense.notActivated, diagnostic: "test"
-    )
-
     private static let runScript = Data("#!/bin/sh\n".utf8)
 
     private final class Calls: @unchecked Sendable {
@@ -61,7 +53,6 @@ struct RunnerPrepareTests {
         _ build: RunnerBuild,
         runners: URL,
         calls: Calls,
-        license: CrossOverLicense.Status = licensed,
         failPatch: Bool = false
     ) throws -> RunnerSetup.Outcome {
         try RunnerSetup.prepare(
@@ -75,7 +66,6 @@ struct RunnerPrepareTests {
                 try Self.runScript.write(to: script)
                 return script
             },
-            license: { _ in license },
             verify: { _, _ in },
             stage: { build, _, bridge in
                 calls.staged.append(build.id)
@@ -343,19 +333,6 @@ struct RunnerPrepareTests {
         #expect(toolList(runners) == nil)
     }
 
-    @Test("Preparing is refused when CrossOver is not activated")
-    func refusesUnlicensed() throws {
-        let runners = try makeRunners(cloning: [Self.rosetta, Self.fex])
-        defer { try? FileManager.default.removeItem(at: runners) }
-
-        let calls = Calls()
-        #expect(throws: StepFailure.self) {
-            try prepare(Self.fex, runners: runners, calls: calls, license: Self.unlicensed)
-        }
-
-        #expect(calls.staged.isEmpty)
-        #expect(toolList(runners) == nil)
-    }
 
     @Test("Installed builds are supported clones that still have their payload")
     func installedBuildsListing() throws {
