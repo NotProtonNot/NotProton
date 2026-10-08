@@ -9,6 +9,11 @@ CFLAGS   := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
 LDFLAGS  := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
             -dynamiclib -install_name @rpath/notproton.dylib
 
+# Make exports a variable that came from the environment with the value set
+# here, so a shell that sets LDFLAGS would hand the dylib's flags to wine's
+# configure and every other child build.
+unexport CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+
 FRAMEWORKS := -framework CoreFoundation -framework CoreGraphics
 
 DOBBY_DIR  := build/dobby
