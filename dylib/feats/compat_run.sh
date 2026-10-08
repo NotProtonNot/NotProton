@@ -356,16 +356,15 @@ install_runner_builtins() {
     arch=${pair%%:*}
     dir="$WINEPREFIX/drive_c/windows/${pair##*:}"
     [ -d "$dir" ] || continue
-    for name in winemetal.dll; do
-      src="$CX_ROOT/lib/wine/$arch/$name"
-      [ -f "$src" ] || continue
-      cmp -s "$src" "$dir/$name" && continue
-      if cp -f "$src" "$dir/$name"; then
-        echo "=== installed $arch/$name into the prefix ===" >> "$log" 2>&1 || true
-      else
-        echo "=== could not install $arch/$name into the prefix ===" >> "$log" 2>&1 || true
-      fi
-    done
+    name=winemetal.dll
+    src="$CX_ROOT/lib/wine/$arch/$name"
+    [ -f "$src" ] || continue
+    cmp -s "$src" "$dir/$name" && continue
+    if cp -f "$src" "$dir/$name"; then
+      echo "=== installed $arch/$name into the prefix ===" >> "$log" 2>&1 || true
+    else
+      echo "=== could not install $arch/$name into the prefix ===" >> "$log" 2>&1 || true
+    fi
   done
 }
 
