@@ -165,3 +165,70 @@ struct RunnerToolkitTests {
         #expect(SupportedRunners.build(id: "\(pinned.id)-patched-d3dm3")?.displayVersion.hasSuffix(" · patched · D3DMetal 3") == true)
     }
 }
+
+@Suite("Copies changed by GPTK Patcher")
+struct PatchedCopyTests {
+
+    private func root(receipt: String?, marker: String? = nil) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appending(path: "patched-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if let receipt { try Data(receipt.utf8).write(to: root.appending(path: RunnerVariant.patcherReceipt)) }
+        if let marker { try Data(marker.utf8).write(to: root.appending(path: RunnerVariant.markerName)) }
+        return root
+    }
+
+    @Test("A copy is named after the toolkit and DXMT the patcher put in")
+    func namedByReceipt() throws {
+        let both = try root(receipt: #"{"tool":"GPTKPatcher 1.0.9","gptkD3DMetalVersion":"4.0b2","dxmtVersion":"0.80","environment":{}}"#)
+        let toolkitOnly = try root(receipt: #"{"gptkD3DMetalVersion":"4.0b2","environment":{}}"#)
+        let dxmtOnly = try root(receipt: #"{"gptkD3DMetalVersion":null,"dxmtVersion":"0.80"}"#)
+        let broken = try root(receipt: "not json")
+        defer { for dir in [both, toolkitOnly, dxmtOnly, broken] { try? FileManager.default.removeItem(at: dir) } }
+        #expect(RunnerVariant.declared(crossOverRoot: both) == "gptk40b2-dxmt080")
+        #expect(RunnerVariant.declared(crossOverRoot: toolkitOnly) == "gptk40b2")
+        #expect(RunnerVariant.declared(crossOverRoot: dxmtOnly) == "dxmt080")
+        #expect(RunnerVariant.declared(crossOverRoot: broken) == nil)
+    }
+
+    @Test("A marker still names the copy, and a long receipt is capped")
+    func markerWins() throws {
+        let marked = try root(receipt: #"{"gptkD3DMetalVersion":"4.0b2"}"#, marker: "Mine\n")
+        let long = try root(receipt: #"{"gptkD3DMetalVersion":"4.0.12345b6","dxmtVersion":"0.80"}"#)
+        defer { for dir in [marked, long] { try? FileManager.default.removeItem(at: dir) } }
+        #expect(RunnerVariant.declared(crossOverRoot: marked) == "mine")
+        let capped = try #require(RunnerVariant.declared(crossOverRoot: long))
+        #expect(capped.count <= RunnerVariant.maxLength && RunnerVariant.isVariant(capped))
+    }
+
+    @Test("Patched ids resolve, with or without a toolkit runner, and read as versions")
+    func resolvesAndLabels() throws {
+        let pinned = try #require(SupportedRunners.all.first { $0.flavor == nil })
+        let build = try #require(SupportedRunners.build(id: "\(pinned.id)-gptk40b2-dxmt080-d3dm3"))
+        #expect(build.baseID == pinned.id)
+        #expect(build.displayVersion.hasSuffix(" · GPTK 4.0b2 · DXMT 0.80 · D3DMetal 3"))
+        #expect(RunnerVariant.d3dmetal(of: build) == "3")
+        #expect(RunnerVariant.label("gptkfoo-dxmt") == "gptkfoo · dxmt")
+        #expect(SupportedRunners.build(id: "\(pinned.id)-a-b-c-d") == nil)
+    }
+
+    @Test("The stock toolkit the patcher kept is offered as its own runner")
+    func stockToolkitOffered() throws {
+        let dir = try root(receipt: nil); defer { try? FileManager.default.removeItem(at: dir) }
+        for (path, version) in [("lib64/apple_gptk", "4.0b2"), ("lib64/apple_gptk.stock", "3.0")] {
+            let resources = dir.appending(path: "\(path)/external/D3DMetal.framework/Versions/A/Resources")
+            try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+            (["CFBundleShortVersionString": version] as NSDictionary).write(to: resources.appending(path: "Info.plist"), atomically: true)
+        }
+        #expect(RunnerVariant.otherToolkits(crossOverRoot: dir).map(\.path) == ["lib64/apple_gptk.stock"])
+    }
+
+    @Test("CrossOver 27 keeps apple_gptk in lib, and its D3DMetal is still read")
+    func previewToolkitRead() throws {
+        let dir = try root(receipt: nil); defer { try? FileManager.default.removeItem(at: dir) }
+        let resources = dir.appending(path: "lib/apple_gptk/external/D3DMetal.framework/Versions/A/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        (["CFBundleShortVersionString": "4.0b2"] as NSDictionary).write(to: resources.appending(path: "Info.plist"), atomically: true)
+        #expect(RunnerVariant.activeMajor(crossOverRoot: dir) == "4")
+        #expect(RunnerVariant.otherToolkits(crossOverRoot: dir).isEmpty)
+    }
+}

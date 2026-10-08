@@ -67,8 +67,17 @@ enum RunnerVariant {
     // fields (compat.c), so a long name would drop the tool from Steam.
     static let maxLength = 16
 
-    // The first line of the marker as an id: lower-case letters and digits.
+    // GPTK Patcher leaves this receipt in the CrossOver tree it changed.
+    static let patcherReceipt = "gptkpatcher-receipt.json"
+
+    // A marker names the copy. Without one, a copy GPTK Patcher changed is named
+    // after what it put in, so it gets its own runner beside the stock build.
     static func declared(crossOverRoot root: URL) -> String? {
+        marked(crossOverRoot: root) ?? patched(crossOverRoot: root)
+    }
+
+    // The first line of the marker as an id: lower-case letters and digits.
+    static func marked(crossOverRoot root: URL) -> String? {
         guard let text = try? String(contentsOf: root.appending(path: markerName), encoding: .utf8),
               let line = text.split(whereSeparator: \.isNewline).first else { return nil }
         let id = String(line.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }.prefix(maxLength))
@@ -76,14 +85,45 @@ enum RunnerVariant {
         return id.isEmpty || id == "fex" ? nil : id
     }
 
+    private struct Receipt: Decodable {
+        let gptkD3DMetalVersion: String?
+        let dxmtVersion: String?
+    }
+
+    // "gptk40b2-dxmt080" for D3DMetal 4.0b2 and DXMT 0.80.
+    static func patched(crossOverRoot root: URL) -> String? {
+        guard let data = try? Data(contentsOf: root.appending(path: patcherReceipt)),
+              let receipt = try? JSONDecoder().decode(Receipt.self, from: data) else { return nil }
+        func segment(_ prefix: String, _ version: String?) -> String? {
+            let digits = String((version ?? "").lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) })
+            return digits.isEmpty ? nil : prefix + digits
+        }
+        let id = [segment("gptk", receipt.gptkD3DMetalVersion), segment("dxmt", receipt.dxmtVersion)]
+            .compactMap { $0 }.joined(separator: "-")
+        let capped = String(id.prefix(maxLength)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return capped.isEmpty ? nil : capped
+    }
+
+    // A copy's own name, a patcher's two parts, and a toolkit runner's D3DMetal.
     static func isVariant(_ suffix: String) -> Bool {
-        suffix.wholeMatch(of: #/[a-z0-9]+(-[a-z0-9]+)?/#) != nil
+        suffix.wholeMatch(of: #/[a-z0-9]+(-[a-z0-9]+){0,2}/#) != nil
     }
 
     static func label(_ variant: String) -> String {
-        variant.split(separator: "-")
-            .map { $0.hasPrefix("d3dm") ? "D3DMetal \($0.dropFirst(4))" : String($0) }
-            .joined(separator: " · ")
+        // The dot goes back after the major, so "40b2" reads 4.0b2 and "080" reads 0.80.
+        func dotted(_ digits: Substring) -> String {
+            guard digits.count > 1, digits.first?.isNumber == true,
+                  digits.dropFirst().first?.isNumber == true else { return String(digits) }
+            return "\(digits.prefix(1)).\(digits.dropFirst())"
+        }
+        return variant.split(separator: "-").map { part in
+            for (prefix, name) in [("d3dm", "D3DMetal"), ("gptk", "GPTK"), ("dxmt", "DXMT")]
+            where part.hasPrefix(prefix) && part.dropFirst(prefix.count).first?.isNumber == true {
+                let rest = part.dropFirst(prefix.count)
+                return "\(name) \(prefix == "d3dm" ? String(rest) : dotted(rest))"
+            }
+            return String(part)
+        }.joined(separator: " · ")
     }
 
     // The D3DMetal major a toolkit runner was set up with: 3 for "<build>-d3dm3".
@@ -98,9 +138,10 @@ enum RunnerVariant {
         return version?.split(separator: ".").first.map(String.init)
     }
 
-    // The D3DMetal major in lib64/apple_gptk, the one CrossOver 26 loads.
+    // The D3DMetal major in apple_gptk, the one CrossOver loads: lib64 in
+    // CrossOver 25 and 26, lib in CrossOver 27.
     static func activeMajor(crossOverRoot root: URL) -> String? {
-        d3dmetalMajor(root.appending(path: "lib64/apple_gptk"))
+        d3dmetalMajor(root.appending(path: "lib64/apple_gptk")) ?? d3dmetalMajor(root.appending(path: "lib/apple_gptk"))
     }
 
     // Toolkit directories beside lib64/apple_gptk (apple_gptk_3, apple_gptk_4, ...),
