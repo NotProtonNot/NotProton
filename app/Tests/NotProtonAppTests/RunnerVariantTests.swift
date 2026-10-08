@@ -51,6 +51,24 @@ struct RunnerVariantTests {
         #expect(RunnerVariant.declared(crossOverRoot: root) == "mycopy2")
         try Data("FEX\n".utf8).write(to: marker)
         #expect(RunnerVariant.declared(crossOverRoot: root) == nil)
+        try Data("\(String(repeating: "a", count: 40))\n".utf8).write(to: marker)
+        #expect(RunnerVariant.declared(crossOverRoot: root) == String(repeating: "a", count: RunnerVariant.maxLength))
+    }
+
+    @Test("The longest variant of every build still fits the dylib's tool fields")
+    func fitsToolList() {
+        // compat.c: name[64], build[64], display[96], each with its terminator.
+        let longest = String(repeating: "a", count: RunnerVariant.maxLength) + "-d3dm99"
+        let builds = SupportedRunners.all.map { $0.withVariant(longest) }
+        for tool in SupportedRunners.tools(for: builds, d3dmetal: { _ in "99" }) {
+            #expect(tool.name.utf8.count < 64)
+            #expect(tool.build.utf8.count < 64)
+            #expect(tool.display.utf8.count < 96)
+        }
+        let plain = SupportedRunners.all.map { $0.withVariant(String(repeating: "a", count: RunnerVariant.maxLength)) }
+        for tool in SupportedRunners.tools(for: plain, d3dmetal: { _ in "99" }) {
+            #expect(tool.display.utf8.count < 96)
+        }
     }
 
     @Test("A variant is patched with its build's hooks")

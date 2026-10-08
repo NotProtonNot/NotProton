@@ -63,11 +63,15 @@ enum RunnerVariant {
     // A copy names itself with this file at the root of its CrossOver directory.
     static let markerName = "notproton-variant"
 
+    // The dylib skips a tools line whose name, build or display outgrows its
+    // fields (compat.c), so a long name would drop the tool from Steam.
+    static let maxLength = 16
+
     // The first line of the marker as an id: lower-case letters and digits.
     static func declared(crossOverRoot root: URL) -> String? {
         guard let text = try? String(contentsOf: root.appending(path: markerName), encoding: .utf8),
               let line = text.split(whereSeparator: \.isNewline).first else { return nil }
-        let id = String(line.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) })
+        let id = String(line.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }.prefix(maxLength))
         // "fex" would read as the FEX build's id.
         return id.isEmpty || id == "fex" ? nil : id
     }
