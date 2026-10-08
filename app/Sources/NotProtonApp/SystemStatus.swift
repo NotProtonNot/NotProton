@@ -295,7 +295,9 @@ final class SystemStatus {
         panel.message = "Select your copy of Steam."
         panel.directoryURL = current.deletingLastPathComponent()
 
-        guard panel.runModal() == .OK, let picked = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // The panel returns bundles as directories, with a trailing slash.
+        let picked = URL(filePath: url.path)
 
         clearFailure()
         outcome = nil
@@ -312,6 +314,7 @@ final class SystemStatus {
         if let insert = SteamBundle.currentInsert(), insert.split(separator: ":").contains(Substring(deployed)) {
             setFailure("NotProton is installed in \(current.path(percentEncoded: false)). "
                 + "Use Repair Steam to remove it before choosing another copy of Steam.")
+            AppLog.note("steam choice refused, still patched: \(current.path(percentEncoded: false))")
             return
         }
 
