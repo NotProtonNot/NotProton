@@ -145,6 +145,14 @@ final class PrefixesModel {
         PrefixTools.reveal(prefix)
     }
 
+    func hasLog(_ log: PrefixLog, for prefix: WinePrefix) -> Bool {
+        PrefixTools.hasLog(log, for: prefix)
+    }
+
+    func open(_ log: PrefixLog, for prefix: WinePrefix) {
+        PrefixTools.open(log, for: prefix)
+    }
+
     func delete(_ targets: [WinePrefix]) async {
         await eachInTurn(targets, { try PrefixTools.delete($0) }) { deleted in
             if deleted.count == 1 {
