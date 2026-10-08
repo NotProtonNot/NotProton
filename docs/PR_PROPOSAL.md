@@ -1,6 +1,6 @@
 # Improve installation checks and add guided CrossOver setup
 
-I came across NotProton through Andrew Tsai's YouTube video and wanted to try it on my Mac. Being able to use the normal Steam app for Windows games looked like exactly what I had been missing.
+I came across NotProton through a YouTube video and wanted to try it on my Mac. Being able to use the normal Steam app for Windows games looked like exactly what I had been missing.
 
 While setting it up I ran into a few things that were hard to understand. My CrossOver version did not match what the app seemed to expect, the installation status said it was not installed for my account, and the compatibility controls in Steam were not behaving as expected. I also had a black game window on the first attempt. I have not treated that last one as a general bug fix, since a retry worked and game compatibility has its own limits.
 
@@ -28,7 +28,9 @@ The local package before the larger UI changes was installed manually and a Wind
 
 Installer, status and signing checks passed with a complete staged payload. Steam interface checks cover three fixtures and ninety seeded identifier renamings, ambiguous matches, changed exports and colliding dependency names. The installed Steam JavaScript chunk was also patched offline and passed Node syntax checking.
 
-The current setup, privacy and regression test totals are recorded in docs/VALIDATION.md so that the numbers reflect the final commit. The branch also includes the current main history, with conflicts resolved while preserving the newer development runtime profiles.
+The local Swift run passed 483 tests in 58 suites with the complete staged payload. The real Wine prefix rebuild suite was skipped because its opt-in was unset. The optimized app build, strict ad hoc signature verification and archive integrity checks passed. The new permission flow and automatic setup dismissal compiled and passed regression checks, but still need a complete manual installation test of the latest package. These checks do not establish broad gameplay compatibility.
+
+This targets dev-1.1.0 because that branch already contains the runtime and prefix functionality used here. The branch also merges current main history, retaining its resolver and ntdll guards while preserving the newer development runtime profiles. The commits ahead of dev include inherited main commits; they are not all new work from this contribution. Both upstream comparisons currently merge without conflicts. Details and commands are recorded in [the validation record](https://github.com/schroedernils/NotProton/blob/upstream-installation-and-setup/docs/VALIDATION.md).
 
 The native Mac library filter requested in issue 48 was investigated separately. Steam’s global compatibility check and the patched invalid-OS getter prevent a simple native-only predicate. This contribution does not claim to fix it; docs/ISSUE_48.md records the evidence and follow-up requirements.
 
@@ -37,3 +39,5 @@ The native Mac library filter requested in issue 48 was investigated separately.
 This addresses the misleading installation status in issue 39 and the targeted signing failure from issue 36, and makes the version distinction in issue 40 easier to understand. It also adds guidance for problems described in issues 13, 17, 34 and 42 without claiming every controller, launcher or game is fixed.
 
 This does not add a working free Wine provider, automatically import bottles, bypass CrossOver activation or claim FEX gameplay, Intel or older macOS validation. The contribution stays focused on CrossOver. If smaller changes would be easier to review, I am happy to split the installation fixes and guided setup into separate pull requests.
+
+A [preview package](https://github.com/schroedernils/NotProton/releases/tag/v1.1.0-preview.2) is available for trying the changes. It is ad hoc signed, not Apple notarized, and automatic updates are disabled for that test build. The upstream app identity and production update configuration are retained in the source. The preview is not an official upstream release.
