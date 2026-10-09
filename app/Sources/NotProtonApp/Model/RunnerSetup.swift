@@ -12,10 +12,10 @@ enum RunnerSetup {
 
         var label: String {
             switch self {
-            case .cloning: "Copying CrossOver"
-            case .staging: "Patching"
-            case .patching: "Installing compatibility tool"
-            case .finished: "Done"
+            case .cloning: L10n.tr("Copying CrossOver")
+            case .staging: L10n.tr("Patching")
+            case .patching: L10n.tr("Installing compatibility tool")
+            case .finished: L10n.tr("Done")
             }
         }
     }
@@ -41,7 +41,7 @@ enum RunnerSetup {
         return try prepare(build, report: report)
     }
 
-    static let prepareStep = "Set up compatibility tool"
+    static let prepareStep = L10n.tr("Set up compatibility tool")
 
     static func prepare(
         _ build: RunnerBuild,
@@ -62,14 +62,14 @@ enum RunnerSetup {
     ) throws -> Outcome {
         guard RunnerInstaller.hasClone(forBuild: build.id, runners: runners) else {
             throw StepFailure(
-                step: prepareStep, detail: "Build \(build.displayVersion) has not been set up."
+                step: prepareStep, detail: L10n.tr("Build \(build.displayVersion) has not been set up.")
             )
         }
 
         let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
         let status = license(root)
         guard status.licensed else {
-            throw StepFailure(step: "Verify CrossOver license", detail: status.detail)
+            throw StepFailure(step: L10n.tr("Verify CrossOver license"), detail: status.detail)
         }
 
         try verify(build, root)

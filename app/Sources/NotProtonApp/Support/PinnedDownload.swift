@@ -10,8 +10,8 @@ enum PinnedDownload {
 
         var label: String {
             switch self {
-            case .reusing: "Preparing"
-            case .fetching(let host): "Downloading from \(host)"
+            case .reusing: L10n.tr("Preparing")
+            case .fetching(let host): L10n.tr("Downloading from \(host)")
             }
         }
     }
@@ -76,12 +76,11 @@ enum PinnedDownload {
 
     private static func reason(_ kinds: Set<Refusal>) -> String {
         if kinds == [.mismatch] {
-            return "Something is wrong with the downloaded files. Please check for a NotProton update."
+            return L10n.tr("Something is wrong with the downloaded files. Please check for a NotProton update.")
         }
         if kinds == [.unreachable] {
-            return "NotProton could not reach Valve's servers. Please check your internet "
-                + "connection and try again."
+            return L10n.tr("NotProton could not reach Valve's servers. Please check your internet connection and try again.")
         }
-        return "NotProton could not download the files it needs from Valve. Please try again later."
+        return L10n.tr("NotProton could not download the files it needs from Valve. Please try again later.")
     }
 }

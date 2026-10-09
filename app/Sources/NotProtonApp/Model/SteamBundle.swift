@@ -99,7 +99,7 @@ enum SteamBundle {
         guard !isRunning else {
             throw StepFailure(
                 step: step,
-                detail: "Steam is running, please close Steam."
+                detail: L10n.tr("Steam is running, please close Steam.")
             )
         }
 
@@ -114,8 +114,7 @@ enum SteamBundle {
     }
 
     static func register(_ app: URL = SupportPaths.Steam.app) {
-        let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks"
-            + "/LaunchServices.framework/Support/lsregister"
+        let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
         _ = try? Shell.run(lsregister, ["-f", app.path(percentEncoded: false)])
     }
 

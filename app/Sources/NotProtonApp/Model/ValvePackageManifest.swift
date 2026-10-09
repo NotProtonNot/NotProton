@@ -42,15 +42,15 @@ struct ValvePackageManifest: Sendable {
     static let resourceName = "valve-packages"
     static let resourceExtension = "manifest"
 
-    private static let step = "Read the Valve file list"
+    private static let step = L10n.tr("Read the Valve file list")
 
     static func bundled() throws -> ValvePackageManifest {
-        guard let url = Bundle.module.url(
+        guard let url = AppResources.bundle.url(
             forResource: resourceName, withExtension: resourceExtension
         ) else {
             throw StepFailure(
                 step: step,
-                detail: "\(resourceName).\(resourceExtension) is missing from the app's resources."
+                detail: L10n.tr("\(resourceName).\(resourceExtension) is missing from the app's resources.")
             )
         }
         return try load(from: url)
@@ -63,7 +63,7 @@ struct ValvePackageManifest: Sendable {
         } catch {
             throw StepFailure(
                 step: step,
-                detail: "\(url.path(percentEncoded: false)) could not be read. \(error.localizedDescription)"
+                detail: L10n.tr("\(url.path(percentEncoded: false)) could not be read. \(error.localizedDescription)")
             )
         }
         return try parse(String(decoding: data, as: UTF8.self))
@@ -86,63 +86,61 @@ struct ValvePackageManifest: Sendable {
 
             switch fields[0] {
             case "base":
-                try expect(fields.count == 2, number, "a base and one URL", line)
+                try expect(fields.count == 2, number, L10n.tr("a base and one URL"), line)
                 guard let url = URL(string: fields[1]), url.scheme == "https", url.host() != nil else {
-                    throw fail(number, "does not hold an https URL: \(fields[1])")
+                    throw fail(number, L10n.tr("does not hold an https URL: \(fields[1])"))
                 }
                 bases.append(url)
 
             case "package":
-                try expect(fields.count == 4, number, "a package, an id, a filename and a sha256", line)
+                try expect(fields.count == 4, number, L10n.tr("a package, an id, a filename and a sha256"), line)
                 try expectHash(fields[3], number)
                 guard packageIDs.insert(fields[1]).inserted else {
-                    throw fail(number, "repeats the package id \(fields[1]).")
+                    throw fail(number, L10n.tr("repeats the package id \(fields[1])."))
                 }
                 packages.append(ValvePackage(id: fields[1], file: fields[2], sha256: fields[3]))
 
             case "file":
-                try expect(fields.count == 5, number, "a file, a bridge path, a package id, an inner path and a sha256", line)
+                try expect(fields.count == 5, number, L10n.tr("a file, a bridge path, a package id, an inner path and a sha256"), line)
                 try expectHash(fields[4], number)
                 guard bridgePaths.insert(fields[1]).inserted else {
-                    throw fail(number, "repeats the bridge path \(fields[1]).")
+                    throw fail(number, L10n.tr("repeats the bridge path \(fields[1])."))
                 }
                 files.append(ValveFile(bridgePath: fields[1], package: fields[2], innerPath: fields[3], sha256: fields[4]))
 
             case "bundle":
                 try expect(fields.count == 5, number,
-                    "a bundle, a filename, a sha256, an inner archive and a bundle name", line)
+                    L10n.tr("a bundle, a filename, a sha256, an inner archive and a bundle name"), line)
                 try expectHash(fields[2], number)
                 guard bundle == nil else {
-                    throw fail(number, "declares a second bundle. One is the most that can be installed.")
+                    throw fail(number, L10n.tr("declares a second bundle. One is the most that can be installed."))
                 }
                 bundle = ValveBundle(
                     file: fields[1], sha256: fields[2], innerArchive: fields[3], bundleName: fields[4]
                 )
 
             default:
-                throw fail(number, "has an unknown row kind \(fields[0]). Known: base, package, file, bundle.")
+                throw fail(number, L10n.tr("has an unknown row kind \(fields[0]). Known: base, package, file, bundle."))
             }
         }
 
-        guard !bases.isEmpty else { throw fail(nil, "names no CDN host to fetch from.") }
-        guard !packages.isEmpty else { throw fail(nil, "names no package.") }
-        guard !files.isEmpty else { throw fail(nil, "names no file.") }
+        guard !bases.isEmpty else { throw fail(nil, L10n.tr("names no CDN host to fetch from.")) }
+        guard !packages.isEmpty else { throw fail(nil, L10n.tr("names no package.")) }
+        guard !files.isEmpty else { throw fail(nil, L10n.tr("names no file.")) }
 
         for file in files where !packageIDs.contains(file.package) {
-            throw fail(nil, "\(file.bridgePath) names the package \(file.package), which is not declared. "
-                + "Declared: \(packages.map(\.id).joined(separator: ", ")).")
+            throw fail(nil, L10n.tr("\(file.bridgePath) names the package \(file.package), which is not declared. Declared: \(packages.map(\.id).joined(separator: ", "))."))
         }
 
         for package in packages where !files.contains(where: { $0.package == package.id }) {
-            throw fail(nil, "declares the package \(package.id), which no file row uses.")
+            throw fail(nil, L10n.tr("declares the package \(package.id), which no file row uses."))
         }
 
         var hashByInner: [String: (path: String, sha: String)] = [:]
         for file in files {
             let key = "\(file.package)/\(file.innerPath)"
             if let first = hashByInner[key], first.sha != file.sha256 {
-                throw fail(nil, "\(first.path) and \(file.bridgePath) both come from \(key) "
-                    + "but pin different hashes.")
+                throw fail(nil, L10n.tr("\(first.path) and \(file.bridgePath) both come from \(key) but pin different hashes."))
             }
             hashByInner[key] = (file.bridgePath, file.sha256)
         }
@@ -151,17 +149,17 @@ struct ValvePackageManifest: Sendable {
     }
 
     private static func expect(_ condition: Bool, _ line: Int, _ shape: String, _ text: String) throws {
-        guard condition else { throw fail(line, "is not \(shape): \(text)") }
+        guard condition else { throw fail(line, L10n.tr("is not \(shape): \(text)")) }
     }
 
     private static func expectHash(_ value: String, _ line: Int) throws {
         let hex = "0123456789abcdef"
         guard value.count == 64, value.allSatisfy(hex.contains) else {
-            throw fail(line, "does not end in a lowercase 64 character sha256: \(value)")
+            throw fail(line, L10n.tr("does not end in a lowercase 64 character sha256: \(value)"))
         }
     }
 
     private static func fail(_ line: Int?, _ detail: String) -> StepFailure {
-        StepFailure(step: step, detail: line.map { "Line \($0) \(detail)" } ?? "The Valve file list \(detail)")
+        StepFailure(step: step, detail: line.map { L10n.tr("Line \($0) \(detail)") } ?? L10n.tr("The Valve file list \(detail)"))
     }
 }

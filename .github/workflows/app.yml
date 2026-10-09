@@ -111,7 +111,9 @@ jobs:
           make -s seedcheck
 
       - name: Run the Swift tests
-        run: make -s app-tests
+        run: |
+          make -s localizationcheck
+          NOTPROTON_LANGUAGE=en make -s app-tests
 
       - name: Package the app bundle
         run: |

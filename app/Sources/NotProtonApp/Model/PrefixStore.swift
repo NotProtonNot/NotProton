@@ -42,7 +42,7 @@ struct WinePrefix: Sendable, Hashable, Identifiable {
 
     var id: String { "\(library.root.path(percentEncoded: false))#\(appID)" }
 
-    var title: String { name ?? "App \(appID)" }
+    var title: String { name ?? L10n.tr("App \(appID)") }
 }
 
 struct PrefixUsage: Sendable {

@@ -153,7 +153,7 @@ enum CompatToolList {
             try FileManager.default.createDirectory(
                 at: file.deletingLastPathComponent(), withIntermediateDirectories: true
             )
-            try atomicReplace(file, with: Data(text.utf8), step: "Update compatibility tools")
+            try atomicReplace(file, with: Data(text.utf8), step: L10n.tr("Update compatibility tools"))
         }
         prune(keeping: Set(builds.map(\.id)), runners: runners, bridge: bridge, compatTools: compatTools)
         return changed

@@ -14,10 +14,10 @@ enum ValveFetcher {
         var label: String {
             switch self {
             case .downloading(let progress): progress.label
-            case .extracting: "Extracting"
-            case .verifying: "Verifying"
-            case .installing: "Installing"
-            case .finished: "Done"
+            case .extracting: L10n.tr("Extracting")
+            case .verifying: L10n.tr("Verifying")
+            case .installing: L10n.tr("Installing")
+            case .finished: L10n.tr("Done")
             }
         }
     }
@@ -29,7 +29,7 @@ enum ValveFetcher {
         var wroteNothing: Bool { installed.isEmpty }
     }
 
-    private static let step = "Fetch the Valve binaries"
+    private static let step = L10n.tr("Fetch the Valve binaries")
 
     static func run(
         manifest suppliedManifest: ValvePackageManifest? = nil,
@@ -55,12 +55,10 @@ enum ValveFetcher {
         report(.verifying)
         let wrong = manifest.files.filter { Digest.sha256IfPresent(extracted.appending(path: $0.innerPath)) != $0.sha256 }
         guard wrong.isEmpty else {
-            AppLog.note("valve fetch: \(wrong.count) of \(manifest.files.count) files missed their "
-                + "pinned hash: \(wrong.map(\.bridgePath).joined(separator: ", "))")
+            AppLog.note("valve fetch: \(wrong.count) of \(manifest.files.count) files missed their pinned hash: \(wrong.map(\.bridgePath).joined(separator: ", "))")
             throw StepFailure(
                 step: step,
-                detail: "Something is wrong with the downloaded files. "
-                    + "Please check for a NotProton update."
+                detail: L10n.tr("Something is wrong with the downloaded files. Please check for a NotProton update.")
             )
         }
 

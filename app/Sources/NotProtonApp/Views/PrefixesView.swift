@@ -11,14 +11,14 @@ struct PrefixesView: View {
     var body: some View {
         Group {
             if !model.hasLoaded {
-                ProgressView("Looking for prefixes")
+                ProgressView(L10n.tr("Looking for prefixes"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.prefixes.isEmpty {
                 ContentUnavailableView(
-                    "No Prefixes",
+                    L10n.tr("No Prefixes"),
                     systemImage: "externaldrive",
                     description: Text(
-                        "A prefix appears here once a Windows game has been launched through NotProton."
+                        L10n.tr("A prefix appears here once a Windows game has been launched through NotProton.")
                     )
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -26,12 +26,12 @@ struct PrefixesView: View {
                 table
             }
         }
-        .navigationTitle("Prefixes")
+        .navigationTitle(L10n.tr("Prefixes"))
         .safeAreaInset(edge: .bottom) {
             if let failed = model.report {
                 report(
                     StatusRow(
-                        title: "Failed",
+                        title: L10n.tr("Failed"),
                         value: failed.message,
                         tone: .bad,
                         action: failed.settingsPane.map { pane in
@@ -42,7 +42,7 @@ struct PrefixesView: View {
             } else if let outcome = model.outcome {
                 report(
                     StatusRow(
-                        title: "Done",
+                        title: L10n.tr("Done"),
                         value: outcome,
                         tone: .ok
                     )
@@ -68,7 +68,7 @@ struct PrefixesView: View {
                 model.pendingConfirmation = nil
                 Task { await model.delete(targets) }
             }
-            Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
+            Button(L10n.tr("Cancel"), role: .cancel) { model.pendingConfirmation = nil }
                 .keyboardShortcut(.defaultAction)
         } message: {
             Text(PrefixPrompt.deleteMessage(deleting))
@@ -85,7 +85,7 @@ struct PrefixesView: View {
             Button(PrefixPrompt.rebuildWithoutBackupButton(rebuilding)) {
                 model.confirmRebuild(keepBackup: false)
             }
-            Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
+            Button(L10n.tr("Cancel"), role: .cancel) { model.pendingConfirmation = nil }
         } message: {
             Text(PrefixPrompt.rebuildMessage())
         }
@@ -100,7 +100,7 @@ struct PrefixesView: View {
                 Task { await model.backUp(targets) }
             }
             .keyboardShortcut(.defaultAction)
-            Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
+            Button(L10n.tr("Cancel"), role: .cancel) { model.pendingConfirmation = nil }
         } message: {
             Text(PrefixPrompt.backUpMessage(backingUp))
         }
@@ -153,26 +153,26 @@ struct PrefixesView: View {
         Menu {
             toolButtons(for: model.selectedPrefix)
         } label: {
-            Label("Tools", systemImage: "wrench.and.screwdriver")
+            Label(L10n.tr("Tools"), systemImage: "wrench.and.screwdriver")
         }
         .disabled(model.selectedPrefix == nil || model.isBusy)
-        .help("Run a program or open a Wine tool in the selected prefix.")
+        .help(L10n.tr("Run a program or open a Wine tool in the selected prefix."))
 
-        Button("Reveal in Finder", systemImage: "folder") {
+        Button(L10n.tr("Reveal in Finder"), systemImage: "folder") {
             if let prefix = model.selectedPrefix { model.reveal(prefix) }
         }
         .disabled(model.selectedPrefix == nil)
-        .help("Show the selected prefix in the Finder.")
+        .help(L10n.tr("Show the selected prefix in the Finder."))
 
-        Button("Refresh", systemImage: "arrow.clockwise") {
+        Button(L10n.tr("Refresh"), systemImage: "arrow.clockwise") {
             Task { await model.load() }
         }
         .disabled(model.isLoading)
-        .help("List the prefixes again and update their sizes.")
+        .help(L10n.tr("List the prefixes again and update their sizes."))
     }
 
     private func lastUsed(_ prefix: WinePrefix) -> String {
-        prefix.lastUsed?.formatted(date: .abbreviated, time: .omitted) ?? "Never"
+        prefix.lastUsed?.formatted(date: .abbreviated, time: .omitted) ?? L10n.tr("Never")
     }
 
     private var libraryWidth: CGFloat {
@@ -192,7 +192,7 @@ struct PrefixesView: View {
             var width = TextWidth.of(prefix.title)
             if model.isStale(prefix) { width += 22 }
             if prefix.name == nil {
-                width += TextWidth.of("No longer installed", size: NSFont.smallSystemFontSize) + 6
+                width += TextWidth.of(L10n.tr("No longer installed"), size: NSFont.smallSystemFontSize) + 6
             }
             return width
         }
@@ -230,7 +230,7 @@ struct PrefixesView: View {
     private var table: some View {
         @Bindable var model = model
         return Table(rows, selection: $model.selection, sortOrder: $sortOrder) {
-            TableColumn("Game", value: \.title) { row in
+            TableColumn(L10n.tr("Game"), value: \.title) { row in
                 let prefix = row.prefix
                 HStack(spacing: 6) {
                     if model.isStale(prefix) {
@@ -244,11 +244,11 @@ struct PrefixesView: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .disabled(model.isBusy || model.tools.isEmpty)
-                        .accessibilityLabel("Needs rebuilding")
+                        .accessibilityLabel(L10n.tr("Needs rebuilding"))
                     }
                     Text(prefix.title).help(prefix.title)
                     if prefix.name == nil {
-                        Text("No longer installed")
+                        Text(L10n.tr("No longer installed"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -259,42 +259,42 @@ struct PrefixesView: View {
             }
             .width(min: 60, ideal: gameWidth)
 
-            TableColumn("Tool", value: \.tool) { row in
+            TableColumn(L10n.tr("Tool"), value: \.tool) { row in
                 let prefix = row.prefix
                 if let tool = model.lastTool(prefix) {
                     Text(tool).foregroundStyle(.secondary).help(tool)
                 } else {
-                    Text("None")
+                    Text(L10n.tr("None"))
                         .foregroundStyle(contrast == .increased ? .secondary : .tertiary)
                 }
             }
             .width(min: 60, ideal: toolWidth)
 
-            TableColumn("App ID", value: \.appID) { row in
+            TableColumn(L10n.tr("App ID"), value: \.appID) { row in
                 Text(row.prefix.appID).monospacedDigit().foregroundStyle(.secondary)
             }
             .width(min: 50, ideal: 80)
 
-            TableColumn("Library", value: \.library) { row in
+            TableColumn(L10n.tr("Library"), value: \.library) { row in
                 Text(row.library)
                     .foregroundStyle(.secondary)
                     .help(row.library)
             }
             .width(min: 44, ideal: libraryWidth)
 
-            TableColumn("Private Size", value: \.size) { row in
+            TableColumn(L10n.tr("Private Size"), value: \.size) { row in
                 if let usage = model.usage[row.id] {
                     Text(usage.bytes.formatted(.byteCount(style: .file)))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Calculating…")
+                    Text(L10n.tr("Calculating…"))
                         .foregroundStyle(contrast == .increased ? .secondary : .tertiary)
                 }
             }
             .width(min: 56, ideal: 90)
 
-            TableColumn("Last used", value: \.lastUsed) { row in
+            TableColumn(L10n.tr("Last used"), value: \.lastUsed) { row in
                 Text(lastUsed(row.prefix))
                     .foregroundStyle(.secondary)
                     .help(lastUsed(row.prefix))
@@ -320,7 +320,7 @@ struct PrefixesView: View {
             if let prefix = single(ids) {
                 toolButtons(for: prefix)
                 Divider()
-                Button("Reveal in Finder") { model.reveal(prefix) }
+                Button(L10n.tr("Reveal in Finder")) { model.reveal(prefix) }
             }
             if !targets.isEmpty {
                 Divider()
@@ -351,7 +351,7 @@ struct PrefixesView: View {
 
     @ViewBuilder
     private func toolButtons(for prefix: WinePrefix?) -> some View {
-        Button("Run Program…") {
+        Button(L10n.tr("Run Program…")) {
             if let prefix { model.chooseExecutable(for: prefix) }
         }
         Divider()

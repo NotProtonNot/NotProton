@@ -27,12 +27,12 @@ struct PayloadManifest: Sendable {
     static let resourceExtension = "manifest"
 
     static func bundled() throws -> PayloadManifest {
-        guard let url = Bundle.module.url(
+        guard let url = AppResources.bundle.url(
             forResource: resourceName, withExtension: resourceExtension
         ) else {
             throw StepFailure(
-                step: "Read the component list",
-                detail: "\(resourceName).\(resourceExtension) is missing from the app's resources."
+                step: L10n.tr("Read the component list"),
+                detail: L10n.tr("\(resourceName).\(resourceExtension) is missing from the app's resources.")
             )
         }
         return try load(from: url)
@@ -44,8 +44,8 @@ struct PayloadManifest: Sendable {
             data = try Data(contentsOf: url)
         } catch {
             throw StepFailure(
-                step: "Read the component list",
-                detail: "\(url.path(percentEncoded: false)) could not be read. \(error.localizedDescription)"
+                step: L10n.tr("Read the component list"),
+                detail: L10n.tr("\(url.path(percentEncoded: false)) could not be read. \(error.localizedDescription)")
             )
         }
         return try parse(String(decoding: data, as: UTF8.self))
@@ -63,23 +63,22 @@ struct PayloadManifest: Sendable {
             let number = index + 1
             guard fields.count == 2 else {
                 throw StepFailure(
-                    step: "Read the component list",
-                    detail: "Line \(number) is not an origin and a path: \(line)"
+                    step: L10n.tr("Read the component list"),
+                    detail: L10n.tr("Line \(number) is not an origin and a path: \(line)")
                 )
             }
             guard let origin = PayloadOrigin(rawValue: String(fields[0])) else {
                 throw StepFailure(
-                    step: "Read the component list",
-                    detail: "Line \(number) has an unknown origin \(fields[0]). "
-                        + "Known: \(PayloadOrigin.allCases.map(\.rawValue).joined(separator: ", "))."
+                    step: L10n.tr("Read the component list"),
+                    detail: L10n.tr("Line \(number) has an unknown origin \(fields[0]). Known: \(PayloadOrigin.allCases.map(\.rawValue).joined(separator: ", ")).")
                 )
             }
 
             let path = String(fields[1])
             guard seen.insert(path).inserted else {
                 throw StepFailure(
-                    step: "Read the component list",
-                    detail: "Line \(number) repeats \(path)."
+                    step: L10n.tr("Read the component list"),
+                    detail: L10n.tr("Line \(number) repeats \(path).")
                 )
             }
 
@@ -87,7 +86,7 @@ struct PayloadManifest: Sendable {
         }
 
         guard !entries.isEmpty else {
-            throw StepFailure(step: "Read the component list", detail: "The component list has no entries.")
+            throw StepFailure(step: L10n.tr("Read the component list"), detail: L10n.tr("The component list has no entries."))
         }
 
         return PayloadManifest(entries: entries)

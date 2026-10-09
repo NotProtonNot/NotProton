@@ -4,7 +4,7 @@ import Foundation
 
 enum RunnerPatcher {
 
-    static let step = "Patch the compatibility tool"
+    static let step = L10n.tr("Patch the compatibility tool")
 
     private static let dyldEntitlement = "com.apple.security.cs.allow-dyld-environment-variables"
 
@@ -55,25 +55,25 @@ enum RunnerPatcher {
             guard let expected = build.patchedNtdll[arch] else { continue }
             let live = root.appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll")
             guard let actual = Digest.sha256IfPresent(live) else {
-                wrong.append("\(arch.rawValue)/ntdll.dll is missing")
+                wrong.append(L10n.tr("\(arch.rawValue)/ntdll.dll is missing"))
                 continue
             }
             if actual != expected {
-                wrong.append("\(arch.rawValue)/ntdll.dll is not the patched copy")
+                wrong.append(L10n.tr("\(arch.rawValue)/ntdll.dll is not the patched copy"))
             }
         }
         for builtin in builtins(in: root) {
             let installed = Digest.sha256IfPresent(
                 root.appending(path: "lib/wine/\(builtin.arch)/\(builtin.name)"))
             guard let installed else {
-                wrong.append("\(builtin.arch)/\(builtin.name) is missing")
+                wrong.append(L10n.tr("\(builtin.arch)/\(builtin.name) is missing"))
                 continue
             }
 
             let staged = Digest.sha256IfPresent(
                 bridge.appending(path: "\(builtin.arch)/\(builtin.name)"))
             if let staged, staged != installed {
-                wrong.append("\(builtin.arch)/\(builtin.name) is out of date")
+                wrong.append(L10n.tr("\(builtin.arch)/\(builtin.name) is out of date"))
             }
         }
 
@@ -81,10 +81,10 @@ enum RunnerPatcher {
             let granted = entitlements(of: loader)
             if granted?.contains(restrictedEntitlement) == true {
                 if !signatureIsValid(signingTarget(for: loader)) {
-                    wrong.append("\(name(of: loader)) has a broken signature")
+                    wrong.append(L10n.tr("\(name(of: loader)) has a broken signature"))
                 }
             } else if granted?.contains(dyldEntitlement) != true {
-                wrong.append("\(name(of: loader)) is missing the dyld entitlement")
+                wrong.append(L10n.tr("\(name(of: loader)) is missing the dyld entitlement"))
             }
         }
 
@@ -103,7 +103,7 @@ enum RunnerPatcher {
             guard Digest.sha256IfPresent(staged) == expected else {
                 throw StepFailure(
                     step: step,
-                    detail: "The patched \(arch.rawValue) ntdll has not been copied into place."
+                    detail: L10n.tr("The patched \(arch.rawValue) ntdll has not been copied into place.")
                 )
             }
 
@@ -126,8 +126,7 @@ enum RunnerPatcher {
             guard FileManager.default.fileExists(atPath: source.path(percentEncoded: false)) else {
                 throw StepFailure(
                     step: step,
-                    detail: "\(builtin.arch)/\(builtin.name) is not in the bridge. "
-                            + "Install NotProton first."
+                    detail: L10n.tr("\(builtin.arch)/\(builtin.name) is not in the bridge. Install NotProton first.")
                 )
             }
 
@@ -153,7 +152,7 @@ enum RunnerPatcher {
             guard let existing, !existing.isEmpty else {
                 throw StepFailure(
                     step: step,
-                    detail: "\(name(of: loader)) carries no entitlements to extend."
+                    detail: L10n.tr("\(name(of: loader)) carries no entitlements to extend.")
                 )
             }
 
@@ -224,7 +223,7 @@ enum RunnerPatcher {
         guard entitlements(of: loader)?.contains(dyldEntitlement) == true else {
             throw StepFailure(
                 step: step,
-                detail: "\(name(of: loader)) was re-signed without the dyld entitlement."
+                detail: L10n.tr("\(name(of: loader)) was re-signed without the dyld entitlement.")
             )
         }
     }
@@ -262,7 +261,7 @@ enum RunnerPatcher {
         guard result.status == 0 else {
             throw StepFailure(
                 step: step,
-                detail: "Keeping the shipped \(file.lastPathComponent) failed. "
+                detail: L10n.tr("Keeping the shipped \(file.lastPathComponent) failed. ")
                     + result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
