@@ -25,6 +25,18 @@ fi
 if [ -n "$DSB_LIBRARY" ] && [ -f "$DSB_LIBRARY" ]; then
   export DYLD_INSERT_LIBRARIES="$DSB_LIBRARY${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
 fi
+# Steam's macOS virtual Xbox device has input but no SDL2 rumble backend.
+# The Wine-local adapter forwards only that device's rumble to native Steam.
+steam_rumble="$np_support/controllers/steam-input/rumble.dylib"
+NOTPROTON_RUMBLE_LIBRARY=""
+if [ "$verb" = waitforexitandrun ] && [ "${NOTPROTON_RAW_CONTROLLERS:-0}" != 1 ] \
+  && [ "${NOTPROTON_STEAM_RUMBLE:-1}" != 0 ] && [ -f "$steam_rumble" ]; then
+  export NOTPROTON_STEAM_RUMBLE=1
+  NOTPROTON_RUMBLE_LIBRARY="$steam_rumble"
+  export DYLD_INSERT_LIBRARIES="$steam_rumble${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
+fi
+export NOTPROTON_RUMBLE_LIBRARY
+
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
 export CX_HOME="$HOME/Library/Application Support/CrossOver"
@@ -1330,6 +1342,9 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
 fi
+if [ -n "\$NOTPROTON_RUMBLE_LIBRARY" ] && [ -f "\$NOTPROTON_RUMBLE_LIBRARY" ]; then
+  export DYLD_INSERT_LIBRARIES="\$NOTPROTON_RUMBLE_LIBRARY\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
+fi
 export NOTPROTON_GAME_LOADER="$WINELOADER"
 if [ -n "\$DSB_LIBRARY" ] && [ -f "\$DSB_LIBRARY" ]; then
   export DYLD_INSERT_LIBRARIES="\$DSB_LIBRARY\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
@@ -1410,6 +1425,9 @@ for name in $(env | sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]
   set -- --env "$name=$value" "$@"
 done
 set -- \
+  --env NOTPROTON_RUMBLE_LIBRARY="${NOTPROTON_RUMBLE_LIBRARY:-}" \
+  --env NOTPROTON_STEAM_RUMBLE="${NOTPROTON_STEAM_RUMBLE:-}" \
+  --env NOTPROTON_RAW_CONTROLLERS="${NOTPROTON_RAW_CONTROLLERS:-}" \
   --env DSB_SESSION="${DSB_SESSION:-}" \
   --env DSB_LIBRARY="${DSB_LIBRARY:-}" \
   --env DSB_PORT="${DSB_PORT:-}" \

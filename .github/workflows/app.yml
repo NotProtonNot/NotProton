@@ -128,6 +128,7 @@ jobs:
         run: |
           make game-host-check
           make dualsense-check
+          make steam-rumble-check
 
       - name: Package the app bundle
         run: |
