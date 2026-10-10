@@ -148,6 +148,43 @@ alert_safe() {
   printf '%s' "$1" | tr -d '"\\'
 }
 
+np_system_prefs=/Library/Preferences
+# NotProton checks the license when a runner is set up, but a runner set up during a
+# CrossOver trial would keep launching games after the trial ends. So every launch applies
+# the same rule as CrossOverLicense.swift: a license that verifies against the bundle's key,
+# or no license file and a FirstRunDate under 14 days old. Prints licensed, unlicensed,
+# ended, or "trial <days left>".
+license_state() {
+  key="$CX_ROOT/share/crossover/data/tie.pub"
+  seen_license=""
+  for dir in "$HOME/Library/Preferences" "$np_system_prefs"; do
+    lic="$dir/com.codeweavers.CrossOver.license"
+    [ -f "$lic" ] || continue
+    seen_license=1
+    for pair in sha256:-sha256 sig:-sha1; do
+      sig="$dir/com.codeweavers.CrossOver.${pair%%:*}"
+      [ -f "$sig" ] || continue
+      if /usr/bin/openssl dgst "${pair#*:}" -verify "$key" -signature "$sig" "$lic" \
+        >/dev/null 2>&1; then
+        echo licensed
+        return 0
+      fi
+    done
+  done
+  # A license that is present but fails is not rescued by a trial.
+  if [ -n "$seen_license" ]; then echo unlicensed; return 0; fi
+  first=$(defaults read com.codeweavers.CrossOver FirstRunDate 2>/dev/null) \
+    || { echo unlicensed; return 0; }
+  start=$(date -j -f '%Y-%m-%d %H:%M:%S %z' "$first" +%s 2>/dev/null) \
+    || { echo unlicensed; return 0; }
+  now=${np_now:-$(date +%s)}
+  # A first run after now means the clock or the record moved.
+  if [ "$start" -gt "$now" ]; then echo unlicensed; return 0; fi
+  left=$((start + 14 * 86400 - now))
+  if [ "$left" -le 0 ]; then echo ended; return 0; fi
+  echo "trial $(((left + 86399) / 86400))"
+}
+
 refuse_foreign_prefix() {
   case "${wine_unix##*/}" in
     aarch64-unix) want=aa64 ;;
@@ -497,6 +534,25 @@ if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
   exit 1
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
+
+stage_step="license check"
+license=$(license_state)
+case "$license" in
+  licensed) ;;
+  trial\ *)
+    echo "license: CrossOver trial active, ${license#trial } day(s) left" >> "$log" 2>&1 || true
+    ;;
+  ended)
+    echo "=== CrossOver trial has ended, not launching ===" >> "$log" 2>&1 || true
+    show_alert "Your CrossOver trial has ended." "Buy CrossOver at https://www.codeweavers.com/store, then try again."
+    exit 1
+    ;;
+  *)
+    echo "=== CrossOver does not appear to be activated, not launching ===" >> "$log" 2>&1 || true
+    show_alert "CrossOver does not appear to be activated." "Please run CrossOver and try again."
+    exit 1
+    ;;
+esac
 
 # Each CrossOver build needs its own template.
 # FEX builds need two, one for FEX/arm64 Wine and one for Rosetta/AMD64 Wine
