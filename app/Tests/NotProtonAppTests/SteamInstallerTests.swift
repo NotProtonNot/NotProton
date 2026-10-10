@@ -153,6 +153,13 @@ struct SteamInstallerTests {
         #expect(files.fileExists(atPath: fixture.overlayShim.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.iconmaker.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.appinfo.path(percentEncoded: false)))
+        for name in InstallPayload.runtimeFiles {
+            let installed = fixture.support.appending(path: name)
+            #expect(try Data(contentsOf: installed) == Data("runtime fixture".utf8))
+            if !name.hasSuffix(".dylib") {
+                #expect(files.isExecutableFile(atPath: installed.path(percentEncoded: false)))
+            }
+        }
         #expect(
             try String(contentsOf: fixture.deployedVersion, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines) == "9.9.9-test"
