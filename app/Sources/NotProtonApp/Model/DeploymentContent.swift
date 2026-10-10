@@ -117,6 +117,10 @@ enum DeploymentContent {
             File(source: payload.iconmaker, destination: iconmaker, name: "iconmaker", executable: true),
             File(source: payload.appinfo, destination: appinfo, name: "appinfo", executable: true),
         ]
+        files += payload.runtime.sorted { $0.key < $1.key }.map { name, source in
+            File(source: source, destination: iconmaker.deletingLastPathComponent().appending(path: name),
+                 name: name, executable: !name.hasSuffix(".dylib"))
+        }
         files += payload.signatures.map {
             File(source: $0, destination: signatures.appending(path: $0.lastPathComponent),
                  name: "signatures/\($0.lastPathComponent)")
