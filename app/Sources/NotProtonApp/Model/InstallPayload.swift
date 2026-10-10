@@ -7,6 +7,7 @@ enum InstallPayload {
 
     static let runtimeFiles = [
         "prepare-game-loader", "game-host.dylib",
+        "controllers/steam-input/rumble.dylib",
         "controllers/dualsense/launch", "controllers/dualsense/broker", "controllers/dualsense/bridge.dylib",
     ]
 
