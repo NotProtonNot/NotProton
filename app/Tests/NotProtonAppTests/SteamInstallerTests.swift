@@ -42,6 +42,11 @@ struct SteamInstallerTests {
 
         let appinfo = root.appending(path: "appinfo")
         try FileManager.default.copyItem(at: dylib, to: appinfo)
+        for name in InstallPayload.runtimeFiles {
+            let file = root.appending(path: name)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("runtime fixture".utf8).write(to: file)
+        }
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: root.appending(path: "run"))
         try Data("100\n".utf8).write(to: root.appending(path: "build-time"))
 
@@ -148,6 +153,13 @@ struct SteamInstallerTests {
         #expect(files.fileExists(atPath: fixture.overlayShim.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.iconmaker.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.appinfo.path(percentEncoded: false)))
+        for name in InstallPayload.runtimeFiles {
+            let installed = fixture.support.appending(path: name)
+            #expect(try Data(contentsOf: installed) == Data("runtime fixture".utf8))
+            if !name.hasSuffix(".dylib") {
+                #expect(files.isExecutableFile(atPath: installed.path(percentEncoded: false)))
+            }
+        }
         #expect(
             try String(contentsOf: fixture.deployedVersion, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines) == "9.9.9-test"

@@ -124,6 +124,12 @@ jobs:
       - name: Run the Swift tests
         run: make -s app-tests
 
+      - name: Check game identity and controller transports without hardware
+        run: |
+          make game-host-check
+          make dualsense-check
+          make steam-rumble-check
+
       - name: Package the app bundle
         run: |
           mkdir -p out/artifact

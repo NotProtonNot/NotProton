@@ -18,6 +18,25 @@ case "$verb" in
 esac
 
 np_support="$HOME/Library/Application Support/notproton"
+controller_bridge="$np_support/controllers/dualsense/launch"
+if [ "$verb" = waitforexitandrun ] && [ "${DSB_SESSION:-0}" != 1 ] && [ -x "$controller_bridge" ]; then
+  exec "$controller_bridge" "$0" "$verb" "$@"
+fi
+if [ -n "$DSB_LIBRARY" ] && [ -f "$DSB_LIBRARY" ]; then
+  export DYLD_INSERT_LIBRARIES="$DSB_LIBRARY${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
+fi
+# Steam's macOS virtual Xbox device has input but no SDL2 rumble backend.
+# The Wine-local adapter forwards only that device's rumble to native Steam.
+steam_rumble="$np_support/controllers/steam-input/rumble.dylib"
+NOTPROTON_RUMBLE_LIBRARY=""
+if [ "$verb" = waitforexitandrun ] && [ "${NOTPROTON_RAW_CONTROLLERS:-0}" != 1 ] \
+  && [ "${NOTPROTON_STEAM_RUMBLE:-1}" != 0 ] && [ -f "$steam_rumble" ]; then
+  export NOTPROTON_STEAM_RUMBLE=1
+  NOTPROTON_RUMBLE_LIBRARY="$steam_rumble"
+  export DYLD_INSERT_LIBRARIES="$steam_rumble${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
+fi
+export NOTPROTON_RUMBLE_LIBRARY
+
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
 export CX_HOME="$HOME/Library/Application Support/CrossOver"
@@ -1277,6 +1296,7 @@ cat > "$loader_contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSSupportsGameMode</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
 $uielement_arg
@@ -1295,7 +1315,13 @@ for f in "$wine_unix"/*; do
   ln -sfn "$f" "$loader_macos/$base"
 done
 ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
+game_host=""
 if [ -x "$loader_macos/wine" ]; then
+  if "$np_support/prepare-game-loader" "$loader_macos/wine" "$loader_contents/Info.plist" >> "$log" 2>&1; then
+    game_host="$np_support/game-host.dylib"
+  else
+    echo "embedded loader metadata unsupported; keeping original launcher behavior" >> "$log" 2>&1 || true
+  fi
   WINELOADER="$loader_macos/wine"
   echo "loader staged in bundle for game mode" >> "$log" 2>&1 || true
 else
@@ -1315,6 +1341,16 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
   else
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
+fi
+if [ -n "\$NOTPROTON_RUMBLE_LIBRARY" ] && [ -f "\$NOTPROTON_RUMBLE_LIBRARY" ]; then
+  export DYLD_INSERT_LIBRARIES="\$NOTPROTON_RUMBLE_LIBRARY\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
+fi
+export NOTPROTON_GAME_LOADER="$WINELOADER"
+if [ -n "\$DSB_LIBRARY" ] && [ -f "\$DSB_LIBRARY" ]; then
+  export DYLD_INSERT_LIBRARIES="\$DSB_LIBRARY\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
+fi
+if [ -n "$game_host" ]; then
+  export DYLD_INSERT_LIBRARIES="$game_host\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
 fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 "$WINELOADER" "\$@"
@@ -1389,6 +1425,15 @@ for name in $(env | sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]
   set -- --env "$name=$value" "$@"
 done
 set -- \
+  --env NOTPROTON_RUMBLE_LIBRARY="${NOTPROTON_RUMBLE_LIBRARY:-}" \
+  --env NOTPROTON_STEAM_RUMBLE="${NOTPROTON_STEAM_RUMBLE:-}" \
+  --env NOTPROTON_RAW_CONTROLLERS="${NOTPROTON_RAW_CONTROLLERS:-}" \
+  --env DSB_SESSION="${DSB_SESSION:-}" \
+  --env DSB_LIBRARY="${DSB_LIBRARY:-}" \
+  --env DSB_PORT="${DSB_PORT:-}" \
+  --env DSB_TOKEN="${DSB_TOKEN:-}" \
+  --env DSB_RAW="${DSB_RAW:-}" \
+  --env DSB_PCM="${DSB_PCM:-}" \
   --env CX_ROOT="$CX_ROOT" \
   --env CX_HOME="$CX_HOME" \
   --env WINESERVER="$WINESERVER" \

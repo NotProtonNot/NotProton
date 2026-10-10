@@ -14,6 +14,11 @@ struct InstallPayloadTests {
         if shim { try Data("shim".utf8).write(to: root.appending(path: "overlay-shim.dylib")) }
         if iconmaker { try Data("iconmaker".utf8).write(to: root.appending(path: "iconmaker")) }
         if appinfo { try Data("appinfo".utf8).write(to: root.appending(path: "appinfo")) }
+        for name in InstallPayload.runtimeFiles {
+            let file = root.appending(path: name)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("runtime fixture".utf8).write(to: file)
+        }
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: root.appending(path: "run"))
         try Data("100\n".utf8).write(to: root.appending(path: "build-time"))
         for name in signatures {
@@ -87,6 +92,26 @@ struct InstallPayloadTests {
             Issue.record("a payload with no signature database was accepted")
         } catch let failure as StepFailure {
             #expect(failure.detail.contains("signatures/macos.arm64"))
+        }
+    }
+
+    @Test("Runtime helpers are required and included in the located payload")
+    func requiresRuntimeHelpers() throws {
+        let root = try scratchDirectory("runtime-payload")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try stage(root)
+        let located = try InstallPayload.locate(root: root)
+        #expect(Set(located.runtime.keys) == Set(InstallPayload.runtimeFiles))
+        for name in InstallPayload.runtimeFiles {
+            let path = root.appending(path: name)
+            try FileManager.default.removeItem(at: path)
+            do {
+                _ = try InstallPayload.locate(root: root)
+                Issue.record("payload accepted without \(name)")
+            } catch let failure as StepFailure {
+                #expect(failure.detail.contains(name))
+            }
+            try Data("runtime fixture".utf8).write(to: path)
         }
     }
 
