@@ -125,9 +125,11 @@ struct CrossOverLicenseTests {
         let fix = try Self.fixture()
         defer { fix.remove() }
 
-        let absent = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let absent = CrossOverLicense.check(
+            crossOverRoot: fix.root, searchDirs: fix.searchDirs, trialStart: { nil }
+        )
         #expect(!absent.licensed)
-        #expect(absent.diagnostic == "no CrossOver license file found")
+        #expect(absent.diagnostic.hasPrefix("no CrossOver license file found"))
         #expect(absent.detail == CrossOverLicense.notActivated)
 
         let license = try Self.writeLicense(in: fix.local)
@@ -135,7 +137,9 @@ struct CrossOverLicenseTests {
         try Self.generate(key: other, publishing: nil)
         try Self.sign(license, with: other, digest: "-sha256", sidecar: "sha256")
 
-        let wrong = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let wrong = CrossOverLicense.check(
+            crossOverRoot: fix.root, searchDirs: fix.searchDirs, trialStart: { nil }
+        )
         #expect(!wrong.licensed)
         #expect(wrong.diagnostic.contains("verified against this bundle"))
         #expect(wrong.diagnostic != absent.diagnostic)
@@ -213,12 +217,15 @@ struct CrossOverLicenseTests {
         )
 
         // A key generated for this fixture verifies no license on this machine, and a
-        // machine with no license has nothing to find either.
-        let expected = CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
+        // machine with no license has nothing to find either. The trial is held absent
+        // so a trial on the machine running the tests does not answer for it.
+        let expected = CrossOverLicense.check(
+            crossOverRoot: install.crossOverRoot, trialStart: { nil }
+        )
         #expect(!expected.licensed)
 
         do {
-            try CrossOverLicense.requireValid(for: install)
+            try CrossOverLicense.requireValid(for: install, trialStart: { nil })
             Issue.record("requireValid accepted a bundle whose key verifies nothing")
         } catch let failure as StepFailure {
             #expect(failure.detail == expected.detail)
@@ -258,5 +265,109 @@ struct CrossOverLicenseTests {
         #expect(!status.licensed)
         #expect(status.diagnostic.contains("could not be checked"))
         #expect(status.detail == CrossOverLicense.notActivated)
+    }
+
+    // MARK: Trial
+
+    // A fixed clock, so no test reads the machine's own trial or date.
+    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private static let day: TimeInterval = 86400
+
+    private static func check(
+        _ fix: Fixture, trialStart: Date?
+    ) -> CrossOverLicense.Status {
+        CrossOverLicense.check(
+            crossOverRoot: fix.root, searchDirs: fix.searchDirs,
+            trialStart: { trialStart }, now: now
+        )
+    }
+
+    @Test("A paid license is accepted whatever the trial says")
+    func paidLicenseIgnoresTrial() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+        let license = try Self.writeLicense(in: fix.local)
+        try Self.sign(license, with: fix.key, digest: "-sha256", sidecar: "sha256")
+
+        for start in [nil, Self.now - 400 * Self.day, Self.now + Self.day] {
+            let status = Self.check(fix, trialStart: start)
+            #expect(status.licensed)
+            #expect(status.diagnostic.contains("valid license"))
+        }
+    }
+
+    @Test("An active trial is accepted and says how long it has left")
+    func activeTrialIsAccepted() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+
+        let status = Self.check(fix, trialStart: Self.now - 3 * Self.day)
+        #expect(status.licensed)
+        #expect(status.detail == "CrossOver trial is active, 11 days left.")
+        #expect(status.diagnostic.contains("trial active"))
+
+        let lastDay = Self.check(fix, trialStart: Self.now - 13.5 * Self.day)
+        #expect(lastDay.licensed)
+        #expect(lastDay.detail == "CrossOver trial is active, 1 day left.")
+    }
+
+    @Test("An ended trial is refused and points to purchase")
+    func expiredTrialIsRefused() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+
+        for start in [Self.now - CrossOverLicense.trialLength, Self.now - 15 * Self.day,
+                      Self.now - 400 * Self.day] {
+            let status = Self.check(fix, trialStart: start)
+            #expect(!status.licensed)
+            #expect(status.detail == CrossOverLicense.trialEnded)
+            #expect(status.detail.contains("codeweavers.com/store"))
+            #expect(status.diagnostic.contains("trial has ended"))
+        }
+    }
+
+    @Test("No recorded trial start is refused as not activated")
+    func missingTrialIsRefused() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+
+        let status = Self.check(fix, trialStart: nil)
+        #expect(!status.licensed)
+        #expect(status.detail == CrossOverLicense.notActivated)
+        #expect(status.diagnostic.contains("no trial start recorded"))
+    }
+
+    // A first run in the future means the clock went back or the record was moved,
+    // and either way the trial cannot be measured.
+    @Test("A trial start in the future is refused as not activated")
+    func futureTrialIsRefused() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+
+        let status = Self.check(fix, trialStart: Self.now + 60)
+        #expect(!status.licensed)
+        #expect(status.detail == CrossOverLicense.notActivated)
+        #expect(status.diagnostic.contains("in the future"))
+    }
+
+    @Test("A license that fails is not rescued by an active trial")
+    func failingLicenseIsNotRescuedByTrial() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+        try Self.writeLicense(in: fix.local)
+
+        let status = Self.check(fix, trialStart: Self.now - Self.day)
+        #expect(!status.licensed)
+        #expect(status.diagnostic.contains("has no signature beside it"))
+    }
+
+    @Test("A bundle with no verification key is refused even during a trial")
+    func trialStillNeedsTheBundleKey() throws {
+        let fix = try Self.fixture(withKey: false)
+        defer { fix.remove() }
+
+        let status = Self.check(fix, trialStart: Self.now - Self.day)
+        #expect(!status.licensed)
+        #expect(status.diagnostic == "no verification key in the CrossOver bundle")
     }
 }

@@ -243,7 +243,7 @@ struct StatusView: View {
             )
         }
         .confirmationDialog(
-            CrossOverLicense.notActivatedTitle,
+            status.refusalTitle,
             isPresented: asking(.installUnlicensed),
             titleVisibility: .visible
         ) {
@@ -253,20 +253,20 @@ struct StatusView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                CrossOverLicense.notActivatedAdvice
+                status.refusalAdvice
                     + " NotProton can be deployed, but the CrossOver compatibility tool "
                     + "cannot be installed without a valid license."
             )
         }
         .task { if status.snapshot == nil { await status.refresh() } }
         .confirmationDialog(
-            CrossOverLicense.notActivatedTitle,
+            status.refusalTitle,
             isPresented: asking(.toolUnlicensed),
             titleVisibility: .visible
         ) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(CrossOverLicense.notActivatedAdvice)
+            Text(status.refusalAdvice)
         }
     }
 

@@ -683,14 +683,26 @@ struct PrefixesModelTests {
     // device and inode, with something holding a file open inside it for lsof to find.
     private func hold(_ prefix: WinePrefix) throws -> () -> Void {
         let dir = try #require(PrefixStore.serverDirectory(of: prefix))
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // This is the machine's real socket root, and wineserver refuses to start while it
+        // is readable by others, so it is made the way wine makes it: private to the user.
+        let fm = FileManager.default
+        let root = PrefixStore.serverRoot
+        let madeRoot = !fm.fileExists(atPath: root.path(percentEncoded: false))
+        if madeRoot {
+            try fm.createDirectory(at: root, withIntermediateDirectories: false,
+                                   attributes: [.posixPermissions: 0o700])
+        }
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
         let socket = dir.appending(path: "socket")
         try Data().write(to: socket)
 
         let handle = try FileHandle(forReadingFrom: socket)
         return {
             try? handle.close()
-            try? FileManager.default.removeItem(at: dir)
+            try? fm.removeItem(at: dir)
+            // rmdir, not removeItem: a game started meanwhile may have sockets in it.
+            if madeRoot { rmdir(root.path(percentEncoded: false)) }
         }
     }
 

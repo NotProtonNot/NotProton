@@ -174,7 +174,22 @@ final class SystemStatus {
             CrossOverLicense.check(crossOverRoot: install.crossOverRoot)
         }.value
         snapshot?.crossOverLicense[install.id] = status
+        lastLicense = status
         return status
+    }
+
+    // What the activation dialogs say: the last verdict asked for, which an ended
+    // trial words differently from an install never activated.
+    private(set) var lastLicense: CrossOverLicense.Status?
+
+    var refusalTitle: String {
+        lastLicense?.detail == CrossOverLicense.trialEnded
+            ? CrossOverLicense.trialEndedTitle : CrossOverLicense.notActivatedTitle
+    }
+
+    var refusalAdvice: String {
+        lastLicense?.detail == CrossOverLicense.trialEnded
+            ? CrossOverLicense.trialEndedAdvice : CrossOverLicense.notActivatedAdvice
     }
 
     enum Request {
