@@ -165,10 +165,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXPanel .MSCXRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
     "color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
     ".MSCXPanel .MSCXRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
+    ".MSCXPanel .MSCXProfile{display:flex;gap:8px;margin:0 0 6px}" \
+    ".MSCXPanel .MSCXProfile button{cursor:pointer}" \
     ".MSCXNoBottomGap{margin-bottom:0}\""
 
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
-    ARG "=>{" \
+    ARG "=>{const [profileRevision,setProfileRevision]=(0," RT ".useState)(0);" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
     NP_CX_LAUNCH_PARSE \
     "g=k=>{const p=E.e.filter(w=>o.startsWith(k+\"=\",w.start)).pop();" \
@@ -203,6 +205,19 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"dxmt\",label:\"DXMT\"}," \
     "{data:\"dxvk\",label:\"DXVK\"}," \
     "{data:\"wined3d\",label:\"WineD3D\"}];" \
+    "const account=()=>{try{return SteamClient.User.GetSteamID()}catch(_){return\"shared\"}}," \
+    "PK=\"NotProtonPerformanceProfiles_\"+account()+\"_\"+t.unAppID," \
+    "KS=[\"CX_GRAPHICS_BACKEND\",\"MTL_HUD_ENABLED\",\"D3DM_ENABLE_METALFX\",\"DXMT_ENABLE_NVEXT\",\"ROSETTA_ADVERTISE_AVX\",\"WINEMSYNC\",\"NOTPROTON_RETINA\",\"NOTPROTON_RAW_CONTROLLERS\",\"DXMT_METALFX_SPATIAL_SWAPCHAIN\"]," \
+    "lp=()=>{try{const p=JSON.parse(localStorage.getItem(PK)||\"[]\");return Array.isArray(p)?p.filter(x=>x&&typeof x.name===\"string\"&&x.values&&typeof x.values===\"object\"):[]}catch(_){return[]}}," \
+    "sp=()=>{const n=window.prompt(\"Save these NotProton settings as a profile:\",\"\");if(!n||!n.trim())return;" \
+    "const name=n.trim().slice(0,40),p=lp(),v=Object.fromEntries(KS.map(k=>[k,g(k)]))," \
+    "item={name,values:v,factor:sw?fv:\"\"},i=p.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());" \
+    "if(i<0)p.push(item);else p[i]=item;try{localStorage.setItem(PK,JSON.stringify(p));setProfileRevision(profileRevision+1)}catch(_){window.alert(\"Could not save the profile in Steam storage.\")}}," \
+    "ap=x=>{const preview=KS.map(k=>k+\"=\"+(x.values[k]||\"(unset)\")).concat([\"MetalFX upscaling=\"+(x.factor||\"Off\")]).join(\"\\n\");" \
+    "if(!window.confirm(\"Apply profile \"+x.name+\"?\\n\\n\"+preview+\"\\n\\nOther launch options remain unchanged.\"))return;" \
+    "s(KS.map(k=>[k,x.values[k]||\"\"]).concat([[\"DXMT_CONFIG\",fx(x.factor||\"\")]]))}," \
+    "dp=i=>{const p=lp();if(!p[i]||!window.confirm(\"Delete the \"+p[i].name+\" profile?\"))return;p.splice(i,1);" \
+    "try{localStorage.setItem(PK,JSON.stringify(p));setProfileRevision(profileRevision+1)}catch(_){window.alert(\"Could not update profiles in Steam storage.\")}};" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"MSCXPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
@@ -221,6 +236,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T([\"WINEMSYNC\"],\"MSync\",\"1\",\"0\")," \
     "T([\"NOTPROTON_RETINA\"],\"High Resolution\",\"1\",\"0\")" \
     "]},\"gfx\")," \
+    "(0," RT ".jsxs)(" BARREL ".XY,{label:\"Performance Profiles\",children:[" \
+    "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:sp,children:\"Save Profile\"})," \
+    "...lp().map((x,n)=>(0," RT ".jsxs)(\"div\",{className:\"MSCXProfile\",children:[" \
+    "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:()=>ap(x),children:x.name})," \
+    "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:()=>dp(n),title:\"Delete profile\",children:\"Delete\"})]},n))" \
+    "]},\"profiles\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \

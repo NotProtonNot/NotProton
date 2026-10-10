@@ -124,6 +124,51 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   hud('MTL_HUD_ENABLED=1 %command% %COMMAND%').props.onChange(false);
   t.ok(last() === '%command% %COMMAND%', 'leaves later %command% text alone');
+
+  const sharedStorage = new Map();
+  const profilePanel = panel(emit, form, { storage: sharedStorage, profileName: 'Balanced' });
+  const profileOptions = 'CX_GRAPHICS_BACKEND=dxmt MTL_HUD_ENABLED=1 WINEMSYNC=1 '
+    + 'DXMT_METALFX_SPATIAL_SWAPCHAIN=1 '
+    + 'DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=2.0;d3d11.foo=9" '
+    + 'WINEDEBUG=err+all %command% --saved';
+  const profileNodes = opts => walk(profilePanel.render({ details: details(opts) }));
+  const saveButton = profileNodes(profileOptions).find(x => x.type === 'button'
+    && x.props.children === 'Save Profile');
+  t.ok(!!saveButton, 'shows a save profile action');
+  if (saveButton) saveButton.props.onClick();
+  t.ok([...sharedStorage.values()].some(value => value.includes('Balanced')),
+       'stores a named profile');
+  t.ok(profileNodes(profileOptions).some(x => x.type === 'button'
+       && x.props.children === 'Balanced'), 'shows a profile immediately after saving it');
+
+  const profiles = panel(emit, form, { storage: sharedStorage });
+  const current = 'CX_GRAPHICS_BACKEND=dxvk MTL_HUD_ENABLED=0 WINEMSYNC=0 '
+    + 'DXMT_METALFX_SPATIAL_SWAPCHAIN=1 '
+    + 'DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=3.0;d3d11.foo=4" '
+    + 'WINEDEBUG=err+all %command% --current';
+  const apply = walk(profiles.render({ details: details(current) }))
+    .find(x => x.type === 'button' && x.props.children === 'Balanced');
+  t.ok(!!apply, 'lists the saved profile');
+  if (apply) apply.props.onClick();
+  const applied = profiles.written.at(-1)?.opts || '';
+  t.ok(profiles.confirmations.at(-1)?.includes('CX_GRAPHICS_BACKEND=dxmt')
+       && profiles.confirmations.at(-1)?.includes('MetalFX upscaling=2.0'),
+       'previews the saved settings before applying');
+  t.ok(applied.includes('CX_GRAPHICS_BACKEND=dxmt') && applied.includes('MTL_HUD_ENABLED=1')
+       && applied.includes('WINEMSYNC=1'), 'applies saved NotProton settings');
+  t.ok(applied.includes('metalSpatialUpscaleFactor=2.0') && applied.includes('d3d11.foo=4'),
+       'restores its upscaling factor and keeps other DXMT config');
+  t.ok(applied.includes('WINEDEBUG=err+all') && applied.includes('--current'),
+       'preserves unrelated launch options and game arguments');
+
+  const otherGame = walk(profiles.render({ details: details(current, { unAppID: 12345 }) }))
+    .filter(x => x.type === 'button').map(x => x.props.children);
+  t.ok(!otherGame.includes('Balanced'), 'keeps profiles scoped to the game');
+  const otherAccount = panel(emit, form, { storage: sharedStorage, account: 'another-account' });
+  const otherAccountButtons = walk(otherAccount.render({ details: details(current) }))
+    .filter(x => x.type === 'button').map(x => x.props.children);
+  t.ok(!otherAccountButtons.includes('Balanced'), 'keeps profiles scoped to the Steam account');
+
   failed += t.failed;
 }
 console.log(failed ? `\n${failed} failure(s)` : '\nquoted launch options pass in both shapes');
