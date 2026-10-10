@@ -42,6 +42,34 @@ function panel(emit, form, options = {}) {
   const written = [];
   const values = options.storage || new Map();
   const confirmations = options.confirmations || [];
+  const alerts = [];
+  const downloads = [];
+  const objectURLs = new Map();
+  let nextObjectURL = 0;
+  const elements = new Map();
+  const document = {
+    body: { appendChild: () => {}, removeChild: () => {} },
+    createElement: tag => ({ tagName: tag, click() { downloads.push(this); } }),
+    getElementById: id => {
+      if (!elements.has(id)) elements.set(id, { id, click() {} });
+      return elements.get(id);
+    },
+  };
+  class TestBlob {
+    constructor(parts, metadata) { this.parts = parts; this.type = metadata.type; }
+    text() { return Promise.resolve(this.parts.join('')); }
+  }
+  class TestFileReader {
+    readAsText(file) { this.result = file.content; this.onload(); }
+  }
+  const URL = {
+    createObjectURL: blob => {
+      const id = `blob:test-${nextObjectURL++}`;
+      objectURLs.set(id, blob);
+      return id;
+    },
+    revokeObjectURL: id => objectURLs.delete(id),
+  };
   const localStorage = {
     getItem: key => values.has(key) ? values.get(key) : null,
     setItem: (key, value) => values.set(key, String(value)),
@@ -49,6 +77,7 @@ function panel(emit, form, options = {}) {
   };
   const window = {
     prompt: () => options.profileName || 'Balanced',
+    alert: message => alerts.push(message),
     confirm: message => {
       confirmations.push(message);
       return true;
@@ -59,10 +88,12 @@ function panel(emit, form, options = {}) {
     User: { GetSteamID: () => options.account || 'test-account' },
   };
   const build = new Function(f.react, f.barrel, 'SteamClient', 'localStorage', 'window',
+    'document', 'Blob', 'FileReader', 'URL',
     src + '\nreturn MSCXOpts;');
   return {
-    render: build(react, barrel, SteamClient, localStorage, window), written, values, window,
-    confirmations,
+    render: build(react, barrel, SteamClient, localStorage, window, document, TestBlob,
+      TestFileReader, URL), written, values, window, confirmations, alerts, downloads, objectURLs,
+    elements,
   };
 }
 

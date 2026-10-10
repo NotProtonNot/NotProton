@@ -169,6 +169,59 @@ for (const form of Object.keys(FORMS)) {
     .filter(x => x.type === 'button').map(x => x.props.children);
   t.ok(!otherAccountButtons.includes('Balanced'), 'keeps profiles scoped to the Steam account');
 
+     const exportButton = walk(profiles.render({ details: details(current) }))
+          .find(x => x.type === 'button' && x.props.children === 'Export Profiles');
+     t.ok(!!exportButton, 'offers profile export');
+     if (exportButton) exportButton.props.onClick();
+     const download = profiles.downloads[0];
+     const exported = download && profiles.objectURLs.get(download.href);
+     const exportedData = exported && JSON.parse(exported.parts.join(''));
+     t.ok(download?.download === 'notproton-profiles-287700.json'
+                && exportedData?.version === 1 && exportedData?.profiles.some(x => x.name === 'Balanced'),
+                'exports a versioned JSON file for this game');
+
+     const input = walk(profiles.render({ details: details(current) }))
+          .find(x => x.type === 'input' && x.props.type === 'file');
+     t.ok(!!input, 'provides a JSON import picker');
+     const importedProfile = {
+          name: 'High FPS',
+          values: { CX_GRAPHICS_BACKEND: 'dxmt', MTL_HUD_ENABLED: '1', WINEMSYNC: '1' },
+          factor: '1.5',
+     };
+     if (input) input.props.onChange({ target: { value: 'profiles.json', files: [{
+          size: 256,
+          content: JSON.stringify({
+               format: 'notproton-performance-profiles', version: 1, appID: 287700,
+               profiles: [importedProfile],
+          }),
+     }] } });
+     t.ok(walk(profiles.render({ details: details(current) }))
+                .some(x => x.type === 'button' && x.props.children === 'High FPS'),
+                'imports and lists a validated profile');
+
+     if (input) input.props.onChange({ target: { value: 'wrong-game.json', files: [{
+          size: 128,
+          content: JSON.stringify({
+               format: 'notproton-performance-profiles', version: 1, appID: 99999,
+               profiles: [{ ...importedProfile, name: 'Wrong Game' }],
+          }),
+     }] } });
+     t.ok(!walk(profiles.render({ details: details(current) }))
+                .some(x => x.type === 'button' && x.props.children === 'Wrong Game'),
+                'rejects profiles exported for another game');
+
+     if (input) input.props.onChange({ target: { value: 'invalid.json', files: [{
+          size: 128,
+          content: JSON.stringify({
+               format: 'notproton-performance-profiles', version: 1, appID: 287700,
+               profiles: [{ ...importedProfile, name: 'Invalid', values: { CX_GRAPHICS_BACKEND: 'unsafe' } }],
+          }),
+     }] } });
+     t.ok(!walk(profiles.render({ details: details(current) }))
+                .some(x => x.type === 'button' && x.props.children === 'Invalid')
+                && profiles.alerts.at(-1)?.includes('Invalid profile file'),
+                'rejects unsupported imported settings');
+
   failed += t.failed;
 }
 console.log(failed ? `\n${failed} failure(s)` : '\nquoted launch options pass in both shapes');

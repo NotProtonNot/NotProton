@@ -213,6 +213,28 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const name=n.trim().slice(0,40),p=lp(),v=Object.fromEntries(KS.map(k=>[k,g(k)]))," \
     "item={name,values:v,factor:sw?fv:\"\"},i=p.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());" \
     "if(i<0)p.push(item);else p[i]=item;try{localStorage.setItem(PK,JSON.stringify(p));setProfileRevision(profileRevision+1)}catch(_){window.alert(\"Could not save the profile in Steam storage.\")}}," \
+    "ex=()=>{try{const data={format:\"notproton-performance-profiles\",version:1,appID:t.unAppID,profiles:lp()}," \
+    "blob=new Blob([JSON.stringify(data,null,2)],{type:\"application/json\"}),url=URL.createObjectURL(blob),a=document.createElement(\"a\");" \
+    "a.href=url;a.download=\"notproton-profiles-\"+t.unAppID+\".json\";document.body.appendChild(a);a.click();document.body.removeChild(a);" \
+    "setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(_){window.alert(\"Could not export profiles.\")}}," \
+    "im=e=>{const f=e.target.files&&e.target.files[0];e.target.value=\"\";if(!f)return;if(f.size>131072){window.alert(\"Profile file is too large.\");return}" \
+    "const reader=new FileReader();reader.onerror=()=>window.alert(\"Could not read the profile file.\");reader.onload=()=>{try{" \
+    "const data=JSON.parse(reader.result),allowed={CX_GRAPHICS_BACKEND:[\"\",\"d3dmetal\",\"dxmt\",\"dxvk\",\"wined3d\"]," \
+    "MTL_HUD_ENABLED:[\"\",\"1\"],D3DM_ENABLE_METALFX:[\"\",\"1\"],DXMT_ENABLE_NVEXT:[\"\",\"1\"]," \
+    "ROSETTA_ADVERTISE_AVX:[\"\",\"1\",\"0\"],WINEMSYNC:[\"\",\"1\",\"0\"],NOTPROTON_RETINA:[\"\",\"1\",\"0\"]," \
+    "NOTPROTON_RAW_CONTROLLERS:[\"\",\"1\"],DXMT_METALFX_SPATIAL_SWAPCHAIN:[\"\",\"1\"]},factors=[\"\",\"1.5\",\"1.72\",\"2.0\",\"3.0\"];" \
+    "if(data.format!==\"notproton-performance-profiles\"||data.version!==1||String(data.appID)!==String(t.unAppID)||" \
+    "!Array.isArray(data.profiles)||!data.profiles.length||data.profiles.length>50)throw Error(\"wrong format, game, or profile count\");" \
+    "const incoming=data.profiles.map(x=>{if(!x||typeof x.name!==\"string\"||!x.name.trim()||x.name.length>40||" \
+    "/[\\x00-\\x1f]/.test(x.name)||!x.values||typeof x.values!==\"object\"||Array.isArray(x.values)||" \
+    "Object.keys(x.values).some(k=>!KS.includes(k)||typeof x.values[k]!==\"string\"||!allowed[k].includes(x.values[k]))||" \
+    "typeof x.factor!==\"string\"||!factors.includes(x.factor))throw Error(\"invalid profile\");" \
+    "return{name:x.name.trim(),values:Object.fromEntries(KS.map(k=>[k,x.values[k]||\"\"])),factor:x.factor}})," \
+    "names=incoming.map(x=>x.name).join(\", \"),p=lp();" \
+    "if(!window.confirm(\"Import \"+incoming.length+\" profile(s) for this game?\\n\\n\"+names+\"\\n\\nMatching names will be replaced.\"))return;" \
+    "incoming.forEach(x=>{const i=p.findIndex(y=>y.name.toLowerCase()===x.name.toLowerCase());if(i<0)p.push(x);else p[i]=x});" \
+    "localStorage.setItem(PK,JSON.stringify(p));setProfileRevision(profileRevision+1)}catch(_){window.alert(\"Invalid profile file. Choose an exported NotProton profile file for this game.\")}};" \
+    "reader.readAsText(f)}," \
     "ap=x=>{const preview=KS.map(k=>k+\"=\"+(x.values[k]||\"(unset)\")).concat([\"MetalFX upscaling=\"+(x.factor||\"Off\")]).join(\"\\n\");" \
     "if(!window.confirm(\"Apply profile \"+x.name+\"?\\n\\n\"+preview+\"\\n\\nOther launch options remain unchanged.\"))return;" \
     "s(KS.map(k=>[k,x.values[k]||\"\"]).concat([[\"DXMT_CONFIG\",fx(x.factor||\"\")]]))}," \
@@ -238,6 +260,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "]},\"gfx\")," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:\"Performance Profiles\",children:[" \
     "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:sp,children:\"Save Profile\"})," \
+    "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:ex,children:\"Export Profiles\"})," \
+    "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:()=>document.getElementById(PK+\"_import\").click(),children:\"Import Profiles\"})," \
+    "(0," RT ".jsx)(\"input\",{id:PK+\"_import\",type:\"file\",accept:\".json,application/json\",style:{display:\"none\"},onChange:im})," \
     "...lp().map((x,n)=>(0," RT ".jsxs)(\"div\",{className:\"MSCXProfile\",children:[" \
     "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:()=>ap(x),children:x.name})," \
     "(0," RT ".jsx)(\"button\",{type:\"button\",onClick:()=>dp(n),title:\"Delete profile\",children:\"Delete\"})]},n))" \
