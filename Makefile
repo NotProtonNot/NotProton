@@ -444,7 +444,27 @@ $(APPINFO): helpers/appinfo.swift
 	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) -o $@ $<
 	@echo "==> Built $@"
 
-helpers-install: $(ICONMAKER) $(APPINFO)
+GAME_HOST := $(OUT_DIR)/game-host.dylib
+GAME_METADATA := $(OUT_DIR)/prepare-game-loader
+
+$(GAME_HOST): helpers/game-host.c
+	@mkdir -p $(OUT_DIR)
+	$(CC) -dynamiclib -arch arm64 -arch x86_64 -mmacosx-version-min=$(MIN_VER) -O2 -Wall -Wextra $< -o $@
+	codesign -f -s - --identifier com.notproton.game-host $@
+
+$(GAME_METADATA): helpers/prepare-game-loader.swift
+	@mkdir -p $(OUT_DIR)
+	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) $< -o $@
+	codesign -f -s - --identifier com.notproton.game-metadata $@
+
+.PHONY: game-host-check
+game-host-check: $(GAME_HOST) $(GAME_METADATA)
+	python3 helpers/tests/game-host.py
+	python3 helpers/tests/game-metadata.py $(GAME_METADATA)
+
+helpers-install: $(ICONMAKER) $(APPINFO) $(GAME_HOST) $(GAME_METADATA)
+	$(call install_atomically,$(GAME_HOST),$(SUPPORT_DIR)/game-host.dylib)
+	$(call install_atomically,$(GAME_METADATA),$(SUPPORT_DIR)/prepare-game-loader)
 	$(call install_atomically,$(ICONMAKER),$(SUPPORT_DIR)/iconmaker)
 	$(call install_atomically,$(APPINFO),$(SUPPORT_DIR)/appinfo)
 	@echo "==> Installed: $(SUPPORT_DIR)/{iconmaker,appinfo}"
@@ -518,8 +538,9 @@ bridge:
 fonts:
 	fonts/build.sh
 
-app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
+app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO) $(GAME_HOST) $(GAME_METADATA)
 	@mkdir -p "$(APP_PAYLOAD)/signatures/macos.arm64"
+	cp -f $(GAME_HOST) $(GAME_METADATA) "$(APP_PAYLOAD)/"
 	@mkdir -p "$(APP_PAYLOAD)/bridge"
 	cp -f $(TARGET) "$(APP_PAYLOAD)/notproton.dylib"
 	cp -f $(OVERLAY_SHIM) "$(APP_PAYLOAD)/overlay-shim.dylib"

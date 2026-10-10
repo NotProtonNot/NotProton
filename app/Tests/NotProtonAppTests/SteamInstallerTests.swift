@@ -42,6 +42,11 @@ struct SteamInstallerTests {
 
         let appinfo = root.appending(path: "appinfo")
         try FileManager.default.copyItem(at: dylib, to: appinfo)
+        for name in InstallPayload.runtimeFiles {
+            let file = root.appending(path: name)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("runtime fixture".utf8).write(to: file)
+        }
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: root.appending(path: "run"))
         try Data("100\n".utf8).write(to: root.appending(path: "build-time"))
 

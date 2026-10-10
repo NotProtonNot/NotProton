@@ -1277,6 +1277,7 @@ cat > "$loader_contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>LSSupportsGameMode</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
 $uielement_arg
@@ -1295,7 +1296,13 @@ for f in "$wine_unix"/*; do
   ln -sfn "$f" "$loader_macos/$base"
 done
 ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
+game_host=""
 if [ -x "$loader_macos/wine" ]; then
+  if "$np_support/prepare-game-loader" "$loader_macos/wine" "$loader_contents/Info.plist" >> "$log" 2>&1; then
+    game_host="$np_support/game-host.dylib"
+  else
+    echo "embedded loader metadata unsupported; keeping original launcher behavior" >> "$log" 2>&1 || true
+  fi
   WINELOADER="$loader_macos/wine"
   echo "loader staged in bundle for game mode" >> "$log" 2>&1 || true
 else
@@ -1315,6 +1322,10 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
   else
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
+fi
+export NOTPROTON_GAME_LOADER="$WINELOADER"
+if [ -n "$game_host" ]; then
+  export DYLD_INSERT_LIBRARIES="$game_host\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
 fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 "$WINELOADER" "\$@"
