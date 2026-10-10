@@ -4,7 +4,7 @@
 import Foundation
 
 enum UpdateBlock {
-    static let step = "Block client updates"
+    static let step = L10n.tr("Block client updates")
 
     static let key = "BootStrapperInhibitUpdateOnLaunch"
     static let contents = "\(key)=enable\n"
@@ -73,7 +73,7 @@ enum UpdateBlock {
         } catch {
             throw StepFailure(
                 step: step,
-                detail: "\(required.path(percentEncoded: false)) could not be written. "
+                detail: L10n.tr("\(required.path(percentEncoded: false)) could not be written. ")
                     + error.localizedDescription
             )
         }

@@ -6,7 +6,7 @@ import Foundation
 struct WriteRefused: LocalizedError {
     let path: String
 
-    var errorDescription: String? { "Could not write files." }
+    var errorDescription: String? { L10n.tr("Could not write files.") }
 }
 
 extension WriteRefused {
@@ -34,15 +34,14 @@ enum Remedy: Hashable {
 
     var advice: String {
         switch self {
-        case .appManagement: "NotProton needs the App Management permission."
+        case .appManagement: L10n.tr("NotProton needs the App Management permission.")
         case .otherAccount:
-            "Steam was installed by another account on this Mac. Only that account can modify it. "
-                + "Log in to macOS with that account to reinstall NotProton."
-        case .ownership: "Check permissions, make sure your user owns the folder."
+            L10n.tr("Steam was installed by another account on this Mac. Only that account can modify it. Log in to macOS with that account to reinstall NotProton.")
+        case .ownership: L10n.tr("Check permissions, make sure your user owns the folder.")
         }
     }
 
-    static let settingsButton = "Open System Settings"
+    static let settingsButton = L10n.tr("Open System Settings")
 
     private static let appManagementPane =
         "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AppBundles"

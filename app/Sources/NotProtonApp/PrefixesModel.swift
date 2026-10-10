@@ -137,7 +137,7 @@ final class PrefixesModel {
     func open(_ tool: WineTool, for prefix: WinePrefix) {
         act(on: prefix) {
             try PrefixTools.launch(tool, in: prefix)
-            return "Opened \(tool.label) in \(prefix.title)."
+            return L10n.tr("Opened \(tool.label) in \(prefix.title).")
         }
     }
 
@@ -148,20 +148,18 @@ final class PrefixesModel {
     func delete(_ targets: [WinePrefix]) async {
         await eachInTurn(targets, { try PrefixTools.delete($0) }) { deleted in
             if deleted.count == 1 {
-                return "Deleted the prefix for \(deleted[0].prefix.title). Steam will make a new "
-                    + "prefix if the game is launched again."
+                return L10n.tr("Deleted the prefix for \(deleted[0].prefix.title). Steam will make a new prefix if the game is launched again.")
             }
             guard deleted.count > 1 else { return nil }
-            return "Deleted \(deleted.count) prefixes. Steam will make a new prefix if a game "
-                + "is launched again."
+            return L10n.tr("Deleted \(deleted.count) prefixes. Steam will make a new prefix if a game is launched again.")
         }
     }
 
     func backUp(_ targets: [WinePrefix]) async {
         await eachInTurn(targets, makeBackup) { saved in
             guard let first = saved.first else { return nil }
-            guard saved.count == 1 else { return "Backed up \(saved.count) prefixes." }
-            return "Backed up the prefix for \(first.prefix.title)."
+            guard saved.count == 1 else { return L10n.tr("Backed up \(saved.count) prefixes.") }
+            return L10n.tr("Backed up the prefix for \(first.prefix.title).")
         }
     }
 
@@ -178,16 +176,12 @@ final class PrefixesModel {
             let kept = rebuilt.compactMap(\.made)
             if rebuilt.count == 1 {
                 let title = rebuilt[0].prefix.title
-                guard let backup = kept.first else { return "Rebuilt the prefix for \(title)." }
-                return "Rebuilt the prefix for \(title). The original is at "
-                    + "\(backup.path(percentEncoded: false)). Check that your save is present in "
-                    + "the game, then delete the backup to save space."
+                guard let backup = kept.first else { return L10n.tr("Rebuilt the prefix for \(title).") }
+                return L10n.tr("Rebuilt the prefix for \(title). The original is at \(backup.path(percentEncoded: false)). Check that your save is present in the game, then delete the backup to save space.")
             }
             guard rebuilt.count > 1 else { return nil }
-            guard !kept.isEmpty else { return "Rebuilt \(rebuilt.count) prefixes." }
-            return "Rebuilt \(rebuilt.count) prefixes. Each original is kept beside the game's "
-                + "prefix. Check that your saves are present in the games, then delete the "
-                + "backups to save space."
+            guard !kept.isEmpty else { return L10n.tr("Rebuilt \(rebuilt.count) prefixes.") }
+            return L10n.tr("Rebuilt \(rebuilt.count) prefixes. Each original is kept beside the game's prefix. Check that your saves are present in the games, then delete the backups to save space.")
         }
     }
 
@@ -228,12 +222,12 @@ final class PrefixesModel {
         guard !cleared.isEmpty else { return nil }
         let games = Set(cleared.map(\.prefix.id)).count
         if cleared.count == 1 {
-            return "Deleted the backup for \(cleared[0].title)."
+            return L10n.tr("Deleted the backup for \(cleared[0].title).")
         }
         if games == 1 {
-            return "Deleted \(cleared.count) backups for \(cleared[0].title)."
+            return L10n.tr("Deleted \(cleared.count) backups for \(cleared[0].title).")
         }
-        return "Deleted \(cleared.count) backups across \(games) prefixes."
+        return L10n.tr("Deleted \(cleared.count) backups across \(games) prefixes.")
     }
 
     private typealias Step<Made> = (prefix: WinePrefix, made: Made)
@@ -277,8 +271,8 @@ final class PrefixesModel {
         panel.allowsMultipleSelection = false
         let types = PrefixTools.runnableTypes
         if !types.isEmpty { panel.allowedContentTypes = types }
-        panel.prompt = "Run"
-        panel.message = "Choose a Windows program to run in \(prefix.title)."
+        panel.prompt = L10n.tr("Run")
+        panel.message = L10n.tr("Choose a Windows program to run in \(prefix.title).")
         panel.directoryURL = PrefixStore.installDirectory(of: prefix)
             ?? prefix.pfx.appending(path: "drive_c")
 
@@ -289,7 +283,7 @@ final class PrefixesModel {
     func run(_ executable: URL, in prefix: WinePrefix) {
         act(on: prefix) {
             try PrefixTools.run(executable, in: prefix)
-            return "Started \(executable.lastPathComponent) in \(prefix.title)."
+            return L10n.tr("Started \(executable.lastPathComponent) in \(prefix.title).")
         }
     }
 

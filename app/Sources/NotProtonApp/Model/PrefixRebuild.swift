@@ -29,8 +29,8 @@ extension PrefixTools {
     ) throws -> URL? {
         guard !PrefixStore.isInUse(prefix) else {
             throw StepFailure(
-                step: "Recreate prefix",
-                detail: "\(prefix.title) is running. Quit the game first."
+                step: L10n.tr("Recreate prefix"),
+                detail: L10n.tr("\(prefix.title) is running. Quit the game first.")
             )
         }
 
@@ -39,19 +39,16 @@ extension PrefixTools {
                 atPath: prefix.pfx.appending(path: "user.reg").path(percentEncoded: false))
         {
             throw StepFailure(
-                step: "Recreate prefix",
-                detail: "\(held.path(percentEncoded: false)) is left from a rebuild that did not "
-                    + "finish and may hold the only copy of the saves. Move it somewhere safe, "
-                    + "then try again."
+                step: L10n.tr("Recreate prefix"),
+                detail: L10n.tr("\(held.path(percentEncoded: false)) is left from a rebuild that did not finish and may hold the only copy of the saves. Move it somewhere safe, then try again.")
             )
         }
 
         let loader = loader(runner: runner, flavor: flavor)
         guard FileManager.default.isExecutableFile(atPath: loader.path(percentEncoded: false)) else {
             throw StepFailure(
-                step: "Recreate prefix",
-                detail: "No compatibility tool at \(loader.path(percentEncoded: false)). "
-                    + "Use Set Up Compatibility Tool first."
+                step: L10n.tr("Recreate prefix"),
+                detail: L10n.tr("No compatibility tool at \(loader.path(percentEncoded: false)). Use Set Up Compatibility Tool first.")
             )
         }
 
@@ -75,10 +72,8 @@ extension PrefixTools {
         if let first = carry.lost.first {
             AppLog.note("rebuild \(prefix.appID) refused, did not carry: \(carry.lost.joined(separator: ", "))")
             throw StepFailure(
-                step: "Recreate prefix",
-                detail: "\(first) could not be copied out of the prefix. The prefix has been "
-                    + "left as it was and nothing has been lost. Check free space and "
-                    + "permissions, then try again."
+                step: L10n.tr("Recreate prefix"),
+                detail: L10n.tr("\(first) could not be copied out of the prefix. The prefix has been left as it was and nothing has been lost. Check free space and permissions, then try again.")
             )
         }
 
@@ -105,16 +100,16 @@ extension PrefixTools {
     static func backUp(_ prefix: WinePrefix, now: Date = .now) throws -> URL {
         guard !PrefixStore.isInUse(prefix) else {
             throw StepFailure(
-                step: "Back up prefix",
-                detail: "\(prefix.title) is running. Quit the game first."
+                step: L10n.tr("Back up prefix"),
+                detail: L10n.tr("\(prefix.title) is running. Quit the game first.")
             )
         }
 
         let fm = FileManager.default
         guard fm.fileExists(atPath: prefix.pfx.path(percentEncoded: false)) else {
             throw StepFailure(
-                step: "Back up prefix",
-                detail: "\(prefix.title) does not appear to have a prefix to back up."
+                step: L10n.tr("Back up prefix"),
+                detail: L10n.tr("\(prefix.title) does not appear to have a prefix to back up.")
             )
         }
 

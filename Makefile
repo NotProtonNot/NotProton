@@ -318,6 +318,7 @@ panel-behavior:
 	node $(PANEL_TESTS)/launch-options.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/shell.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/migration.js $(OUT_DIR)/panel-emit && \
+	node $(PANEL_TESTS)/localization.js $(OUT_DIR)/panel-emit && \
 	echo "==> panel behavior: renders as expected, no stale arguments"
 
 CX_ROOT ?= /Applications/CrossOver Preview.app
@@ -528,7 +529,7 @@ app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
 	@echo "==> Staged app payload in $(APP_PAYLOAD)"
 
 APP_BUNDLE  := $(OUT_DIR)/NotProton.app
-APP_BUNDLE_PAYLOAD := $(APP_BUNDLE)/Contents/Resources/NotProtonApp_NotProtonApp.bundle/Contents/Resources/payload
+APP_RESOURCE_BUNDLE := $(APP_BUNDLE)/Contents/Resources/NotProtonApp_NotProtonApp.bundle
 APP_ZIP     := $(OUT_DIR)/NotProton.zip
 APP_VERSION := $(shell sed -n 's/^\#define NOTPROTON_VERSION "\(.*\)"/\1/p' dylib/version.h)
 
@@ -555,7 +556,19 @@ $(ICON_CAR): $(ICONGEN)
 		--output-partial-info-plist "$(ICON_DIR)/partial.plist" >/dev/null
 	@echo "==> Built $@"
 
-app: app-payload $(ICON_CAR)
+.PHONY: localizationcheck
+localizationcheck:
+	python3 scripts/check-localization.py
+	@mkdir -p "$(OUT_DIR)"
+	swiftc -swift-version 6 -parse-as-library -o "$(OUT_DIR)/localization-smoke" \
+		app/Sources/NotProtonApp/Support/L10n.swift \
+		app/Sources/NotProtonApp/Support/AppResources.swift scripts/localization-smoke.swift
+	NOTPROTON_LANGUAGE=zh-Hans "$(OUT_DIR)/localization-smoke" \
+		"$(CURDIR)/app/Sources/NotProtonApp/Resources/Localization"
+	NOTPROTON_LANGUAGE=en "$(OUT_DIR)/localization-smoke" \
+		"$(CURDIR)/app/Sources/NotProtonApp/Resources/Localization"
+
+app: app-payload $(ICON_CAR) localizationcheck
 	swift build --package-path app -c release
 	rm -rf "$(APP_BUNDLE)"
 	@mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources"
@@ -575,9 +588,11 @@ app: app-payload $(ICON_CAR)
 		"$(APP_BUNDLE)/Contents/Resources/"
 	cp "$(ICON_DIR)/Assets.car" "$(ICON_DIR)/NotProton.icns" \
 		"$(APP_BUNDLE)/Contents/Resources/"
-	@missing=$$(cd "$(APP_PAYLOAD)" && find . -type f ! -name '.DS_Store' | sed 's|^\./||' \
+	@resources="$(CURDIR)/$(APP_RESOURCE_BUNDLE)"; \
+	if [ -d "$$resources/Contents/Resources" ]; then resources="$$resources/Contents/Resources"; fi; \
+	missing=$$(cd "$(APP_PAYLOAD)" && find . -type f ! -name '.DS_Store' | sed 's|^\./||' \
 		| while read -r rel; do \
-			[ -s "$(CURDIR)/$(APP_BUNDLE_PAYLOAD)/$$rel" ] || echo "$$rel"; \
+			[ -s "$$resources/payload/$$rel" ] || echo "$$rel"; \
 		done); \
 	if [ -n "$$missing" ]; then \
 		echo "==> the bundle is missing staged payload, so the app would ship without it:" >&2; \
@@ -588,6 +603,8 @@ app: app-payload $(ICON_CAR)
 	@echo "==> Payload complete in the bundle"
 	codesign -f -s "$(APP_SIGN_ID)" "$(APP_BUNDLE)"
 	codesign --verify --strict "$(APP_BUNDLE)"
+	NOTPROTON_LANGUAGE=zh-Hans "$(OUT_DIR)/localization-smoke" \
+		"$(CURDIR)/$(APP_RESOURCE_BUNDLE)" "$(CURDIR)/$(APP_BUNDLE)"
 	@echo "==> Built $(APP_BUNDLE) ($(APP_VERSION))"
 
 app-zip: app

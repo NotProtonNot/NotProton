@@ -16,14 +16,14 @@ enum RepairPhase: Sendable {
     var label: String {
         switch self {
         case .downloading(let progress): progress.label
-        case .unpacking: "Unpacking"
-        case .checking: "Verifying"
-        case .stoppingClient: "Stopping Steam"
-        case .replacing: "Restoring Steam"
-        case .clearingInsert: "Cleaning up"
-        case .removingUpdateBlock: "Cleaning up"
-        case .registering: "Finishing up"
-        case .finished: "Done"
+        case .unpacking: L10n.tr("Unpacking")
+        case .checking: L10n.tr("Verifying")
+        case .stoppingClient: L10n.tr("Stopping Steam")
+        case .replacing: L10n.tr("Restoring Steam")
+        case .clearingInsert: L10n.tr("Cleaning up")
+        case .removingUpdateBlock: L10n.tr("Cleaning up")
+        case .registering: L10n.tr("Finishing up")
+        case .finished: L10n.tr("Done")
         }
     }
 }
@@ -41,7 +41,7 @@ enum SteamRepair {
     static let valveTeam = "MXGJJ98X76"
     static let valveIdentifier = "com.valvesoftware.steam"
 
-    private static let step = "Repair Steam"
+    private static let step = L10n.tr("Repair Steam")
 
     static func run(
         manifest suppliedManifest: ValvePackageManifest? = nil,
@@ -56,7 +56,7 @@ enum SteamRepair {
         guard let bundle = manifest.bundle else {
             throw StepFailure(
                 step: step,
-                detail: "This copy of NotProton cannot repair Steam. Please reinstall NotProton."
+                detail: L10n.tr("This copy of NotProton cannot repair Steam. Please reinstall NotProton.")
             )
         }
 
@@ -85,7 +85,7 @@ enum SteamRepair {
             AppLog.note("repair: restored bundle still declares \(insert)")
             throw StepFailure(
                 step: step,
-                detail: "Steam could not be fully restored. Please run Repair Steam again."
+                detail: L10n.tr("Steam could not be fully restored. Please run Repair Steam again.")
             )
         }
 
@@ -134,7 +134,7 @@ enum SteamRepair {
         guard files.fileExists(atPath: staged.path(percentEncoded: false)) else {
             throw StepFailure(
                 step: step,
-                detail: "\(bundle.innerArchive) did not contain \(bundle.bundleName)."
+                detail: L10n.tr("\(bundle.innerArchive) did not contain \(bundle.bundleName).")
             )
         }
         return staged
@@ -147,7 +147,7 @@ enum SteamRepair {
         guard strict.succeeded else {
             throw StepFailure(
                 step: step,
-                detail: "\(path) does not verify against its own signature. "
+                detail: L10n.tr("\(path) does not verify against its own signature. ")
                     + strict.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
@@ -164,13 +164,13 @@ enum SteamRepair {
         guard fields.contains("TeamIdentifier=\(valveTeam)") else {
             throw StepFailure(
                 step: step,
-                detail: "\(path) is not signed by Valve. Expected TeamIdentifier=\(valveTeam)."
+                detail: L10n.tr("\(path) is not signed by Valve. Expected TeamIdentifier=\(valveTeam).")
             )
         }
         guard fields.contains("Identifier=\(valveIdentifier)") else {
             throw StepFailure(
                 step: step,
-                detail: "\(path) is not the Steam bundle. Expected Identifier=\(valveIdentifier)."
+                detail: L10n.tr("\(path) is not the Steam bundle. Expected Identifier=\(valveIdentifier).")
             )
         }
     }

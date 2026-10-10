@@ -22,6 +22,10 @@ Please read NOTICE for license information.
 
 Please open issue reports with any issues. PRs are welcome and encouraged. Contributions policy to come shortly.
 
+The app supports English and Simplified Chinese, following macOS's language
+preferences. See [Localization](docs/LOCALIZATION.md) for per-app language
+selection and translation checks.
+
 There are many people who worked on similar ideas, similar projects. I did not base NotProton on their work, but I still want to 
 give thanks to the people who came before me:
 

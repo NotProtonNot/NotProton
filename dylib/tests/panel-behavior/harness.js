@@ -25,7 +25,7 @@ const FORMS = {
   statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
 };
 
-function panel(emit, form) {
+function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } }) {
   const raw = execFileSync(emit, [form], { encoding: 'utf8' }).trim();
   const src = form === 'component'
     ? 'var ' + raw.replace(/,$/, '')
@@ -35,8 +35,8 @@ function panel(emit, form) {
   const SteamClient = {
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
   };
-  const build = new Function(f.react, f.barrel, 'SteamClient', src + '\nreturn MSCXOpts;');
-  return { render: build(react, barrel, SteamClient), written };
+  const build = new Function(f.react, f.barrel, 'SteamClient', 'globalThis', src + '\nreturn MSCXOpts;');
+  return { render: build(react, barrel, SteamClient, globals), written };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the

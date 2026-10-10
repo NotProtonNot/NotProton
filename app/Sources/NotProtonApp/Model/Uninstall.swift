@@ -11,11 +11,11 @@ enum UninstallPhase: Sendable {
 
     var label: String {
         switch self {
-        case .stoppingClient: "Stopping Steam"
-        case .detaching: "Detaching from Steam"
+        case .stoppingClient: L10n.tr("Stopping Steam")
+        case .detaching: L10n.tr("Detaching from Steam")
         case .restoring(let phase): phase.label
-        case .removing: "Removing files"
-        case .finished: "Done"
+        case .removing: L10n.tr("Removing files")
+        case .finished: L10n.tr("Done")
         }
     }
 }
@@ -28,7 +28,7 @@ struct UninstallOutcome: Sendable {
 }
 
 enum Uninstall {
-    static let step = "Remove NotProton"
+    static let step = L10n.tr("Remove NotProton")
 
     typealias Repair = @Sendable (@escaping @Sendable (RepairPhase) -> Void) async throws -> Void
 
