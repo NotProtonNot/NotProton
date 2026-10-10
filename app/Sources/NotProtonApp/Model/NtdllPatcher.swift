@@ -255,7 +255,8 @@ enum NtdllPatcher {
     ]
 
     static func patches(for build: RunnerBuild) -> [NtdllPatch] {
-        byBuild[build.id] ?? []
+        // A variant has its build's ntdll, so it has the same hooks.
+        byBuild[build.baseID] ?? []
     }
 
     static func patch(for arch: WineArch, in build: RunnerBuild) -> NtdllPatch? {

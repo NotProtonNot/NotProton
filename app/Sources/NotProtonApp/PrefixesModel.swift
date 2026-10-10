@@ -66,6 +66,7 @@ final class PrefixesModel {
     private let libraries: @Sendable () -> [SteamLibrary]
     private let installedTools: @Sendable () -> [InstalledTool]
     private let rebuild: @Sendable (WinePrefix, InstalledTool, Bool) throws -> URL?
+    private let mappedTool: @Sendable (String) -> String?
     private let makeBackup: @Sendable (WinePrefix) throws -> URL
 
     init(
@@ -76,12 +77,14 @@ final class PrefixesModel {
         },
         makeBackup: @escaping @Sendable (WinePrefix) throws -> URL = {
             try PrefixTools.backUp($0)
-        }
+        },
+        mappedTool: @escaping @Sendable (String) -> String? = { SteamCompatMapping.tool(forApp: $0) }
     ) {
         self.libraries = libraries
         self.installedTools = installedTools
         self.rebuild = rebuild
         self.makeBackup = makeBackup
+        self.mappedTool = mappedTool
     }
 
     private var loadGeneration = 0
@@ -174,20 +177,31 @@ final class PrefixesModel {
 
     func recreate(_ targets: [WinePrefix], as tool: InstalledTool, keepBackup: Bool = true) async {
         let make = rebuild
+        let mapped = mappedTool
+        let installed = installedTools()
         await eachInTurn(targets, { try make($0, tool, keepBackup) }) { rebuilt in
             let kept = rebuilt.compactMap(\.made)
+            // Steam launches with the tool it has for the game, and the prefix now
+            // belongs to `tool`. Say so when they differ, or the next launch fails.
+            let notes = rebuilt.compactMap { step -> String? in
+                guard let current = mapped(step.prefix.appID), current != tool.name else { return nil }
+                let shown = installed.first { $0.name == current }?.display ?? current
+                return "Steam still runs \(step.prefix.title) with \(shown). "
+                    + "Choose \(tool.display) in its Properties > Compatibility."
+            }
+            let after = notes.map { " " + $0 }.joined()
             if rebuilt.count == 1 {
                 let title = rebuilt[0].prefix.title
-                guard let backup = kept.first else { return "Rebuilt the prefix for \(title)." }
+                guard let backup = kept.first else { return "Rebuilt the prefix for \(title)." + after }
                 return "Rebuilt the prefix for \(title). The original is at "
                     + "\(backup.path(percentEncoded: false)). Check that your save is present in "
-                    + "the game, then delete the backup to save space."
+                    + "the game, then delete the backup to save space." + after
             }
             guard rebuilt.count > 1 else { return nil }
-            guard !kept.isEmpty else { return "Rebuilt \(rebuilt.count) prefixes." }
+            guard !kept.isEmpty else { return "Rebuilt \(rebuilt.count) prefixes." + after }
             return "Rebuilt \(rebuilt.count) prefixes. Each original is kept beside the game's "
                 + "prefix. Check that your saves are present in the games, then delete the "
-                + "backups to save space."
+                + "backups to save space." + after
         }
     }
 

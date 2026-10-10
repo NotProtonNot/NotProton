@@ -113,7 +113,10 @@ enum CompatToolList {
         let builds = RunnerStore.installedBuilds(in: runners)
         let listed = try? String(contentsOf: file, encoding: .utf8)
         let holder = legacyHolder(builds: builds, listed: listed, runners: runners)
-        return (builds, listed, SupportedRunners.tools(for: builds, legacy: holder))
+        let tools = SupportedRunners.tools(for: builds, legacy: holder) {
+            RunnerVariant.activeMajor(crossOverRoot: SupportPaths.clonedRoot(forBuild: $0.id, runners: runners))
+        }
+        return (builds, listed, tools)
     }
 
     // 1.0.x used the single 'notproton' tool name and wrote no tool list, so the
