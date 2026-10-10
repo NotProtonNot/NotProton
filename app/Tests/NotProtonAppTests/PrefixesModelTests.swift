@@ -282,7 +282,9 @@ struct PrefixesModelTests {
             rebuild: { prefix, tool, keep in
                 asked.add(prefix.appID, tool.build, keep)
                 return nil
-            })
+            },
+            mappedTool: { _ in nil }
+        )
         await model.load()
 
         #expect(model.confirmRebuild() == nil)
@@ -305,7 +307,9 @@ struct PrefixesModelTests {
 
         let model = PrefixesModel(
             libraries: { [library] },
-            rebuild: { prefix, _, keep in keep ? Recorder.backup(of: prefix) : nil })
+            rebuild: { prefix, _, keep in keep ? Recorder.backup(of: prefix) : nil },
+            mappedTool: { _ in nil }
+        )
         await model.load()
         let targets = model.prefixes
         let title = try #require(targets.first).title
@@ -315,6 +319,27 @@ struct PrefixesModelTests {
 
         await model.recreate(targets, as: Self.tool)
         #expect(model.outcome?.contains("The original is at") == true)
+    }
+
+    @Test("A rebuild says when Steam still runs the game with another tool")
+    func rebuildNamesSteamsTool() async throws {
+        let (dir, library) = try makeLibrary(appIDs: ["1574480"])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let model = PrefixesModel(
+            libraries: { [library] }, installedTools: { [] },
+            rebuild: { _, _, _ in nil }, mappedTool: { _ in "some-other-tool" })
+        await model.load()
+        await model.recreate(model.prefixes, as: Self.tool, keepBackup: false)
+        #expect(model.outcome?.hasSuffix(
+            "Steam still runs \(try #require(model.prefixes.first).title) with some-other-tool. "
+            + "Choose \(Self.tool.display) in its Properties > Compatibility.") == true)
+
+        let matching = PrefixesModel(
+            libraries: { [library] }, rebuild: { _, _, _ in nil }, mappedTool: { _ in Self.tool.name })
+        await matching.load()
+        await matching.recreate(matching.prefixes, as: Self.tool, keepBackup: false)
+        #expect(matching.outcome?.contains("Steam still runs") == false)
     }
 
     @Test("Backing up reports where the copy landed")
@@ -347,7 +372,9 @@ struct PrefixesModelTests {
         // runner while the first is still going is the failure this queue exists to avoid.
         let log = Recorder()
         let model = PrefixesModel(
-            libraries: { [library] }, rebuild: { prefix, _, _ in try log.enter(prefix) })
+            libraries: { [library] }, rebuild: { prefix, _, _ in try log.enter(prefix) },
+            mappedTool: { _ in nil }
+        )
         await model.load()
         model.selection = Set(model.prefixes.map(\.id))
 
@@ -374,7 +401,8 @@ struct PrefixesModelTests {
         let log = Recorder()
         let model = PrefixesModel(
             libraries: { [library] },
-            rebuild: { prefix, _, _ in try log.enter(prefix, failing: prefix.appID == "1649240") }
+            rebuild: { prefix, _, _ in try log.enter(prefix, failing: prefix.appID == "1649240") },
+            mappedTool: { _ in nil }
         )
         await model.load()
         let targets = model.prefixes
@@ -399,7 +427,8 @@ struct PrefixesModelTests {
             libraries: { [library] },
             rebuild: { prefix, _, _ in
                 throw WriteRefused(path: prefix.root.path(percentEncoded: false))
-            }
+            },
+            mappedTool: { _ in nil }
         )
         await model.load()
         await model.recreate(model.prefixes, as: Self.tool)
@@ -420,7 +449,9 @@ struct PrefixesModelTests {
 
         let log = Recorder()
         let model = PrefixesModel(
-            libraries: { [library] }, rebuild: { prefix, _, _ in try log.enter(prefix) })
+            libraries: { [library] }, rebuild: { prefix, _, _ in try log.enter(prefix) },
+            mappedTool: { _ in nil }
+        )
         await model.load()
         let target = try #require(model.prefixes.first)
 
@@ -438,7 +469,9 @@ struct PrefixesModelTests {
         let (dir, library) = try makeLibrary(appIDs: ["1574480"])
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let model = PrefixesModel(libraries: { [library] }, rebuild: { _, _, _ in nil })
+        let model = PrefixesModel(libraries: { [library] }, rebuild: { _, _, _ in nil },
+            mappedTool: { _ in nil }
+        )
         await model.load()
         let target = try #require(model.prefixes.first)
 
@@ -549,7 +582,9 @@ struct PrefixesModelTests {
     func rebuildOfAnEmptySelectionDoesNothing() async throws {
         let log = Recorder()
         let model = PrefixesModel(
-            libraries: { [] }, rebuild: { prefix, _, _ in try log.enter(prefix) })
+            libraries: { [] }, rebuild: { prefix, _, _ in try log.enter(prefix) },
+            mappedTool: { _ in nil }
+        )
         model.outcome = "untouched"
         await model.recreate([], as: Self.tool)
 
@@ -566,7 +601,9 @@ struct PrefixesModelTests {
 
         let log = Recorder(holdingEachTurn: true)
         let model = PrefixesModel(
-            libraries: { [library] }, rebuild: { prefix, _, _ in try log.enter(prefix) })
+            libraries: { [library] }, rebuild: { prefix, _, _ in try log.enter(prefix) },
+            mappedTool: { _ in nil }
+        )
         await model.load()
         let targets = model.prefixes
 
@@ -594,7 +631,9 @@ struct PrefixesModelTests {
         let box = Libraries([library])
         let log = Recorder()
         let model = PrefixesModel(
-            libraries: { box.current }, rebuild: { prefix, _, _ in try log.enter(prefix) })
+            libraries: { box.current }, rebuild: { prefix, _, _ in try log.enter(prefix) },
+            mappedTool: { _ in nil }
+        )
         await model.load()
         let targets = model.prefixes
         #expect(targets.count == 2)

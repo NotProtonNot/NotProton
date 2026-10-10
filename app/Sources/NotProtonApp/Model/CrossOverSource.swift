@@ -16,7 +16,14 @@ struct CrossOverInstall: Sendable, Identifiable {
     // Selected by the user rather than found on disk by tool.
     var isManual = false
 
-    var id: String { bundle.path(percentEncoded: false) }
+    // A toolkit directory (relative to the CrossOver root) the runner loads
+    // instead of apple_gptk. Nil means the bundle as it is.
+    var toolkit: String? = nil
+
+    // The D3DMetal major this install's runner gets, shown on its row.
+    var d3dmetal: String? = nil
+
+    var id: String { bundle.path(percentEncoded: false) + (toolkit.map { "#\($0)" } ?? "") }
     var name: String { bundle.deletingPathExtension().lastPathComponent }
     var crossOverRoot: URL { SupportPaths.crossOverRoot(inBundle: bundle) }
 
@@ -86,7 +93,7 @@ enum CrossOverSource {
             let key = bundle.standardizedFileURL.path(percentEncoded: false)
             guard !seen.contains(key), looksLikeCrossOver(bundle) else { return }
             seen.insert(key)
-            found.append(inspect(bundle: bundle, isManual: isManual))
+            found += inspectAll(bundle: bundle, isManual: isManual)
         }
 
         for manual in manualBundles() where !isSearched(manual) { consider(manual, isManual: true) }
@@ -94,7 +101,8 @@ enum CrossOverSource {
         for root in searchRoots {
             let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
             for entry in entries where entry.pathExtension == "app" {
-                guard entry.deletingPathExtension().lastPathComponent.hasPrefix("CrossOver") else { continue }
+                // Recognised by what it carries, not by its name: copies made by
+                // other tools are called whatever those tools call them.
                 consider(entry, isManual: false)
             }
         }
@@ -108,6 +116,25 @@ enum CrossOverSource {
         if a.isPreview != b.isPreview { return a.isPreview }
         if a.name != b.name { return a.name < b.name }
         return a.id < b.id
+    }
+
+    // The bundle as it is, plus one install per other D3DMetal toolkit in it.
+    // CrossOver 26 only loads apple_gptk, so another D3DMetal needs another runner.
+    static func inspectAll(bundle: URL, isManual: Bool = false) -> [CrossOverInstall] {
+        var own = inspect(bundle: bundle, isManual: isManual)
+        // The pinned build with this copy's hashes, which differ for a rebuild such as China's.
+        guard case .supported(let build) = own.support,
+              let base = SupportedRunners.build(id: build.baseID)?.matching(loaderSHA256: build.loaderSHA256)
+        else { return [own] }
+        own.d3dmetal = RunnerVariant.activeMajor(crossOverRoot: own.crossOverRoot)
+        return [own] + RunnerVariant.otherToolkits(crossOverRoot: own.crossOverRoot).map { toolkit in
+            let variant = [build.variant, "d3dm\(toolkit.major)"].compactMap { $0 }.joined(separator: "-")
+            var install = CrossOverInstall(bundle: bundle, releaseVersion: own.releaseVersion,
+                                           support: .supported(base.withVariant(variant)), isManual: isManual)
+            install.toolkit = toolkit.path
+            install.d3dmetal = toolkit.major
+            return install
+        }
     }
 
     static func inspect(bundle: URL, isManual: Bool = false) -> CrossOverInstall {
@@ -127,8 +154,10 @@ enum CrossOverSource {
             )
         }
 
+        let variant = RunnerVariant.declared(crossOverRoot: SupportPaths.crossOverRoot(inBundle: bundle))
         return CrossOverInstall(
-            bundle: bundle, releaseVersion: version, support: .supported(build), isManual: isManual
+            bundle: bundle, releaseVersion: version, support: .supported(build.withVariant(variant)),
+            isManual: isManual
         )
     }
 

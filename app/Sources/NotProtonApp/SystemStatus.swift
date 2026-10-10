@@ -24,6 +24,8 @@ struct StatusSnapshot: Sendable {
     var installedRunners: [RunnerBuild] = []
     var orphanedRunners: [String] = []
     var damagedRunners: [String] = []
+    // The D3DMetal major each runner copy actually carries, by build id.
+    var runnerD3DMetal: [String: String] = [:]
     var installContent: DeploymentContent.Status = .unchecked
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
@@ -47,6 +49,9 @@ struct StatusSnapshot: Sendable {
             installedRunners: installed,
             orphanedRunners: RunnerStore.orphanedClones(),
             damagedRunners: RunnerStore.damagedClones(),
+            runnerD3DMetal: installed.reduce(into: [:]) { found, build in
+                found[build.id] = RunnerVariant.activeMajor(crossOverRoot: SupportPaths.clonedRoot(forBuild: build.id))
+            },
             installContent: DeploymentContent.current(version: bundledVersion)
         )
     }
@@ -274,7 +279,11 @@ final class SystemStatus {
         }
 
         await refresh()
-        if let row = CrossOverRow.listing(CrossOverSource.inspect(bundle: picked), in: crossOverRows) {
+        // Only the very same bundle is "already listed". Another copy of a build
+        // that is listed is a different source, and picking it by hand is how it
+        // becomes the one the runner is made from.
+        if let row = CrossOverRow.listing(CrossOverSource.inspect(bundle: picked), in: crossOverRows),
+           let listed = row.install, CrossOverSource.same(listed.bundle, picked) {
             AppLog.note("crossOver already listed: \(picked.path(percentEncoded: false))")
             highlight(row)
             return

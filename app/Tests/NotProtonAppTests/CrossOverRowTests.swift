@@ -170,6 +170,20 @@ struct ManualCrossOverTests {
         #expect(CrossOverSource.manualBundles(defaults) == [other])
     }
 
+    @Test("A bundle is recognised by its CrossOver tree, whatever it is called")
+    func recognisedByContent() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appending(path: "cx-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: dir) }
+        let copy = dir.appending(path: "Engine Copy.app")
+        try fm.createDirectory(at: SupportPaths.crossOverRoot(inBundle: copy).appending(path: "lib/wine"),
+                               withIntermediateDirectories: true)
+        let other = dir.appending(path: "CrossOver Notes.app")
+        try fm.createDirectory(at: other.appending(path: "Contents/MacOS"), withIntermediateDirectories: true)
+        #expect(CrossOverSource.looksLikeCrossOver(copy))
+        #expect(!CrossOverSource.looksLikeCrossOver(other))
+    }
+
     @Test("A remembered copy in a folder the search covers is not treated as added by hand")
     func searchedFolderIsNotManual() {
         #expect(CrossOverSource.isSearched(URL(filePath: "/Applications/CrossOver.app/")))

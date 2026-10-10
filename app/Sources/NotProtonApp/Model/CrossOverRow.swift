@@ -30,7 +30,8 @@ struct CrossOverRow: Identifiable, Equatable {
     var isManual: Bool { install?.isManual ?? false }
 
     static func == (a: CrossOverRow, b: CrossOverRow) -> Bool {
-        a.buildID == b.buildID && a.install?.id == b.install?.id && a.copy == b.copy
+        a.buildID == b.buildID && a.install?.id == b.install?.id && a.install?.d3dmetal == b.install?.d3dmetal
+            && a.copy == b.copy
             && a.licensed == b.licensed && a.unsupportedVersion == b.unsupportedVersion
     }
 
