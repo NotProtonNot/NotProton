@@ -8,6 +8,7 @@
 #include "../hooks/hooks.h"
 #include "../feats/compat.h"
 #include "../feats/input_access.h"
+#include "../feats/shortcuts.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -158,6 +159,7 @@ static void *install_thread(void *unused) {
     }
 
     np_input_access_check();
+    np_shortcuts_sweep();
 
     uintptr_t text_base = 0;
     size_t text_size = 0;

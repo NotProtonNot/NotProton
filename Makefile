@@ -42,6 +42,7 @@ SRCS := \
 	dylib/feats/compatsvc.c \
 	dylib/feats/webpatch.c \
 	dylib/feats/input_access.c \
+	dylib/feats/shortcuts.c \
 	vendor/cJSON.c
 
 OUT_DIR     := out
@@ -64,7 +65,7 @@ DEPS := $(OBJS:.o=.d)
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
-        compatsvc-check scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launch-shell FORCE
+        compatsvc-check shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launch-shell FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -150,6 +151,14 @@ compatsvc-check:
 	mkdir -p $(OUT_DIR) && \
 	$(TEST_CC) -o $(COMPATSVC_CHECK) dylib/tests/compatsvc-check.c && \
 	$(COMPATSVC_CHECK)
+
+SHORTCUTCHECK := $(OUT_DIR)/shortcutcheck
+
+shortcutcheck:
+	@if [ ! -f dylib/tests/shortcutcheck.c ]; then $(call SKIP,shortcutcheck,dylib/tests/shortcutcheck.c); exit 0; fi; \
+	mkdir -p $(OUT_DIR) && \
+	$(TEST_CC) -o $(SHORTCUTCHECK) dylib/tests/shortcutcheck.c dylib/util/file.c dylib/util/log.c && \
+	$(SHORTCUTCHECK)
 
 sigcheck:
 	@if [ ! -f dylib/tests/sigcheck.py ]; then $(call SKIP,sigcheck,dylib/tests/sigcheck.py); exit 0; fi; \

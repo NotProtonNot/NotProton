@@ -1260,6 +1260,20 @@ resolve_icon() {
 resolve_icon || true
 [ -n "$icon_arg" ] || echo "no icon resolved, launching without one" >> "$log" 2>&1 || true
 
+# Steam gives Windows games a Steam icon in their ~/Applications shortcut, so
+# swap in the icon the launcher uses.
+if [ -n "$icon_arg" ]; then
+  for shortcut in "$HOME/Applications"/*.app; do
+    grep -qx "open steam://run/$app_id" "$shortcut/Contents/MacOS/run.sh" 2>/dev/null || continue
+    shortcut_icon="$shortcut/Contents/Resources/shortcut.icns"
+    cmp -s "$icon_cache" "$shortcut_icon" && continue
+    if cp -f "$icon_cache" "$shortcut_icon" 2>/dev/null; then
+      touch "$shortcut"
+      echo "icon copied to shortcut $shortcut" >> "$log" 2>&1 || true
+    fi
+  done
+fi
+
 uielement_arg=""
 if [ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
   uielement_arg="  <key>LSUIElement</key><true/>"
