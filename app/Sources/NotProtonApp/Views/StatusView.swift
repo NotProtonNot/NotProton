@@ -728,9 +728,7 @@ struct StatusView: View {
         } else {
             Section("NotProton Components") {
                 if !payload.missing.isEmpty {
-                    let names = payload.missing.map {
-                        URL(filePath: $0.path).lastPathComponent
-                    }.joined(separator: ", ")
+                    let names = payload.missing.map(\.path).joined(separator: ", ")
                     StatusRow(
                         title: "Missing.",
                         value: names,
