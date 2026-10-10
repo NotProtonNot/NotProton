@@ -18,6 +18,13 @@ case "$verb" in
 esac
 
 np_support="$HOME/Library/Application Support/notproton"
+controller_bridge="$np_support/controllers/dualsense/launch"
+if [ "$verb" = waitforexitandrun ] && [ "${DSB_SESSION:-0}" != 1 ] && [ -x "$controller_bridge" ]; then
+  exec "$controller_bridge" "$0" "$verb" "$@"
+fi
+if [ -n "$DSB_LIBRARY" ] && [ -f "$DSB_LIBRARY" ]; then
+  export DYLD_INSERT_LIBRARIES="$DSB_LIBRARY${DYLD_INSERT_LIBRARIES:+:$DYLD_INSERT_LIBRARIES}"
+fi
 # cxcompatdb resolves its database through CX_HOME and logs an error for
 # every module loaded without it :(
 export CX_HOME="$HOME/Library/Application Support/CrossOver"
@@ -1324,6 +1331,9 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
   fi
 fi
 export NOTPROTON_GAME_LOADER="$WINELOADER"
+if [ -n "\$DSB_LIBRARY" ] && [ -f "\$DSB_LIBRARY" ]; then
+  export DYLD_INSERT_LIBRARIES="\$DSB_LIBRARY\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
+fi
 if [ -n "$game_host" ]; then
   export DYLD_INSERT_LIBRARIES="$game_host\${DYLD_INSERT_LIBRARIES:+:\$DYLD_INSERT_LIBRARIES}"
 fi
@@ -1400,6 +1410,12 @@ for name in $(env | sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]
   set -- --env "$name=$value" "$@"
 done
 set -- \
+  --env DSB_SESSION="${DSB_SESSION:-}" \
+  --env DSB_LIBRARY="${DSB_LIBRARY:-}" \
+  --env DSB_PORT="${DSB_PORT:-}" \
+  --env DSB_TOKEN="${DSB_TOKEN:-}" \
+  --env DSB_RAW="${DSB_RAW:-}" \
+  --env DSB_PCM="${DSB_PCM:-}" \
   --env CX_ROOT="$CX_ROOT" \
   --env CX_HOME="$CX_HOME" \
   --env WINESERVER="$WINESERVER" \

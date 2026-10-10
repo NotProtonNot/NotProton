@@ -5,7 +5,10 @@ import Foundation
 enum InstallPayload {
     static let step = "Find NotProton's components"
 
-    static let runtimeFiles = ["prepare-game-loader", "game-host.dylib"]
+    static let runtimeFiles = [
+        "prepare-game-loader", "game-host.dylib",
+        "controllers/dualsense/launch", "controllers/dualsense/broker", "controllers/dualsense/bridge.dylib",
+    ]
 
     struct Located: Sendable {
         var runtime: [String: URL] = [:]
