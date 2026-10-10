@@ -19,12 +19,14 @@ int np_log_first_hit(const void *anchor, unsigned long tag) {
     return 1;
 }
 
+static const char *test_home = "/nonexistent";
+
 const char *np_home_dir(void) {
     if (atomic_fetch_add(&home_calls, 1) == 0) {
         usleep(50000);
         atomic_store(&home_ready, 1);
     }
-    return "/nonexistent";
+    return test_home;
 }
 
 static int failures;
@@ -307,6 +309,69 @@ static void tool_launch_cases(void) {
     check(!np_compat_runs_tool(NULL), "no command line is no tool launch");
 }
 
+// Lays down the two files compat_run.sh looks for before it takes the arm64 side.
+static void fake_arm64_build(const char *home, const char *build) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+             "r='%s/Library/Application Support/notproton/runners/crossover-%s/CrossOver' && "
+             "mkdir -p \"$r/lib/wine/aarch64-unix/wine.app/Contents/MacOS\" "
+             "\"$r/bin\" && "
+             "touch \"$r/lib/wine/aarch64-unix/wine.app/Contents/MacOS/wine\" "
+             "\"$r/bin/wineserver-arm64\" && "
+             "chmod +x \"$r/lib/wine/aarch64-unix/wine.app/Contents/MacOS/wine\" "
+             "\"$r/bin/wineserver-arm64\"", home, build);
+    check(system(cmd) == 0, "the arm64 build fixture can be written");
+}
+
+static void fex_list_cases(void) {
+    char home[] = "/tmp/np-compatcheck-XXXXXX";
+    if (!mkdtemp(home)) {
+        check(0, "the FEX list home can be made");
+        return;
+    }
+    fake_arm64_build(home, "27.0.0.40921-fex");
+
+    static const char path[] = "out/compatcheck-fex-tools";
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        check(0, "the FEX list fixture can be written");
+        return;
+    }
+    fputs("notproton-26.3\t26.3.0.39832\trosetta\tCrossOver 26.3\n"
+          "notproton-fex\t27.0.0.40921-fex\tfex\tCrossOver Preview (FEX)\n"
+          "notproton-fex-rosetta\t27.0.0.40921-fex\trosetta\tCrossOver Preview (Rosetta)\n"
+          "notproton-gone\t27.1\tfex\tNot installed\n", f);
+    fclose(f);
+    np_compat_load_tool_list(path, "/tools");
+
+    char js[256];
+    test_home = home;
+    check(np_compat_fex_tools_js(js, sizeof(js)) == 0
+          && strcmp(js, "[\"notproton-fex\"]") == 0,
+          "only a fex tool whose build has the arm64 loader is listed");
+    check(np_compat_fex_tools_js(js, 8) == -1, "a list that does not fit is refused");
+
+    // The first tool being FEX also covers the apps that have no tool name.
+    f = fopen(path, "w");
+    if (f) {
+        fputs("notproton-fex\t27.0.0.40921-fex\tfex\tCrossOver Preview (FEX)\n", f);
+        fclose(f);
+    }
+    np_compat_load_tool_list(path, "/tools");
+    check(np_compat_fex_tools_js(js, sizeof(js)) == 0
+          && strcmp(js, "[\"\",\"notproton-fex\"]") == 0,
+          "a FEX first tool lists the unnamed default too");
+
+    test_home = "/nonexistent";
+    check(np_compat_fex_tools_js(js, sizeof(js)) == 0 && strcmp(js, "[]") == 0,
+          "without the build on disk no tool is FEX");
+
+    unlink(path);
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", home);
+    system(cmd);
+}
+
 static int put(const char *dir, const char *name, const char *text) {
     char path[768];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
@@ -444,6 +509,7 @@ int main(void) {
     manager_cases();
     tool_list_cases();
     tool_launch_cases();
+    fex_list_cases();
     stale_tool_cases();
     installed_fn_cases();
 

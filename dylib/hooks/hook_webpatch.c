@@ -123,6 +123,10 @@ static int open_patched(const char *path) {
     np_webpatch_set_fallback_tool(np_compat_fallback_tool_name());
     size_t patched_len = 0;
     const char *shape = NULL;
+    char fex[1024];
+    if (np_compat_fex_tools_js(fex, sizeof(fex)) != 0)
+        snprintf(fex, sizeof(fex), "[]");
+    np_webpatch_set_fex_tools(fex);
     char *patched = np_webpatch_transform((const uint8_t *)raw, raw_len, &patched_len,
                                           &shape);
     free(raw);
@@ -144,8 +148,8 @@ static int open_patched(const char *path) {
         return -1;
     }
 
-    NP_LOG_FIRST("webpatch: served patched compat chunk (%s) to %s pid %d",
-                 path, getprogname(), getpid());
+    NP_LOG_FIRST("webpatch: served patched compat chunk (%s, FEX tools %s) to %s pid %d",
+                 path, fex, getprogname(), getpid());
     return fd;
 }
 

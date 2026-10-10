@@ -25,8 +25,10 @@ const FORMS = {
   statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
 };
 
-function panel(emit, form) {
-  const raw = execFileSync(emit, [form], { encoding: 'utf8' }).trim();
+// `fexTools` stands in for the list of FEX tools the hook writes into the payload.
+function panel(emit, form, { fexTools = [] } = {}) {
+  const raw = execFileSync(emit, [form], { encoding: 'utf8' }).trim()
+    .replace(/\u000e/g, JSON.stringify(fexTools));
   const src = form === 'component'
     ? 'var ' + raw.replace(/,$/, '')
     : expand(raw).replace(/;$/, '');

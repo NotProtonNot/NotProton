@@ -134,4 +134,9 @@ int np_compat_app_runs_tool(uint32_t appid);
 // Command line template for the tool's toolmanifest.vdf commandline value.
 const char *np_compat_tool_commandline(void);
 
+// Writes the names of the tools that run games through FEX as a JS array literal, with
+// "" listed too when the first tool (what an unmapped app gets) is one of them. Returns
+// -1 when `out` is too small.
+int np_compat_fex_tools_js(char *out, size_t size);
+
 #endif // NOTPROTON_FEATS_COMPAT_H

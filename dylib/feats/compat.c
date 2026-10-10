@@ -606,6 +606,43 @@ const char *np_compat_tool_commandline(void) {
     return TOOL_RUN " %verb%";
 }
 
+// The test compat_run.sh makes: not pinned to Rosetta, and the build carries an arm64
+// loader and wineserver.
+static int tool_runs_fex(const char *home, const tool_entry_t *t) {
+    if (strcmp(t->flavor, "fex") != 0) return 0;
+
+    char loader[768], server[768];
+    snprintf(loader, sizeof(loader),
+             "%s/Library/Application Support/notproton/runners/crossover-%s/CrossOver/"
+             "lib/wine/aarch64-unix/wine.app/Contents/MacOS/wine", home, t->build);
+    snprintf(server, sizeof(server),
+             "%s/Library/Application Support/notproton/runners/crossover-%s/CrossOver/"
+             "bin/wineserver-arm64", home, t->build);
+    return access(loader, X_OK) == 0 && access(server, X_OK) == 0;
+}
+
+int np_compat_fex_tools_js(char *out, size_t size) {
+    if (size < 3) return -1;
+    load_tool_list_once();
+
+    const char *home = np_home_dir();
+    size_t n = (size_t)snprintf(out, size, "[");
+    for (int i = 0; home && i < g_tool_count; i++) {
+        if (!tool_runs_fex(home, &g_tools[i])) continue;
+        // An unmapped app has no tool name and runs under the first tool.
+        if (i == 0) {
+            n += (size_t)snprintf(out + n, size - n, "\"\",");
+            if (n >= size) return -1;
+        }
+        // Names are checked to letters, digits and ._- on load, so they need no escaping.
+        n += (size_t)snprintf(out + n, size - n, "\"%s\",", g_tools[i].name);
+        if (n >= size) return -1;
+    }
+    if (n > 1) n--;   // trailing comma
+    n += (size_t)snprintf(out + n, size - n, "]");
+    return n < size ? 0 : -1;
+}
+
 void np_compat_force_enable(void *compat_mgr) {
     if (!compat_mgr) return;
 

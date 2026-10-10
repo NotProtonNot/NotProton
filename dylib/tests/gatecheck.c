@@ -71,6 +71,9 @@ static void check_gate(const char *nm, size_t i, const np_gate_t *a,
     if (!a->find || !*a->find)       wrong("[%s] gate %zu has no anchor", nm, i);
     if (!a->replace || !*a->replace) wrong("[%s] gate %zu has no replacement", nm, i);
     if (a->expect < 1)               wrong("[%s] gate %zu expects %d hits", nm, i, a->expect);
+    // The runner byte expands into the page, so Steam's own bytes never hold it.
+    if (a->find && strchr(a->find, NP_FEX[0]))
+        wrong("[%s] gate %zu anchor holds the runner byte", nm, i);
     if (a->find && a->replace && strcmp(a->find, a->replace) == 0)
         wrong("[%s] gate %zu replaces its anchor with itself", nm, i);
     if (a->find && a->replace && *a->find && strstr(a->replace, a->find))

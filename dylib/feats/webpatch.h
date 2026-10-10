@@ -11,6 +11,11 @@ int np_webpatch_should_patch(const char *path);
 // letters, digits, '_', '$', '.' and '-' are dropped.
 void np_webpatch_set_fallback_tool(const char *name);
 
+// The compat tools that run games through FEX, as a JS array of names, which decides the
+// CrossOver options the panel offers each game. Read by the next transform; the default
+// is none, which offers every game the Rosetta options.
+void np_webpatch_set_fex_tools(const char *js_array);
+
 // The compat UIs, named so a caller can compare against the table rather than a literal
 // of its own that a rename would leave behind. forcetool calls SpecifyCompatTool straight
 // out; selecttool reads its list from the CompatManager routes.
