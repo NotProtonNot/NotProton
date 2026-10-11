@@ -78,7 +78,7 @@ dylib: $(TARGET)
 $(APP_PAYLOAD):
 	@mkdir -p $(APP_PAYLOAD)
 
-TEST_PATHS := dylib/tests overlay-shim/tests app/Tests
+TEST_PATHS := dylib/tests overlay-shim/tests app/Tests integrations/discord/tests
 
 tests-list:
 	@for p in $(TEST_PATHS); do echo $$p; done
@@ -453,7 +453,43 @@ $(APPINFO): helpers/appinfo.swift
 	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) -o $@ $<
 	@echo "==> Built $@"
 
-helpers-install: $(ICONMAKER) $(APPINFO)
+DISCORD_SRC := integrations/discord
+DISCORD_OUT := $(OUT_DIR)/integrations/discord
+DISCORD_RUNTIME := $(DISCORD_OUT)/host $(DISCORD_OUT)/notproton-discord.exe
+MINGW_CC ?= x86_64-w64-mingw32-gcc
+DISCORD_CFLAGS := -std=c17 -O2 -Wall -Wextra -Werror
+
+$(DISCORD_OUT)/host: $(DISCORD_SRC)/host.c $(DISCORD_SRC)/protocol.h
+	@mkdir -p $(DISCORD_OUT)
+	$(CC) $(DISCORD_CFLAGS) -arch arm64 -arch x86_64 -mmacosx-version-min=$(MIN_VER) $< -o $@
+	codesign -f -s - --identifier com.notproton.discord.host $@
+
+$(DISCORD_OUT)/notproton-discord.exe: $(DISCORD_SRC)/pipe.c $(DISCORD_SRC)/protocol.h
+	@mkdir -p $(DISCORD_OUT)
+	$(MINGW_CC) $(DISCORD_CFLAGS) -mwindows $< -lws2_32 -o $@
+
+$(DISCORD_OUT)/test-client.exe: $(DISCORD_SRC)/tests/client.c $(DISCORD_SRC)/protocol.h
+	@mkdir -p $(DISCORD_OUT)
+	$(MINGW_CC) $(DISCORD_CFLAGS) $< -o $@
+
+$(DISCORD_OUT)/test-client32.exe: $(DISCORD_SRC)/tests/client.c $(DISCORD_SRC)/protocol.h
+	@mkdir -p $(DISCORD_OUT)
+	i686-w64-mingw32-gcc $(DISCORD_CFLAGS) $< -o $@
+
+.PHONY: discord discord-check discord-wine-check
+discord: $(DISCORD_RUNTIME)
+
+discord-check: discord
+	python3 $(DISCORD_SRC)/tests/host.py $(DISCORD_OUT)/host
+	python3 $(DISCORD_SRC)/tests/session.py
+
+discord-wine-check: discord $(DISCORD_OUT)/test-client.exe $(DISCORD_OUT)/test-client32.exe
+	python3 $(DISCORD_SRC)/tests/wine.py $(DISCORD_OUT)
+
+helpers-install: $(ICONMAKER) $(APPINFO) $(DISCORD_RUNTIME)
+	$(call install_atomically,$(DISCORD_OUT)/host,$(SUPPORT_DIR)/integrations/discord/host)
+	$(call install_atomically,$(DISCORD_OUT)/notproton-discord.exe,$(SUPPORT_DIR)/integrations/discord/notproton-discord.exe)
+	$(call install_atomically,$(DISCORD_SRC)/session.sh,$(SUPPORT_DIR)/integrations/discord/session.sh)
 	$(call install_atomically,$(ICONMAKER),$(SUPPORT_DIR)/iconmaker)
 	$(call install_atomically,$(APPINFO),$(SUPPORT_DIR)/appinfo)
 	@echo "==> Installed: $(SUPPORT_DIR)/{iconmaker,appinfo}"
@@ -527,7 +563,9 @@ bridge:
 fonts:
 	fonts/build.sh
 
-app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
+app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO) $(DISCORD_RUNTIME)
+	@mkdir -p "$(APP_PAYLOAD)/integrations/discord"
+	cp -f $(DISCORD_RUNTIME) $(DISCORD_SRC)/session.sh "$(APP_PAYLOAD)/integrations/discord/"
 	@mkdir -p "$(APP_PAYLOAD)/signatures/macos.arm64"
 	@mkdir -p "$(APP_PAYLOAD)/bridge"
 	cp -f $(TARGET) "$(APP_PAYLOAD)/notproton.dylib"
