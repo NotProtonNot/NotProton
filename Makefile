@@ -464,7 +464,9 @@ $(GAME_METADATA): helpers/prepare-game-loader.swift
 .PHONY: game-host-check
 game-host-check: $(GAME_HOST) $(GAME_METADATA)
 	python3 helpers/tests/game-host.py
-	python3 helpers/tests/game-metadata.py $(GAME_METADATA)
+	@for arch in arm64 x86_64; do \
+		python3 helpers/tests/game-metadata.py $(GAME_METADATA) $$arch || exit 1; \
+	done
 
 DUALSENSE_SRC := controllers/dualsense
 DUALSENSE_OUT := $(OUT_DIR)/controllers/dualsense
