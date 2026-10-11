@@ -15,7 +15,6 @@ const expand = s => s.replace(/[\u0001-\u0008]/g, c => {
 });
 
 const mk = (type, props) => ({ type, props });
-const react = { jsx: mk, jsxs: mk, Fragment: 'Fragment' };
 const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle' };
 
 // The two shapes take the payload in different forms and bind different names, which
@@ -25,18 +24,77 @@ const FORMS = {
   statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
 };
 
-function panel(emit, form) {
+function panel(emit, form, options = {}) {
   const raw = execFileSync(emit, [form], { encoding: 'utf8' }).trim();
   const src = form === 'component'
     ? 'var ' + raw.replace(/,$/, '')
     : expand(raw).replace(/;$/, '');
   const f = FORMS[form];
+  let state;
+  const react = {
+    jsx: mk,
+    jsxs: mk,
+    Fragment: 'Fragment',
+    useState: initial => [state === undefined ? (state = initial) : state, value => {
+      state = typeof value === 'function' ? value(state) : value;
+    }],
+  };
   const written = [];
+  const values = options.storage || new Map();
+  const confirmations = options.confirmations || [];
+  const alerts = [];
+  const downloads = [];
+  const objectURLs = new Map();
+  let nextObjectURL = 0;
+  const elements = new Map();
+  const document = {
+    body: { appendChild: () => {}, removeChild: () => {} },
+    createElement: tag => ({ tagName: tag, click() { downloads.push(this); } }),
+    getElementById: id => {
+      if (!elements.has(id)) elements.set(id, { id, click() {} });
+      return elements.get(id);
+    },
+  };
+  class TestBlob {
+    constructor(parts, metadata) { this.parts = parts; this.type = metadata.type; }
+    text() { return Promise.resolve(this.parts.join('')); }
+  }
+  class TestFileReader {
+    readAsText(file) { this.result = file.content; this.onload(); }
+  }
+  const URL = {
+    createObjectURL: blob => {
+      const id = `blob:test-${nextObjectURL++}`;
+      objectURLs.set(id, blob);
+      return id;
+    },
+    revokeObjectURL: id => objectURLs.delete(id),
+  };
+  const localStorage = {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+  };
+  const window = {
+    prompt: () => options.profileName || 'Balanced',
+    alert: message => alerts.push(message),
+    confirm: message => {
+      confirmations.push(message);
+      return true;
+    },
+  };
   const SteamClient = {
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
+    User: { GetSteamID: () => options.account || 'test-account' },
   };
-  const build = new Function(f.react, f.barrel, 'SteamClient', src + '\nreturn MSCXOpts;');
-  return { render: build(react, barrel, SteamClient), written };
+  const build = new Function(f.react, f.barrel, 'SteamClient', 'localStorage', 'window',
+    'document', 'Blob', 'FileReader', 'URL',
+    src + '\nreturn MSCXOpts;');
+  return {
+    render: build(react, barrel, SteamClient, localStorage, window, document, TestBlob,
+      TestFileReader, URL), written, values, window, confirmations, alerts, downloads, objectURLs,
+    elements,
+  };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the
