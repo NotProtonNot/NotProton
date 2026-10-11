@@ -104,5 +104,5 @@ int main(void) {
         }
     }
     assert(packets == 24);
-    puts("PASS: HID identity, sensor/button bytes, unregister, reconnects and output routing");
+    puts("==> dualsense HID: identity, input bytes, unregister, reconnects and output routing hold");
 }

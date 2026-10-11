@@ -1,7 +1,9 @@
 """Game child identity must not spread to Wine/Ubisoft helper processes."""
 
+import os
+import subprocess
+import tempfile
 from pathlib import Path
-import os, subprocess, tempfile
 
 root = Path(__file__).resolve().parent.parent
 with tempfile.TemporaryDirectory(prefix="dsb-host-") as tmp:
@@ -34,9 +36,13 @@ with tempfile.TemporaryDirectory(prefix="dsb-host-") as tmp:
     (t / "Steam").symlink_to(game, target_is_directory=True)
     probe = t / "probe.c"
     probe.write_text(
-        '#define GAME_HOST_TEST\n#include "'
-        + str(root / "game-host.c")
-        + '"\nint main(int argc,char **argv){char *child[]={argv[1],argc>2?argv[2]:NULL,argc>3?argv[3]:NULL,NULL};puts(game_loader_for(argv[1],child)?"game":"original");}\n'
+        '''#define GAME_HOST_TEST
+#include "game-host.c"
+int main(int argc, char **argv) {
+    char *child[] = {argv[1], argc > 2 ? argv[2] : NULL, argc > 3 ? argv[3] : NULL, NULL};
+    puts(game_loader_for(argv[1], child) ? "game" : "original");
+}
+'''
     )
     subprocess.run(
         [
@@ -45,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix="dsb-host-") as tmp:
             "-Wall",
             "-Wextra",
             "-Wno-unused-function",
+            "-I", str(root),
             str(probe),
             "-o",
             str(t / "probe"),
@@ -121,5 +128,5 @@ with tempfile.TemporaryDirectory(prefix="dsb-host-") as tmp:
         == "original"
     )
     print(
-        "PASS: only actual game executables retain game identity; services, launcher, escapes and argument-only matches excluded"
+        "==> game host: game executables retain identity; helpers and escaped paths keep their loader"
     )

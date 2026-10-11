@@ -2,7 +2,6 @@
 
 import json
 import os
-from pathlib import Path
 import shutil
 import signal
 import stat
@@ -10,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 build = Path(os.environ["DSB_TEST_BUILD"]).resolve()
 with tempfile.TemporaryDirectory(prefix="notproton dualsense ") as tmp:
@@ -22,7 +22,13 @@ with tempfile.TemporaryDirectory(prefix="notproton dualsense ") as tmp:
         + sys.executable
         + "\n"
         + """
-import json, os, signal, sys, time
+import json
+import os
+import signal
+import sys
+import time
+from pathlib import Path
+
 if '--probe' in sys.argv:
     usb = int(os.environ.get('TEST_USB', '0'))
     print(json.dumps(dict(bluetooth=0 if usb else 1, usb=usb, eligible=not usb)), flush=True)
@@ -32,20 +38,24 @@ if os.environ.get('TEST_BAD_READY'):
 else:
     print(json.dumps(dict(ready=True, port=54565, pid=os.getpid())), flush=True)
 if os.environ.get('TEST_REMOVE_ONCE'):
-    from pathlib import Path
     marker = Path(__file__).with_name('removed-once')
     if not marker.exists():
         marker.touch()
-        time.sleep(.2)
+        time.sleep(0.2)
         sys.exit(10)
 signal.signal(signal.SIGTERM, lambda *_: sys.exit())
-while True: time.sleep(.02)
+while True:
+    time.sleep(0.02)
 """
     )
     broker.chmod(0o755)
     child = root / "child.py"
     child.write_text(
-        """import json, os, sys, time
+        """import json
+import os
+import sys
+import time
+
 keys = ('DSB_RAW', 'DSB_PCM', 'DSB_LIBRARY', 'DSB_SESSION')
 print(json.dumps({k: os.environ.get(k) for k in keys}), flush=True)
 time.sleep(float(os.environ.get('TEST_CHILD_SLEEP', '0')))
@@ -73,7 +83,7 @@ sys.exit(int(os.environ.get('TEST_CHILD_EXIT', '0')))
             assert observed["DSB_RAW"] is None and observed["DSB_LIBRARY"] is None
             assert json.loads((root / "sessions/999999-status.json").read_text())["route"] == route
         assert not (root / "sessions/999999.json").exists()
-        print("PASS native launcher:", route, flush=True)
+        print("  ok    dualsense launcher:", route, flush=True)
 
     env = dict(clean, NOTPROTON_RAW_CONTROLLERS="1")
     result = subprocess.run(
@@ -84,7 +94,7 @@ sys.exit(int(os.environ.get('TEST_CHILD_EXIT', '0')))
         args, env=dict(env, TEST_BAD_READY="1"), capture_output=True, timeout=12
     )
     assert result.returncode == 70 and not (root / "sessions/999999.json").exists()
-    print("PASS child exit status and failed initialization cleanup", flush=True)
+    print("  ok    child exit status and failed initialization cleanup", flush=True)
 
     resumed = subprocess.Popen(
         args,
@@ -92,22 +102,27 @@ sys.exit(int(os.environ.get('TEST_CHILD_EXIT', '0')))
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    record = root / "sessions/999999.json"
-    observed = []
-    deadline = time.monotonic() + 10
-    while resumed.poll() is None and time.monotonic() < deadline:
-        if record.exists():
-            doc = json.loads(record.read_text())
-            observed.append(
-                (doc["brokerPid"], doc["environment"]["DSB_PORT"], doc["environment"]["DSB_TOKEN"])
-            )
-        time.sleep(0.025)
-    out, err = resumed.communicate(timeout=3)
-    assert resumed.returncode == 0, err
-    assert len({x[0] for x in observed}) == 2, "physical removal should restart broker once"
-    assert len({x[1:] for x in observed}) == 1, "reconnect must retain port and session credentials"
-    assert not record.exists()
-    print("PASS bounded physical reconnect retains session and port", flush=True)
+    try:
+        record = root / "sessions/999999.json"
+        observed = []
+        deadline = time.monotonic() + 10
+        while resumed.poll() is None and time.monotonic() < deadline:
+            if record.exists():
+                doc = json.loads(record.read_text())
+                observed.append(
+                    (doc["brokerPid"], doc["environment"]["DSB_PORT"], doc["environment"]["DSB_TOKEN"])
+                )
+            time.sleep(0.025)
+        out, err = resumed.communicate(timeout=3)
+        assert resumed.returncode == 0, err
+        assert len({x[0] for x in observed}) == 2, "physical removal should restart broker once"
+        assert len({x[1:] for x in observed}) == 1, "reconnect must retain port and session credentials"
+        assert not record.exists()
+        print("  ok    physical reconnect retains session and port", flush=True)
+    finally:
+        if resumed.poll() is None:
+            resumed.terminate()
+            resumed.communicate(timeout=8)
 
     owner = subprocess.Popen(
         args, env=dict(env, TEST_CHILD_SLEEP="30"), stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -123,8 +138,10 @@ sys.exit(int(os.environ.get('TEST_CHILD_EXIT', '0')))
         info = json.loads(record.read_text())
         assert len(info["environment"]["DSB_TOKEN"]) == 32
         rival = subprocess.run(args, env=env, capture_output=True, timeout=10)
-        assert rival.returncode == 70 and b"owns the wireless bridge" in rival.stderr
+        assert rival.returncode == 70, rival.stderr
         assert record.exists(), "rival must not remove the owning session"
+        assert owner.poll() is None
+        assert json.loads(record.read_text())["brokerPid"] == info["brokerPid"]
         owner.send_signal(signal.SIGTERM)
         owner.communicate(timeout=8)
         assert owner.returncode == 143, owner.returncode
@@ -135,8 +152,8 @@ sys.exit(int(os.environ.get('TEST_CHILD_EXIT', '0')))
             pass
         else:
             raise AssertionError("broker survived launcher termination")
-        print("PASS credentials, single owner, signal forwarding and broker cleanup", flush=True)
+        print("==> dualsense launcher: credentials, ownership, reconnect and process cleanup hold", flush=True)
     finally:
         if owner.poll() is None:
-            owner.kill()
-            owner.communicate()
+            owner.terminate()
+            owner.communicate(timeout=8)

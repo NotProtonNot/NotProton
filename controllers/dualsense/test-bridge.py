@@ -3,8 +3,8 @@ import os
 import socket
 import struct
 import subprocess
-import time
 import tempfile
+import time
 from pathlib import Path
 
 root = Path(os.environ["DSB_TEST_BUILD"]).resolve()
@@ -60,7 +60,7 @@ for arch in ("arm64", "x86_64"):
         if not silent:
             assert active in levels, levels
         assert levels[-1] == (0, 0)
-        print(arch, "PASS 4-channel routing, levels, stop:", p.stdout.strip())
+        print(f"  ok    dualsense audio ({arch}): {sample_format}, {mode}")
 with tempfile.TemporaryDirectory() as tmp:
     status = Path(tmp) / "status.json"
     p = subprocess.Popen(
@@ -78,51 +78,57 @@ with tempfile.TemporaryDirectory() as tmp:
         stderr=subprocess.PIPE,
         text=True,
     )
-    ready = json.loads(p.stdout.readline())
-    addr = ("127.0.0.1", ready["port"])
+    try:
+        ready = json.loads(p.stdout.readline())
+        addr = ("127.0.0.1", ready["port"])
 
-    def send(seq, secret=token, ago=0):
-        s.sendto(
-            packet.pack(
-                0x31425344, 1, secret, 1234, seq, time.time() - 978307200 - ago, 0.3, 0.4, bytes(64)
-            ),
-            addr,
-        )
-
-    send(1)
-    send(2, b"0" * 16)
-    send(3, ago=1)
-    send(1)
-    time.sleep(1.3)
-    v = json.loads(status.read_text())
-    assert v["accepted"] == 1 and v["dropped"] == 3, v
-    assert v["left"] == v["right"] == 0 and v["peakLeft"] > 0.29, v
-    # An invalid kind must not advance the replay counter for a real source.
-    s.sendto(
-        packet.pack(0x31425344, 99, token, 1234, 100000, time.time() - 978307200, 0, 0, bytes(64)),
-        addr,
-    )
-    sequence = 2
-    deadline = time.monotonic() + 1.0
-    while time.monotonic() < deadline:
-        # Updating a color is independent of an already active rumble command.
-        rumble = bytes([2, 3, 0, 64, 128]) + bytes(59)
-        color = bytearray(64)
-        color[0] = 2
-        color[2] = 4
-        color[45:48] = bytes([20, 30, 40])
-        for report in (rumble, color):
+        def send(seq, secret=token, ago=0):
             s.sendto(
                 packet.pack(
-                    0x31425344, 2, token, 1234, sequence, time.time() - 978307200, 0, 0, report
+                    0x31425344, 1, secret, 1234, seq, time.time() - 978307200 - ago, 0.3, 0.4, bytes(64)
                 ),
                 addr,
             )
-            sequence += 1
-        time.sleep(0.02)
-    active = json.loads(status.read_text())
-    assert active["left"] > 0.49 and active["right"] > 0.24, active
-    assert active["dropped"] == 4, active
-    out, err = p.communicate(timeout=5)
-    assert p.returncode == 0, err
-    print("PASS token/replay/stale rejection and silence watchdog")
+
+        send(1)
+        send(2, b"0" * 16)
+        send(3, ago=1)
+        send(1)
+        time.sleep(1.3)
+        v = json.loads(status.read_text())
+        assert v["accepted"] == 1 and v["dropped"] == 3, v
+        assert v["left"] == v["right"] == 0 and v["peakLeft"] > 0.29, v
+        # An invalid kind must not advance the replay counter for a real source.
+        s.sendto(
+            packet.pack(0x31425344, 99, token, 1234, 100000, time.time() - 978307200, 0, 0, bytes(64)),
+            addr,
+        )
+        sequence = 2
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            # Updating a color is independent of an already active rumble command.
+            rumble = bytes([2, 3, 0, 64, 128]) + bytes(59)
+            color = bytearray(64)
+            color[0] = 2
+            color[2] = 4
+            color[45:48] = bytes([20, 30, 40])
+            for report in (rumble, color):
+                s.sendto(
+                    packet.pack(
+                        0x31425344, 2, token, 1234, sequence, time.time() - 978307200, 0, 0, report
+                    ),
+                    addr,
+                )
+                sequence += 1
+            time.sleep(0.02)
+        active = json.loads(status.read_text())
+        assert active["left"] > 0.49 and active["right"] > 0.24, active
+        assert active["dropped"] == 4, active
+        out, err = p.communicate(timeout=5)
+        assert p.returncode == 0, err
+        print("==> dualsense bridge: audio formats, command routing, authentication and watchdog hold")
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.communicate()
+        s.close()

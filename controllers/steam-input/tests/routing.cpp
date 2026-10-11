@@ -192,6 +192,6 @@ int main(int argc, char **argv) {
     assert(counts.pipes == counts.releasedPipes && counts.users == counts.releasedUsers);
     shutdownBridge(); // Idempotent cleanup; no duplicate stop or thread join.
     assert(countEvents() == 25);
-    puts("steam-input: routing, fallback, amplitudes, expiry, stop, reassignment, late mapping, "
+    puts("==> steam-input routing: fallback, amplitudes, expiry, stop, reassignment, late mapping, "
          "slow Steam, zero/max duration, session failures and shutdown passed");
 }

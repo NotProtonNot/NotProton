@@ -167,6 +167,6 @@ int main() {
     assert(hasRumble(&realXbox) == 0);
     assert(!workerStarted);
     CFRelease(deviceProperties);
-    puts("steam-input: SDL symbol gating, IOKit identity, cache, HIDAPI, replacement and close "
+    puts("==> steam-input hooks: SDL symbols, IOKit identity, cache, HIDAPI, replacement and close "
          "passed");
 }

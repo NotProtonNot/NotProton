@@ -46,6 +46,6 @@ int main(void) {
     assert(!DSBParseToken("1234", token));
     assert(!DSBParseToken("1z23456789abcdef0123456789abcdef", token));
     assert(!DSBParseToken(" 123456789abcdef0123456789abcdef", token));
-    puts("PASS: changing triggers/rumble never replays old RGB/player state; actual color/release "
+    puts("==> dualsense controls: trigger and rumble updates leave LEDs alone; color and release "
          "changes preserved");
 }

@@ -62,5 +62,5 @@ int main(void) {
         pthread_join(worker, NULL);
         assert(!writeSucceeded && !dsb.writeStartedNS && dsb.errors == 1);
     }
-    puts("PASS: write errors, blocked-driver watchdog and suppression after failure");
+    puts("==> dualsense output: errors, blocked writes and suppression after failure hold");
 }

@@ -53,6 +53,6 @@ int main(void) {
                    b[n - 2] == ((crc >> 16) & 255) && b[n - 1] == (crc >> 24));
         }
     }
-    puts("PASS: signed 50Hz waveform/phase, antialias rejection, 3kHz rate, packet payload, "
+    puts("==> dualsense PCM: waveform, antialias filter, sample rate, payload, "
          "independent CRC and sequence wrap");
 }

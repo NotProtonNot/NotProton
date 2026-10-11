@@ -144,6 +144,6 @@ int main(int argc, char **argv) {
     assert(atomic_load(&calls) == stoppedAt);
     assert(!AudioOutputUnitStop(unit));
     assert(!AudioComponentInstanceDispose(unit));
-    printf("PASS callbacks=%u format=%s mode=%s\n", atomic_load(&calls), argc > 1 ? argv[1] : "f32",
+    printf("audio fixture: callbacks=%u format=%s mode=%s\n", atomic_load(&calls), argc > 1 ? argv[1] : "f32",
            mode);
 }

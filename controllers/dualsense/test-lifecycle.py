@@ -1,4 +1,4 @@
-"""Offline: idle audio, silence tail, restart, and trigger/rumble coexistence."""
+"""Exercise silent audio, effect restart and broker shutdown without hardware."""
 
 import json
 import os
@@ -21,7 +21,6 @@ with tempfile.TemporaryDirectory() as tmp:
         text=True,
     )
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    address = ("127.0.0.1", json.loads(p.stdout.readline())["port"])
     seq = 0
 
     def pump(seconds, active):
@@ -39,6 +38,7 @@ with tempfile.TemporaryDirectory() as tmp:
         return json.loads(path.read_text())
 
     try:
+        address = ("127.0.0.1", json.loads(p.stdout.readline())["port"])
         state = pump(1.2, False)
         assert state["pcm"]["reports"] == 0, state
         pump(0.6, True)
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory() as tmp:
         p.communicate(timeout=3)
         assert p.returncode == 0
         assert json.loads(path.read_text())["state"] == "stopped"
-        print("PASS: open silent audio produces no PCM; waveform starts/stops/restarts; clean exit")
+        print("==> dualsense lifecycle: silent audio stays idle; effects start, stop and restart; clean exit")
     finally:
         if p.poll() is None:
             p.kill()

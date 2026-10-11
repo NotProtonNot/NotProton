@@ -52,7 +52,8 @@ if "--hardware" not in sys.argv:
                 abs(a + 16) <= 1 and abs(b - 64) <= 1
                 for a, b in struct.iter_unpack("bb", p[-1][4:])
             )
-        print(arch, "PASS: PCM routing, speaker isolation, stop, legacy-env forwarding", flush=True)
+        sock.close()
+        print(f"  ok    PCM routing ({arch}): haptic channels, signed samples and stop", flush=True)
 
 hardware = "--hardware" in sys.argv
 seconds = int(os.environ.get("PCM_SOAK_SECONDS", "60")) if hardware else 3
@@ -76,7 +77,7 @@ try:
     line = p.stdout.readline()
     assert line, line
     ready = json.loads(line)
-    p.pid = ready["pid"]
+    assert ready["pid"] == p.pid, ready
     addr = ("127.0.0.1", ready["port"])
     if not hardware and os.environ.get("DSB_TEST_DEFER_TIMERS"):
         # Hardware also supplies ~133 HID input events/s, including after an
@@ -146,15 +147,10 @@ try:
     assert state["pcm"]["discardedFrames"] == 0, state
     if not hardware:
         assert state["dropped"] == 2 and state["outputCommands"] > 0, state
-    print(
-        "PASS",
-        (
-            "hardware idle silence emits no PCM"
-            if hardware
-            else "dry transport + authentication + trigger interleave"
-        ),
-        state["pcm"],
-    )
+    if hardware:
+        print("==> dualsense PCM hardware: silent input emits no PCM")
+    else:
+        print("==> dualsense PCM: routing, authentication, interleaved controls and stop hold")
 finally:
     tick_stop.set()
     if tick_thread:
