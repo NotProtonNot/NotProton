@@ -42,6 +42,11 @@ struct SteamInstallerTests {
 
         let appinfo = root.appending(path: "appinfo")
         try FileManager.default.copyItem(at: dylib, to: appinfo)
+        for name in InstallPayload.runtimeFiles {
+            let file = root.appending(path: name)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("runtime fixture".utf8).write(to: file)
+        }
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: root.appending(path: "run"))
         try Data("100\n".utf8).write(to: root.appending(path: "build-time"))
 
@@ -154,6 +159,11 @@ struct SteamInstallerTests {
         #expect(files.fileExists(atPath: fixture.overlayShim.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.iconmaker.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.appinfo.path(percentEncoded: false)))
+        for name in InstallPayload.runtimeFiles {
+            let installed = fixture.support.appending(path: name)
+            #expect(try Data(contentsOf: installed) == Data("runtime fixture".utf8))
+            #expect(files.isExecutableFile(atPath: installed.path(percentEncoded: false)))
+        }
         #expect(
             try String(contentsOf: fixture.deployedVersion, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines) == "9.9.9-test"
@@ -580,12 +590,20 @@ struct SteamInstallerTests {
         let before = try Data(contentsOf: fixture.deployedDylib)
         let helper = try Data(contentsOf: fixture.payload.appinfo)
         try Data(repeating: 7, count: helper.count).write(to: fixture.appinfo)
+        for name in InstallPayload.runtimeFiles {
+            try Data("outdated runtime".utf8).write(to: fixture.support.appending(path: name))
+        }
 
         let result = try install(fixture, stopped: true)
 
         #expect(result.stoppedClient)
         #expect(!result.backedUpPlist)
         #expect(try Data(contentsOf: fixture.appinfo) == helper)
+        for name in InstallPayload.runtimeFiles {
+            let source = try #require(fixture.payload.runtime[name])
+            #expect(try Data(contentsOf: fixture.support.appending(path: name))
+                == Data(contentsOf: source))
+        }
         #expect(try Data(contentsOf: fixture.deployedDylib) == before)
     }
 

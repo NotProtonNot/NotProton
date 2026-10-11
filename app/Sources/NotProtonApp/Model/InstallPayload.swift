@@ -5,7 +5,14 @@ import Foundation
 enum InstallPayload {
     static let step = String(localized: "Find NotProton's components")
 
+    static let runtimeFiles = [
+        "integrations/discord/host",
+        "integrations/discord/notproton-discord.exe",
+        "integrations/discord/session.sh",
+    ]
+
     struct Located: Sendable {
+        var runtime: [String: URL] = [:]
         let dylib: URL
         let overlayShim: URL
         let iconmaker: URL
@@ -65,6 +72,9 @@ enum InstallPayload {
         )) ?? []).filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
 
         if signatures.isEmpty { missing.append("signatures/macos.arm64/*.json") }
+        for name in runtimeFiles where !files.fileExists(atPath: root.appending(path: name).path(percentEncoded: false)) {
+            missing.append(name)
+        }
 
         let fontsRoot = root.appending(path: "fonts")
         let fonts = (files.subpaths(atPath: fontsRoot.path(percentEncoded: false)) ?? [])
@@ -79,6 +89,7 @@ enum InstallPayload {
         }
 
         return Located(
+            runtime: Dictionary(uniqueKeysWithValues: runtimeFiles.map { ($0, root.appending(path: $0)) }),
             dylib: dylib, overlayShim: shim, iconmaker: iconmaker,
             appinfo: appinfo, run: run, builtAt: builtAt, signatures: signatures,
             fontsRoot: fontsRoot, fonts: fonts

@@ -856,6 +856,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"))," \
     "T(\"NOTPROTON_DISABLE_HIDRAW\",npL(\"Disable hidraw\",\"停用 hidraw\",\"Disattiva hidraw\"))" \
     "]},\"ctl\")," \
+    "(0," RT ".jsx)(" BARREL ".XY,{label:\"Discord\"," \
+    "children:T(\"NOTPROTON_DISCORD_BRIDGE\",\"Discord Rich Presence\")},\"discord\")," \
     "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \
     "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")," \
