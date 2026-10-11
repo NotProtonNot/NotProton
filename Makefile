@@ -9,7 +9,7 @@ CFLAGS   := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
 LDFLAGS  := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
             -dynamiclib -install_name @rpath/notproton.dylib
 
-FRAMEWORKS := -framework CoreFoundation -framework CoreGraphics
+FRAMEWORKS := -framework CoreFoundation -framework CoreGraphics -framework AppKit
 
 DOBBY_DIR  := build/dobby
 DOBBY_LIBS := $(DOBBY_DIR)/libdobby.a \
@@ -56,7 +56,8 @@ ARM64_DYLIB := $(OUT_DIR)/notproton.arm64.dylib
 X86_STUB    := $(OUT_DIR)/notproton.x86_64.dylib
 TARGET      := $(OUT_DIR)/notproton.dylib
 
-OBJS := $(patsubst %.c,$(OUT_DIR)/%.o,$(SRCS))
+OBJC_SRCS := dylib/feats/game_activation.m
+OBJS := $(patsubst %.c,$(OUT_DIR)/%.o,$(SRCS)) $(patsubst %.m,$(OUT_DIR)/%.o,$(OBJC_SRCS))
 DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib dylib-install sigcheck fonts fonts-install app-payload app app-zip \
@@ -354,6 +355,10 @@ $(OUT_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(OUT_DIR)/%.o: %.m
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -fobjc-arc -c $< -o $@
+
 $(RUN_SCRIPT_H): dylib/feats/compat_run.sh dylib/embed_script.py
 	@mkdir -p $(GENERATED_DIR)
 	python3 dylib/embed_script.py $< $@ RUN_SCRIPT
@@ -462,11 +467,19 @@ $(GAME_METADATA): helpers/prepare-game-loader.swift
 	codesign -f -s - --identifier com.notproton.game-metadata $@
 
 .PHONY: game-host-check
-game-host-check: $(GAME_HOST) $(GAME_METADATA)
+game-host-check: $(GAME_HOST) $(GAME_METADATA) game-activation-check
 	python3 helpers/tests/game-host.py
 	@for arch in arm64 x86_64; do \
 		python3 helpers/tests/game-metadata.py $(GAME_METADATA) $$arch || exit 1; \
 	done
+
+$(OUT_DIR)/game-activation-check: dylib/tests/game-activation.m dylib/feats/game_activation.m dylib/feats/game_activation.h dylib/util/log.h
+	@mkdir -p $(OUT_DIR)
+	$(TEST_CC) -fobjc-arc $< -framework AppKit -o $@
+
+.PHONY: game-activation-check
+game-activation-check: $(OUT_DIR)/game-activation-check
+	$<
 
 DUALSENSE_SRC := controllers/dualsense
 DUALSENSE_OUT := $(OUT_DIR)/controllers/dualsense

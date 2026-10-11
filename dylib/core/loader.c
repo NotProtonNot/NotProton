@@ -8,6 +8,7 @@
 #include "../hooks/hooks.h"
 #include "../feats/compat.h"
 #include "../feats/input_access.h"
+#include "../feats/game_activation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -158,6 +159,7 @@ static void *install_thread(void *unused) {
     }
 
     np_input_access_check();
+    np_game_activation_install();
 
     uintptr_t text_base = 0;
     size_t text_size = 0;
@@ -264,6 +266,8 @@ static void np_init(void) {
     if (is_main_helper(pn)) {
         np_log_attach();
         np_hooks_spawn_install();
+        // The library window belongs to the CEF browser process, not steam_osx.
+        np_game_activation_install();
         return;
     }
     if (strcmp(pn, "steam_osx") != 0)
