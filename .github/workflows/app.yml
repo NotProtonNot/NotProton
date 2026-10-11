@@ -128,6 +128,9 @@ jobs:
       - name: Run the Swift tests
         run: make -s app-tests
 
+      - name: Check the Discord bridge
+        run: make -s discord-check
+
       - name: Package the app bundle
         run: |
           mkdir -p out/artifact

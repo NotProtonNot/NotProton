@@ -14,10 +14,11 @@ const TOGGLES = {
   'High Resolution': 'NOTPROTON_RETINA',
   'Advertise AVX2 to Rosetta': 'ROSETTA_ADVERTISE_AVX',
   'Let games read controllers directly': 'NOTPROTON_RAW_CONTROLLERS',
+  'Discord Rich Presence': 'NOTPROTON_DISCORD_BRIDGE',
 };
 const PANEL_KEYS = ['CX_GRAPHICS_BACKEND', 'MTL_HUD_ENABLED', 'D3DM_ENABLE_METALFX', 'DXMT_ENABLE_NVEXT',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'WINEMSYNC', 'NOTPROTON_RETINA',
-  'NOTPROTON_RAW_CONTROLLERS'];
+  'NOTPROTON_RAW_CONTROLLERS', 'NOTPROTON_DISCORD_BRIDGE'];
 const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO'];
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'np-shell-'));
@@ -104,6 +105,8 @@ const ACTIONS = [
     want: (v0, v1) => v1.toggles.WINEMSYNC.props.checked === !v0.toggles.WINEMSYNC.props.checked },
   { name: 'raw controllers', run: v => v.toggles.NOTPROTON_RAW_CONTROLLERS.props.onChange(!v.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked),
     want: (v0, v1) => v1.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked === !v0.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked },
+  { name: 'Discord', run: v => v.toggles.NOTPROTON_DISCORD_BRIDGE.props.onChange(!v.toggles.NOTPROTON_DISCORD_BRIDGE.props.checked),
+    want: (v0, v1) => v1.toggles.NOTPROTON_DISCORD_BRIDGE.props.checked === !v0.toggles.NOTPROTON_DISCORD_BRIDGE.props.checked },
   { name: 'backend dxvk', run: v => v.backend.props.onChange({ data: 'dxvk' }),
     want: (v0, v1) => v1.backend.props.selectedOption === 'dxvk' },
   { name: 'backend automatic', run: v => v.backend.props.onChange({ data: '' }),
@@ -126,6 +129,8 @@ const CASES = [
   '--offline',
   '%command%',
   '%command% --offline',
+  'NOTPROTON_DISCORD_BRIDGE=1 NOTPROTON_RAW_CONTROLLERS=1 %command% --name "two words"',
+  'NOTPROTON_DISCORD_BRIDGE=1 NOTPROTON_DISCORD_BRIDGE=0 %command%',
   'MTL_HUD_ENABLED=1 %command%',
   'MTL_HUD_ENABLED="1" %command% --offline',
   "MTL_HUD_ENABLED='1' WINEMSYNC=0 %command%",
