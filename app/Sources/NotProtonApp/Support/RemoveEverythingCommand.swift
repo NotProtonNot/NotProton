@@ -10,20 +10,20 @@ enum RemoveEverythingCommand {
 
     private static func perform() async -> Int32 {
         do {
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             let output = Output()
             let result = try await Uninstall.run { phase in
                 if case .restoring(.finished) = phase { return }
                 output.say(phase.label)
             }
             output.say(
-                result.steamNeedsRedownload
+                result.partialRemoval ?? (result.steamNeedsRedownload
                     ? "NotProton has been removed. Steam could not be restored. "
                         + "Reinstall Steam from steampowered.com before using it again."
-                    : "NotProton has been removed."
+                    : "NotProton has been removed.")
             )
-            return 0
+            return result.partialRemoval == nil ? 0 : 1
         } catch {
             FileHandle.standardError.write(Data("\(failureMessage(error))\n".utf8))
             return 1

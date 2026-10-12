@@ -257,8 +257,67 @@ struct UninstallTests {
         #expect(!repaired.value)
         #expect(!outcome.steamInstalled)
         #expect(!outcome.steamNeedsRedownload)
+        #expect(outcome.partialRemoval == nil)
         #expect(!FileManager.default.fileExists(atPath: layout.app.path(percentEncoded: false)))
         #expect(!FileManager.default.fileExists(atPath: layout.support.path(percentEncoded: false)))
+    }
+
+    @Test("A removal with Steam's drive unplugged removes the rest and says Steam was left alone")
+    func reportsAnUnpluggedSteam() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        let unplugged = URL(filePath: "/Volumes/np-missing-\(UUID().uuidString)/Steam.app")
+
+        let outcome = try await Uninstall.run(
+            app: unplugged,
+            innerPlist: layout.innerPlist,
+            updateBlocks: [layout.updateBlock],
+            legacyCompat: layout.legacyCompat,
+            compatTools: layout.compatTools,
+            directories: [layout.support, layout.caches],
+            libraries: [],
+            installedSteam: unplugged,
+            repair: { _ in },
+            stop: { _ in false }
+        )
+
+        #expect(outcome.unreachableSteam == unplugged)
+        #expect(outcome.partialRemoval?.contains(unplugged.path(percentEncoded: false)) == true)
+        #expect(!FileManager.default.fileExists(atPath: layout.support.path(percentEncoded: false)))
+    }
+
+    @Test("An unplugged Steam that NotProton was never installed into is not reported")
+    func ignoresAnUnpluggedSteamWithoutNotProton() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+
+        let outcome = try await Uninstall.run(
+            app: URL(filePath: "/Volumes/np-missing-\(UUID().uuidString)/Steam.app"),
+            innerPlist: layout.innerPlist,
+            updateBlocks: [layout.updateBlock],
+            legacyCompat: layout.legacyCompat,
+            compatTools: layout.compatTools,
+            directories: [layout.support, layout.caches],
+            libraries: [],
+            installedSteam: layout.app,
+            repair: { _ in },
+            stop: { _ in false }
+        )
+
+        #expect(outcome.partialRemoval == nil)
+    }
+
+    @Test("The install record names the Steam NotProton went into, and an old record means /Applications")
+    func readsTheInstalledSteam() throws {
+        let root = try scratchDirectory("installed-steam")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let record = root.appending(path: "install-build.json")
+
+        #expect(Uninstall.installedSteam(record: record) == nil)
+        try Data(#"{"version":"1.1.7","builtAt":1}"#.utf8).write(to: record)
+        #expect(Uninstall.installedSteam(record: record) == SupportPaths.Steam.defaultApp)
+        try Data(#"{"version":"1.1.8","builtAt":1,"steamApp":"/Volumes/Ext/Steam.app"}"#.utf8).write(to: record)
+        #expect(Uninstall.installedSteam(record: record) == URL(filePath: "/Volumes/Ext/Steam.app"))
     }
 
     @Test("A restore that fails asks for a redownload")

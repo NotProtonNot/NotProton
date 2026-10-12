@@ -201,6 +201,16 @@
         }
       }
     },
+    "%@ is not Steam." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不是 Steam。"
+          }
+        }
+      }
+    },
     "%@ is not a Windows program. Pick an exe, msi, bat or cmd file." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1062,12 +1072,32 @@
         }
       }
     },
+    "Choose" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择"
+          }
+        }
+      }
+    },
     "Choose a Windows program to run in %@." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择要在“%@”中运行的 Windows 程序。"
+          }
+        }
+      }
+    },
+    "Choose…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择…"
           }
         }
       }
@@ -1735,6 +1765,16 @@
         }
       }
     },
+    "If NotProton is installed there, it will stay installed. Continue anyway?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果 NotProton 安装在那里，它将保持安装状态。仍要继续吗？"
+          }
+        }
+      }
+    },
     "Install" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1975,6 +2015,16 @@
         }
       }
     },
+    "Location" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置"
+          }
+        }
+      }
+    },
     "Looking for backups" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2188,6 +2238,16 @@
         }
       }
     },
+    "NotProton cannot use Steam from a folder with a colon in its name." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NotProton 无法使用名称中含有冒号的文件夹中的 Steam。"
+          }
+        }
+      }
+    },
     "NotProton carries no components." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2228,6 +2288,16 @@
         }
       }
     },
+    "NotProton has been partially removed, because Steam at %@ cannot be found. Delete that copy of Steam and reinstall it to fully remove NotProton." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NotProton 仅被部分移除，因为找不到位于 %@ 的 Steam。请删除该 Steam 并重新安装，以完全移除 NotProton。"
+          }
+        }
+      }
+    },
     "NotProton has been removed." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2244,6 +2314,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "NotProton 已移除，但需要重新下载 Steam。请联网后再次执行“修复 Steam”。"
+          }
+        }
+      }
+    },
+    "NotProton is installed in %@. Use Repair Steam to remove it before choosing another copy of Steam." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NotProton 已安装在 %@ 中。请先使用“修复 Steam”将其移除，再选择另一份 Steam。"
           }
         }
       }
@@ -2988,6 +3068,16 @@
         }
       }
     },
+    "Select your copy of Steam." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择你的 Steam 应用。"
+          }
+        }
+      }
+    },
     "Set Up" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3140,6 +3230,26 @@
     },
     "Steam" : {
       "shouldTranslate" : false
+    },
+    "Steam at %@ isn't connected, so NotProton can't be removed from it. All other NotProton data is removed, except for Windows Games and prefixes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位于 %@ 的 Steam 未连接，因此无法从中移除 NotProton。其他所有 NotProton 数据都会被移除，但 Windows 游戏及游戏容器除外。"
+          }
+        }
+      }
+    },
+    "Steam at %@ isn't connected." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位于 %@ 的 Steam 未连接。"
+          }
+        }
+      }
     },
     "Steam client updates are allowed." : {
       "localizations" : {
@@ -3837,6 +3947,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新兼容工具"
+          }
+        }
+      }
+    },
+    "Use a copy of Steam from another folder or drive." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用其他文件夹或磁盘中的 Steam。"
           }
         }
       }

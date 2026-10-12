@@ -71,7 +71,17 @@ enum SupportPaths {
     static let bridgeCacheFolder = "bridge"
 
     enum Steam {
-        static var app: URL { URL(filePath: "/Applications/Steam.app") }
+        static let defaultApp = URL(filePath: "/Applications/Steam.app")
+        // Set when the user picks a Steam outside /Applications.
+        static let appPathKey = "steamAppPath"
+
+        static var app: URL {
+            UserDefaults.standard.string(forKey: appPathKey).map { URL(filePath: $0) } ?? defaultApp
+        }
+        // The drive Steam was chosen on is unplugged or renamed. A missing /Applications/Steam.app is not this.
+        static func isUnreachable(_ bundle: URL = app) -> Bool {
+            !FileManager.default.fileExists(atPath: bundle.deletingLastPathComponent().path(percentEncoded: false))
+        }
         static var infoPlist: URL { infoPlist(inBundle: app) }
         static var executable: URL { app.appending(path: "Contents/MacOS/steam_osx") }
         static var deployedDylib: URL { deployedDylib(inBundle: app) }

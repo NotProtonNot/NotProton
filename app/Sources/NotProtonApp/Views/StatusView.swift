@@ -233,7 +233,9 @@ struct StatusView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                String(localized: "Steam is restored to its unmodified state and NotProton is removed, including the compatibility tool that lives inside the Steam folder. Windows games and Steam Play prefixes are not removed.")
+                Uninstall.unreachableSteam().map {
+                    String(localized: "Steam at \($0.path(percentEncoded: false)) isn't connected, so NotProton can't be removed from it. All other NotProton data is removed, except for Windows Games and prefixes.")
+                } ?? String(localized: "Steam is restored to its unmodified state and NotProton is removed, including the compatibility tool that lives inside the Steam folder. Windows games and Steam Play prefixes are not removed.")
             )
         }
         .confirmationDialog(
@@ -315,6 +317,15 @@ struct StatusView: View {
             }
 
             Section("Steam") {
+                StatusRow(
+                    title: String(localized: "Location"),
+                    value: SupportPaths.Steam.app.path(percentEncoded: false),
+                    action: StatusAction(
+                        label: String(localized: "Choose\u{2026}"),
+                        help: String(localized: "Use a copy of Steam from another folder or drive."),
+                        isEnabled: status.isIdle
+                    ) { Task { await status.chooseSteam() } }
+                )
                 steamRow(snapshot.steam, payload: snapshot.payload)
                 if snapshot.steamRunning {
                     StatusRow(

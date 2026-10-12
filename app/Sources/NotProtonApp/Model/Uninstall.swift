@@ -26,12 +26,29 @@ struct UninstallOutcome: Sendable {
     let steamInstalled: Bool
     let restoredValveSignature: Bool
     let removed: [String]
+    var unreachableSteam: URL? = nil
 
     var steamNeedsRedownload: Bool { steamInstalled && !restoredValveSignature }
+
+    var partialRemoval: String? {
+        unreachableSteam.map {
+            String(localized: "NotProton has been partially removed, because Steam at \($0.path(percentEncoded: false)) cannot be found. Delete that copy of Steam and reinstall it to fully remove NotProton.")
+        }
+    }
 }
 
 enum Uninstall {
     static let step = String(localized: "Remove NotProton")
+
+    // Not the chosen Steam, which can be changed away from a copy on an unplugged drive.
+    static func installedSteam(record: URL = DeploymentContent.record(beside: SupportPaths.deployedVersion)) -> URL? {
+        guard let build = try? DeploymentContent.readBuild(at: record) else { return nil }
+        return URL(filePath: build.steamApp ?? SupportPaths.Steam.defaultApp.path(percentEncoded: false))
+    }
+
+    static func unreachableSteam(installed: URL? = installedSteam()) -> URL? {
+        installed.flatMap { SupportPaths.Steam.isUnreachable($0) ? $0 : nil }
+    }
 
     typealias Repair = @Sendable (@escaping @Sendable (RepairPhase) -> Void) async throws -> Void
 
@@ -48,6 +65,7 @@ enum Uninstall {
             SupportPaths.packageDownloads.deletingLastPathComponent(),
         ],
         libraries: [SteamLibrary] = PrefixStore.libraries(),
+        installedSteam: URL? = installedSteam(),
         report: @escaping @Sendable (UninstallPhase) -> Void = { _ in },
         repair: Repair = { report in _ = try await SteamRepair.run(report: report) },
         stop: Stop = { onStopping in try SteamBundle.stopClient(step: step, onStopping: onStopping) }
@@ -84,7 +102,8 @@ enum Uninstall {
             detached: detached,
             steamInstalled: steamInstalled,
             restoredValveSignature: restored,
-            removed: removed
+            removed: removed,
+            unreachableSteam: unreachableSteam(installed: installedSteam)
         )
     }
 

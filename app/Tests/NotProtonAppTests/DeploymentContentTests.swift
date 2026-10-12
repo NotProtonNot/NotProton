@@ -178,17 +178,52 @@ struct DeploymentContentTests {
     func installationLock() throws {
         let root = try scratchDirectory("content-lock")
         defer { try? FileManager.default.removeItem(at: root) }
-        let app = root.appending(path: "Steam.app")
         do {
-            let fd = try DeploymentContent.acquireInstallationLock(for: app)
-            defer { FileLock.release(fd) }
-            #expect(throws: StepFailure.self) { try DeploymentContent.acquireInstallationLock(for: app) }
+            let lock = try DeploymentContent.acquireInstallationLock(in: root, steamFolder: nil)
+            defer { lock.release() }
+            #expect(throws: StepFailure.self) { try DeploymentContent.acquireInstallationLock(in: root, steamFolder: nil) }
             let status = try Shell.run("/bin/sh", ["-c", #"exec 9< "$1"; /usr/bin/lockf -s -t 0 9"#, "fixture", root.path]).status
             #expect(status == 75)
         }
-        let next = try DeploymentContent.acquireInstallationLock(for: app)
-        FileLock.release(next)
+        let next = try DeploymentContent.acquireInstallationLock(in: root, steamFolder: nil)
+        next.release()
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    @Test("Steam's folder is locked too, so another account on the Mac is kept out")
+    func installationLockCoversSteam() throws {
+        let root = try scratchDirectory("content-lock-steam")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let mine = root.appending(path: "mine"), theirs = root.appending(path: "theirs"), steam = root.appending(path: "Applications")
+        for folder in [mine, theirs, steam] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+
+        let lock = try DeploymentContent.acquireInstallationLock(in: mine, steamFolder: steam)
+        #expect(throws: StepFailure.self) { try DeploymentContent.acquireInstallationLock(in: theirs, steamFolder: steam) }
+        lock.release()
+
+        let after = try DeploymentContent.acquireInstallationLock(in: theirs, steamFolder: steam)
+        after.release()
+    }
+
+    @Test("Steam in the same folder as our own lock, directly or through a symlink, is not locked twice")
+    func installationLockSharesAFolder() throws {
+        let root = try scratchDirectory("content-lock-shared")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let link = root.appending(path: "link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: root)
+
+        try DeploymentContent.acquireInstallationLock(in: root, steamFolder: root).release()
+        try DeploymentContent.acquireInstallationLock(in: root, steamFolder: link).release()
+    }
+
+    @Test("An unplugged Steam drive does not stop the lock from being taken")
+    func installationLockSkipsMissingSteam() throws {
+        let root = try scratchDirectory("content-lock-unplugged")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let lock = try DeploymentContent.acquireInstallationLock(in: root, steamFolder: URL(filePath: "/Volumes/np-missing-\(UUID().uuidString)"))
+        defer { lock.release() }
+        #expect(throws: StepFailure.self) { try DeploymentContent.acquireInstallationLock(in: root, steamFolder: nil) }
     }
 
     @Test("Missing and changed tool lists are included in the expected installed content")

@@ -115,6 +115,7 @@ struct SteamInstallerTests {
             deployedVersion: fixture.deployedVersion,
             backups: fixture.backups,
             compatTools: fixture.work.appending(path: "compatibilitytools.d"),
+            lockFolder: fixture.work,
             runnerIsRunning: { _ in running },
             verifyRunner: verifyRunner,
             patchRunner: { _, _, _ in },
@@ -494,6 +495,7 @@ struct SteamInstallerTests {
         #expect(build.builtAt == 100)
         #expect(build.version == "9.9.9-test")
         #expect(build.dylibHashes == (try MachOBuild.hashesIgnoringSignature(of: fixture.payload.dylib)))
+        #expect(build.steamApp == fixture.app.path(percentEncoded: false))
     }
 
     @Test("An older package is refused before any installed files change")

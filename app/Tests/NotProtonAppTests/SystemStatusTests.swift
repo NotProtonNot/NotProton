@@ -557,3 +557,54 @@ struct PerformTests {
         #expect(busyDuringRefresh == true)
     }
 }
+
+@MainActor
+@Suite("Choosing where Steam is")
+struct SteamChoiceTests {
+
+    private func bundle(_ name: String, identifier: String, in root: URL) throws -> URL {
+        let app = root.appending(path: name)
+        try FileManager.default.createDirectory(at: app.appending(path: "Contents"), withIntermediateDirectories: true)
+        try SteamBundle.writeInfoPlist(["CFBundleIdentifier": identifier], at: app.appending(path: "Contents/Info.plist"))
+        return app
+    }
+
+    @Test("Another copy of Steam is accepted while the current one is not patched")
+    func acceptsSteam() throws {
+        let root = try scratchDirectory("steam-choice")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let picked = try bundle("Steam.app", identifier: SteamRepair.valveIdentifier, in: root)
+
+        #expect(SystemStatus.steamChoiceRefusal(picked, current: SupportPaths.Steam.defaultApp, insert: nil) == nil)
+    }
+
+    @Test("An app that is not Steam is refused")
+    func refusesOtherApps() throws {
+        let root = try scratchDirectory("steam-choice")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let picked = try bundle("CrossOver.app", identifier: "com.codeweavers.CrossOver", in: root)
+
+        #expect(SystemStatus.steamChoiceRefusal(picked, current: SupportPaths.Steam.defaultApp, insert: nil) != nil)
+    }
+
+    @Test("A path with a colon is refused, since it would split DYLD_INSERT_LIBRARIES")
+    func refusesColons() throws {
+        let root = try scratchDirectory("steam-choice")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let picked = try bundle("a:b/Steam.app", identifier: SteamRepair.valveIdentifier, in: root)
+
+        #expect(SystemStatus.steamChoiceRefusal(picked, current: SupportPaths.Steam.defaultApp, insert: nil) != nil)
+    }
+
+    @Test("Switching is refused while NotProton is installed in the current copy")
+    func refusesWhilePatched() throws {
+        let root = try scratchDirectory("steam-choice")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let picked = try bundle("Steam.app", identifier: SteamRepair.valveIdentifier, in: root)
+        let current = URL(filePath: "/Applications/Steam.app")
+        let insert = "/other.dylib:" + SupportPaths.Steam.deployedDylib(inBundle: current).path(percentEncoded: false)
+
+        #expect(SystemStatus.steamChoiceRefusal(picked, current: current, insert: insert) != nil)
+        #expect(SystemStatus.steamChoiceRefusal(picked, current: current, insert: "/other.dylib") == nil)
+    }
+}

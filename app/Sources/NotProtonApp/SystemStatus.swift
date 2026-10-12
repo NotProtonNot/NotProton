@@ -241,8 +241,8 @@ final class SystemStatus {
         guard let build = pendingRemoval else { return }
         pendingRemoval = nil
         await perform(from: RunnerInstaller.removeStep) { _ in
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             try await requireUnblockedContent()
             let changed = try await Task.detached(priority: .userInitiated) {
                 try RunnerInstaller.removeClone(forBuild: build)
@@ -282,6 +282,79 @@ final class SystemStatus {
         CrossOverSource.addManualBundle(picked)
         AppLog.note("crossOver added: \(picked.path(percentEncoded: false))")
         await refresh()
+    }
+
+    func chooseSteam() async {
+        let current = SupportPaths.Steam.app
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.application]
+        panel.prompt = String(localized: "Choose")
+        panel.message = String(localized: "Select your copy of Steam.")
+        panel.directoryURL = current.deletingLastPathComponent()
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // The panel returns bundles as directories, with a trailing slash.
+        let picked = URL(filePath: url.path)
+
+        clearFailure()
+        outcome = nil
+
+        func same(_ a: URL, _ b: URL) -> Bool {
+            a.standardizedFileURL.path(percentEncoded: false) == b.standardizedFileURL.path(percentEncoded: false)
+        }
+        guard !same(picked, current) else { return }
+        if SupportPaths.Steam.isUnreachable(current) {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Steam at \(current.path(percentEncoded: false)) isn't connected.")
+            alert.informativeText = String(localized: "If NotProton is installed there, it will stay installed. Continue anyway?")
+            alert.addButton(withTitle: String(localized: "Continue Anyway"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        // Held so an install or removal in another window cannot have Steam move under it.
+        let lock: DeploymentContent.InstallationLock
+        do {
+            lock = try DeploymentContent.acquireInstallationLock()
+        } catch {
+            setFailure(error)
+            return
+        }
+        if let refusal = Self.steamChoiceRefusal(picked, current: current) {
+            lock.release()
+            setFailure(refusal)
+            AppLog.note("steam choice refused: \(picked.path(percentEncoded: false))")
+            return
+        }
+
+        if same(picked, SupportPaths.Steam.defaultApp) {
+            UserDefaults.standard.removeObject(forKey: SupportPaths.Steam.appPathKey)
+        } else {
+            UserDefaults.standard.set(picked.path(percentEncoded: false), forKey: SupportPaths.Steam.appPathKey)
+        }
+        lock.release()
+        AppLog.note("steam chosen: \(picked.path(percentEncoded: false))")
+        await refresh()
+    }
+
+    static func steamChoiceRefusal(
+        _ picked: URL, current: URL, insert: String? = SteamBundle.currentInsert()
+    ) -> String? {
+        guard Bundle(url: picked)?.bundleIdentifier == SteamRepair.valveIdentifier else {
+            return String(localized: "\(picked.lastPathComponent) is not Steam.")
+        }
+        // DYLD_INSERT_LIBRARIES splits on colons.
+        guard !picked.path(percentEncoded: false).contains(":") else {
+            return String(localized: "NotProton cannot use Steam from a folder with a colon in its name.")
+        }
+        // Moving on would leave the old copy patched, out of reach of Repair and Remove Everything.
+        let deployed = SupportPaths.Steam.deployedDylib(inBundle: current).path(percentEncoded: false)
+        if let insert, insert.split(separator: ":").contains(Substring(deployed)) {
+            return String(localized: "NotProton is installed in \(current.path(percentEncoded: false)). Use Repair Steam to remove it before choosing another copy of Steam.")
+        }
+        return nil
     }
 
     private func highlight(_ row: CrossOverRow) {
@@ -348,8 +421,8 @@ final class SystemStatus {
         }
 
         await perform(from: RunnerSetup.Phase.cloning.label) { progress in
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             try await requireInstallableContent()
             let result = try await Task.detached(priority: .userInitiated) {
                 try RunnerSetup.run(from: install, replacingExisting: replacingExisting) {
@@ -364,8 +437,8 @@ final class SystemStatus {
     func fetchValveBinaries() async {
         guard canInstall else { return }
         await perform(from: ValveFetcher.Phase.verifying.label) { progress in
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             try await requireInstallableContent()
             let result = try await ValveFetcher.run { progress($0.label) }
             return result.wroteNothing ? nil : String(localized: "Downloaded missing components.")
@@ -403,8 +476,8 @@ final class SystemStatus {
 
     func installIntoSteam() async {
         await perform(from: InstallPhase.checkingPayload.label) { progress in
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             let result = try await Task.detached(priority: .userInitiated) {
                 try SteamInstaller.run(holdingInstallationLock: true, report: { progress($0.label) })
             }.value
@@ -463,8 +536,8 @@ final class SystemStatus {
 
     func repairSteam() async {
         await perform(from: RepairPhase.checking.label) { progress in
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             let result = try await SteamRepair.run { progress($0.label) }
 
             var parts = [String(localized: "Steam restored to its original state.")]
@@ -490,10 +563,11 @@ final class SystemStatus {
 
     func removeEverything() async {
         await perform(from: UninstallPhase.stoppingClient.label) { progress in
-            let lock = try DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app)
-            defer { FileLock.release(lock) }
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
             let result = try await Uninstall.run { progress($0.label) }
 
+            if let partial = result.partialRemoval { return partial }
             return result.steamNeedsRedownload
                 ? String(localized: "NotProton has been removed. Steam could not be restored. Reinstall Steam from steampowered.com before using it again.")
                 : String(localized: "NotProton has been removed.")
@@ -524,9 +598,9 @@ final class SystemStatus {
     ) async {
         let known = runnerSizes
         let measured = await Task.detached(priority: .utility) {
-            if cleanTemplates, let lock = try? DeploymentContent.acquireInstallationLock(for: SupportPaths.Steam.app) {
+            if cleanTemplates, let lock = try? DeploymentContent.acquireInstallationLock() {
                 RunnerInstaller.removeLeftoverRemovals(runners: runners)
-                FileLock.release(lock)
+                lock.release()
             }
             let failures = cleanTemplates
                 ? RunnerInstaller.removeStalePrefixTemplates(runners: runners, libraries: libraries, reportBusy: false) : []

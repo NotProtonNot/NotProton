@@ -15,9 +15,9 @@ struct SteamBundleTests {
         )
 
         #expect(patterns.count == 2)
-        #expect(patterns.contains("/Applications/Steam.app/"))
+        #expect(patterns.contains(#"/Applications/Steam\.app/"#))
         #expect(
-            patterns.contains { $0.hasSuffix("/Steam.AppBundle/Steam/") },
+            patterns.contains { $0.hasSuffix(#"/Steam\.AppBundle/Steam/"#) },
             "the inner bundle, where ipcserver and the helpers actually run, is not swept"
         )
     }
@@ -31,13 +31,19 @@ struct SteamBundleTests {
         )
 
         #expect(patterns.allSatisfy { $0.hasSuffix("/") })
-        #expect(patterns == ["/tmp/Some.app/", "/tmp/Inner/"])
+        #expect(patterns == [#"/tmp/Some\.app/"#, "/tmp/Inner/"])
     }
 
     @Test("Sweeping nothing is possible, so a test can stop short of killing helpers")
     func helpersCanBeEmpty() {
         let patterns = SteamBundle.sweepPatterns(app: URL(filePath: "/tmp/A.app"), helpers: [])
-        #expect(patterns == ["/tmp/A.app/"])
+        #expect(patterns == [#"/tmp/A\.app/"#])
+    }
+
+    @Test("pkill gets the path with regular expression characters escaped")
+    func patternsAreEscaped() {
+        let patterns = SteamBundle.sweepPatterns(app: URL(filePath: "/Volumes/Games (SSD)+/Steam.app"), helpers: [])
+        #expect(patterns == [#"/Volumes/Games \(SSD\)\+/Steam\.app/"#])
     }
 
     private enum Insert {

@@ -111,8 +111,14 @@ enum SteamBundle {
         return true
     }
 
+    // pkill reads its pattern as a regular expression, and a drive can be named "Games (SSD)".
     static func sweepPatterns(app: URL, helpers: [URL]) -> [String] {
-        ([app] + helpers).map { $0.path(percentEncoded: false) + "/" }
+        ([app] + helpers).map { url in
+            (url.path(percentEncoded: false) + "/").reduce(into: "") { pattern, character in
+                if "\\.^$|?*+()[]{}".contains(character) { pattern.append("\\") }
+                pattern.append(character)
+            }
+        }
     }
 
     static func register(_ app: URL = SupportPaths.Steam.app) {
