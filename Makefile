@@ -476,7 +476,7 @@ dobby:
 		-G "Unix Makefiles"
 	$(MAKE) -C $(DOBBY_DIR) -j$(shell sysctl -n hw.ncpu)
 
-STEAM_APP    ?= $(or $(shell defaults read com.notproton.NotProton steamAppPath 2>/dev/null),/Applications/Steam.app)
+STEAM_APP    ?= $$(p=$$(defaults read com.notproton.NotProton steamAppPath 2>/dev/null); printf '%s' "$${p:-/Applications/Steam.app}")
 DEPLOY_DST    = $(STEAM_APP)/Contents/MacOS/notproton.dylib
 INSTALL_DST  := $(SUPPORT_DIR)/notproton.dylib
 

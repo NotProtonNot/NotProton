@@ -232,11 +232,7 @@ struct StatusView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                Uninstall.unreachableSteam().map {
-                    String(localized: "Steam at \($0.path(percentEncoded: false)) isn't connected, so NotProton can't be removed from it. All other NotProton data is removed, except for Windows Games and prefixes.")
-                } ?? String(localized: "Steam is restored to its unmodified state and NotProton is removed, including the compatibility tool that lives inside the Steam folder. Windows games and Steam Play prefixes are not removed.")
-            )
+            Text(Uninstall.confirmation())
         }
         .confirmationDialog(
             CrossOverLicense.notActivatedTitle,

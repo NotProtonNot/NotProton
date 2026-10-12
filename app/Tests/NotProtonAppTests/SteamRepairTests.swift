@@ -14,7 +14,7 @@ struct SteamRepairTests {
         return try await SteamRepair.stage(
             bundle,
             bases: manifest.bases,
-            downloads: SupportPaths.packageDownloads,
+            downloads: try isolatedValveDownloads(in: work),
             work: work.appending(path: "staging")
         )
     }
@@ -132,6 +132,39 @@ struct SteamRepairTests {
         await #expect(throws: StepFailure.self) {
             try await SteamRepair.run(manifest: without)
         }
+    }
+
+    @Test("A repaired Steam is not outstanding after its drive disconnects")
+    func retiresRepairedSteamBeforeDisconnect() async throws {
+        let work = try scratchDirectory("repair-tracking")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let stock = try await stagedStockBundle(into: work)
+        let drive = work.appending(path: "external")
+        let app = drive.appending(path: "Steam.app")
+        let support = work.appending(path: "support")
+        let modifications = SteamModifications(file: work.appending(path: "steam-bundles.json"),
+                                              legacyRecord: support.appending(path: "install-build.json"))
+        try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: stock, to: app)
+        try Data("patched".utf8).write(to: SupportPaths.Steam.deployedDylib(inBundle: app))
+        try modifications.mark(app)
+
+        _ = try await SteamRepair.run(
+            app: app, innerPlist: work.appending(path: "inner.plist"), updateBlocks: [],
+            backups: support.appending(path: "backups"), downloads: try isolatedValveDownloads(in: work),
+            modifications: modifications, stopClient: { _, _ in false }, register: { _ in })
+
+        #expect(try modifications.paths().isEmpty)
+        try FileManager.default.moveItem(at: drive, to: work.appending(path: "disconnected"))
+        let result = try await Uninstall.run(
+            app: app, innerPlist: work.appending(path: "inner.plist"), updateBlocks: [],
+            legacyCompat: work.appending(path: "legacycompat"), compatTools: [],
+            directories: [support], libraries: [], modifications: modifications, lockFolder: work,
+            repair: { _, _ in Issue.record("A disconnected repaired copy needs no repair") },
+            stop: { _, _ in false })
+
+        #expect(result.partialRemoval == nil)
+        #expect(!result.steamNeedsRedownload)
     }
 
     // MARK: - The inner plist

@@ -72,13 +72,12 @@ enum SupportPaths {
 
     enum Steam {
         static let defaultApp = URL(filePath: "/Applications/Steam.app")
-        // Set when the user picks a Steam outside /Applications.
         static let appPathKey = "steamAppPath"
 
         static var app: URL {
             UserDefaults.standard.string(forKey: appPathKey).map { URL(filePath: $0) } ?? defaultApp
         }
-        // The drive Steam was chosen on is unplugged or renamed. A missing /Applications/Steam.app is not this.
+        // A missing parent distinguishes an unplugged drive from an uninstalled Steam.
         static func isUnreachable(_ bundle: URL = app) -> Bool {
             !FileManager.default.fileExists(atPath: bundle.deletingLastPathComponent().path(percentEncoded: false))
         }

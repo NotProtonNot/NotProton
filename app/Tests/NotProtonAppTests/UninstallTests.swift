@@ -41,9 +41,13 @@ struct UninstallTests {
 
         var outerPlist: URL { app.appending(path: "Contents/Info.plist") }
         var dylib: URL { app.appending(path: "Contents/MacOS/\(SupportPaths.dylibName)") }
+        var modifications: SteamModifications {
+            SteamModifications(file: root.appending(path: "steam-bundles.json"),
+                               legacyRecord: support.appending(path: "install-build.json"))
+        }
     }
 
-    private func layout(signable: Bool = false) throws -> Layout {
+    private func layout(signable: Bool = true) throws -> Layout {
         let files = FileManager.default
         let root = URL.temporaryDirectory.appending(path: "np-uninstall-\(UUID().uuidString)")
         let app = root.appending(path: "Steam.app")
@@ -216,8 +220,9 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, layout.caches],
             libraries: [],
-            repair: { _ in throw Offline() },
-            stop: { _ in false }
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in throw Offline() },
+            stop: { _, _ in false }
         )
 
         #expect(outcome.restoredValveSignature == false)
@@ -250,8 +255,9 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, layout.caches],
             libraries: [],
-            repair: { _ in repaired.set() },
-            stop: { _ in false }
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in repaired.set() },
+            stop: { _, _ in false }
         )
 
         #expect(!repaired.value)
@@ -267,6 +273,7 @@ struct UninstallTests {
         let layout = try layout()
         defer { try? FileManager.default.removeItem(at: layout.root) }
         let unplugged = URL(filePath: "/Volumes/np-missing-\(UUID().uuidString)/Steam.app")
+        try layout.modifications.mark(unplugged)
 
         let outcome = try await Uninstall.run(
             app: unplugged,
@@ -276,12 +283,12 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, layout.caches],
             libraries: [],
-            installedSteam: unplugged,
-            repair: { _ in },
-            stop: { _ in false }
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in },
+            stop: { _, _ in false }
         )
 
-        #expect(outcome.unreachableSteam == unplugged)
+        #expect(outcome.unreachableSteam == [unplugged])
         #expect(outcome.partialRemoval?.contains(unplugged.path(percentEncoded: false)) == true)
         #expect(!FileManager.default.fileExists(atPath: layout.support.path(percentEncoded: false)))
     }
@@ -299,25 +306,30 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, layout.caches],
             libraries: [],
-            installedSteam: layout.app,
-            repair: { _ in },
-            stop: { _ in false }
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in },
+            stop: { _, _ in false }
         )
 
         #expect(outcome.partialRemoval == nil)
     }
 
-    @Test("The install record names the Steam NotProton went into, and an old record means /Applications")
+    @Test("Shipped build records migrate to /Applications once")
     func readsTheInstalledSteam() throws {
         let root = try scratchDirectory("installed-steam")
         defer { try? FileManager.default.removeItem(at: root) }
         let record = root.appending(path: "install-build.json")
+        let modifications = SteamModifications(file: root.appending(path: "steam-bundles.json"), legacyRecord: record)
 
-        #expect(Uninstall.installedSteam(record: record) == nil)
+        #expect(try modifications.paths().isEmpty)
         try Data(#"{"version":"1.1.7","builtAt":1}"#.utf8).write(to: record)
-        #expect(Uninstall.installedSteam(record: record) == SupportPaths.Steam.defaultApp)
-        try Data(#"{"version":"1.1.8","builtAt":1,"steamApp":"/Volumes/Ext/Steam.app"}"#.utf8).write(to: record)
-        #expect(Uninstall.installedSteam(record: record) == URL(filePath: "/Volumes/Ext/Steam.app"))
+        #expect(try modifications.paths() == [SupportPaths.Steam.defaultApp])
+        try modifications.prepare()
+        try FileManager.default.removeItem(at: record)
+        #expect(try modifications.paths() == [SupportPaths.Steam.defaultApp])
+        try Data(#"{"version":"1.1.7","builtAt":1}"#.utf8).write(to: record)
+        try JSONEncoder().encode([String]()).write(to: modifications.file)
+        #expect(try modifications.paths().isEmpty)
     }
 
     @Test("A restore that fails asks for a redownload")
@@ -334,8 +346,9 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, layout.caches],
             libraries: [],
-            repair: { _ in throw Offline() },
-            stop: { _ in false }
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in throw Offline() },
+            stop: { _, _ in false }
         )
 
         #expect(outcome.steamNeedsRedownload)
@@ -365,12 +378,13 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, caches],
             libraries: [],
-            repair: { _ in
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in
                 let staged = caches.appending(path: "bundle")
                 try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
                 try Data("2.6G of Steam".utf8).write(to: staged.appending(path: "Steam.app"))
             },
-            stop: { _ in false }
+            stop: { _, _ in false }
         )
 
         #expect(outcome.restoredValveSignature)
@@ -393,12 +407,13 @@ struct UninstallTests {
             compatTools: layout.compatTools,
             directories: [layout.support, layout.caches],
             libraries: [],
+            modifications: layout.modifications, lockFolder: layout.root,
             report: { log.add($0) },
-            repair: { report in
+            repair: { _, report in
                 report(.checking)
                 report(.replacing)
             },
-            stop: { _ in false }
+            stop: { _, _ in false }
         )
 
         let restoring = log.all.compactMap { phase -> RepairPhase? in
@@ -435,7 +450,8 @@ struct UninstallTests {
             app: layout.app, innerPlist: layout.innerPlist, updateBlocks: [layout.updateBlock],
             legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
             directories: [layout.support, layout.caches], libraries: [library],
-            repair: { _ in }, stop: { _ in false })
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in }, stop: { _, _ in false })
 
         for template in templates { #expect(!FileManager.default.fileExists(atPath: template.path)) }
         #expect(try String(contentsOf: unrelated, encoding: .utf8) == "keep")
@@ -470,7 +486,8 @@ struct UninstallTests {
             app: layout.app, innerPlist: layout.innerPlist, updateBlocks: [layout.updateBlock],
             legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
             directories: [layout.support, layout.caches], libraries: [ours, foreign, real, empty],
-            repair: { _ in }, stop: { _ in false })
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: { _, _ in }, stop: { _, _ in false })
 
         #expect((try? files.destinationOfSymbolicLink(atPath: dll(ours).path(percentEncoded: false))) == nil)
         #expect(outcome.removed.filter { $0 == "Steam.dll" }.count == 1)
@@ -479,6 +496,192 @@ struct UninstallTests {
                 == elsewhere.path(percentEncoded: false))
         #expect(try String(contentsOf: dll(real), encoding: .utf8) == "real")
         #expect(!files.fileExists(atPath: empty.root.path(percentEncoded: false)))
+    }
+
+    private func remove(_ layout: Layout, app: URL? = nil,
+                         repair: @escaping Uninstall.Repair = { _, _ in },
+                         stop: Uninstall.Stop = { _, _ in false }) async throws -> UninstallOutcome {
+        try await Uninstall.run(
+            app: app ?? layout.app, innerPlist: layout.innerPlist, updateBlocks: [layout.updateBlock],
+            legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
+            directories: [layout.support, layout.caches], libraries: [],
+            modifications: layout.modifications, lockFolder: layout.root,
+            repair: repair, stop: stop)
+    }
+
+    @Test("Removal cleans both tracked copies when the first drive returns")
+    func removesReturnedSteamAsWellAsSelectedSteam() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        let drive = layout.root.appending(path: "external")
+        let first = drive.appending(path: "Steam.app")
+        let parked = layout.root.appending(path: "disconnected")
+        try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: layout.app, to: first)
+        try layout.modifications.mark(first)
+        try FileManager.default.moveItem(at: drive, to: parked)
+        try layout.modifications.mark(layout.app)
+        try FileManager.default.moveItem(at: parked, to: drive)
+        let stoppedFirst = Flag()
+        let stoppedSecond = Flag()
+        let otherAccount = layout.root.appending(path: "other-account")
+        try FileManager.default.createDirectory(at: otherAccount, withIntermediateDirectories: true)
+
+        let outcome = try await remove(layout, stop: { target, _ in
+            if target.path == first.standardizedFileURL.path { stoppedFirst.set() }
+            if target.path == layout.app.standardizedFileURL.path { stoppedSecond.set() }
+            #expect(throws: StepFailure.self) {
+                let lock = try DeploymentContent.acquireInstallationLock(
+                    in: otherAccount, steamFolder: target.deletingLastPathComponent())
+                lock.release()
+            }
+            return false
+        })
+
+        #expect(stoppedFirst.value && stoppedSecond.value)
+        #expect(outcome.partialRemoval == nil)
+        #expect(try SteamModifications.inspect(first) == .clean)
+        #expect(try SteamModifications.inspect(layout.app) == .clean)
+        #expect(try layout.modifications.paths().isEmpty)
+    }
+
+    @Test("Partial removal stays incomplete on CLI retries after support data is deleted")
+    func partialRemovalSurvivesRetries() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        let first = layout.root.appending(path: "missing-a/Steam.app")
+        let second = layout.root.appending(path: "missing-b/Steam.app")
+        let parkedFirst = layout.root.appending(path: "disconnected-a")
+        let parkedSecond = layout.root.appending(path: "disconnected-b")
+        for (app, parked) in [(first, parkedFirst), (second, parkedSecond)] {
+            try FileManager.default.createDirectory(at: app.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: layout.app, to: app)
+            try FileManager.default.moveItem(at: app.deletingLastPathComponent(), to: parked)
+        }
+        try layout.modifications.mark(first)
+        try layout.modifications.mark(second)
+        try layout.modifications.mark(layout.app)
+
+        for _ in 0..<2 {
+            let exitCode = await RemoveEverythingCommand.perform { _ in
+                let result = try await remove(layout)
+                #expect(Set(result.unreachableSteam) == Set([first, second]))
+                #expect(result.partialRemoval?.contains(first.path) == true)
+                #expect(result.partialRemoval?.contains(second.path) == true)
+                return result
+            }
+            #expect(exitCode == 1)
+            #expect(Set(try layout.modifications.paths()) == Set([first, second]))
+            #expect(!FileManager.default.fileExists(atPath: layout.support.path))
+        }
+        let confirmation = Uninstall.confirmation(modifications: layout.modifications)
+        #expect(confirmation.contains(first.path) && confirmation.contains(second.path))
+
+        try FileManager.default.moveItem(at: parkedFirst, to: first.deletingLastPathComponent())
+        try FileManager.default.moveItem(at: parkedSecond, to: second.deletingLastPathComponent())
+        let exitCode = await RemoveEverythingCommand.perform { _ in try await remove(layout) }
+
+        #expect(exitCode == 0)
+        #expect(try layout.modifications.paths().isEmpty)
+        #expect(try SteamModifications.inspect(first) == .clean)
+        #expect(try SteamModifications.inspect(second) == .clean)
+    }
+
+    @Test("A conservatively recorded clean bundle is retired without repair")
+    func resolvesAnUnpatchedAttempt() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        _ = try Uninstall.detach(from: layout.app, innerPlist: layout.innerPlist, updateBlocks: [])
+        try layout.modifications.mark(layout.app)
+
+        let result = try await remove(layout)
+
+        #expect(result.partialRemoval == nil)
+        #expect(!result.steamNeedsRedownload)
+        #expect(try layout.modifications.paths().isEmpty)
+    }
+
+    @Test("Interrupted detachment stays tracked until Steam's signature is repaired")
+    func recoversInterruptedDetachment() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        try layout.modifications.mark(layout.app)
+        _ = try SteamRepair.clearInsert(at: layout.outerPlist)
+        try FileManager.default.removeItem(at: layout.dylib)
+        #expect(try !verifies(layout.app))
+        let attempted = Flag()
+        struct Offline: Error {}
+
+        let failed = await RemoveEverythingCommand.perform { _ in
+            try await remove(layout, repair: { _, _ in
+                attempted.set()
+                throw Offline()
+            })
+        }
+
+        #expect(failed == 1)
+        #expect(attempted.value)
+        #expect(try layout.modifications.paths().map(\.path) == [layout.app.standardizedFileURL.path])
+        #expect(FileManager.default.fileExists(atPath: layout.support.path))
+
+        let recovered = await RemoveEverythingCommand.perform { _ in
+            try await remove(layout, repair: { app, _ in try SteamInstaller.adHocSign(app) })
+        }
+
+        #expect(recovered == 0)
+        #expect(try verifies(layout.app))
+        #expect(try layout.modifications.paths().isEmpty)
+    }
+
+    @Test("A refused bundle lock preserves that target for a later removal")
+    func preservesLockedTarget() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        let drive = layout.root.appending(path: "external")
+        let app = drive.appending(path: "Steam.app")
+        let otherAccount = layout.root.appending(path: "other-account")
+        for folder in [drive, otherAccount] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        try FileManager.default.copyItem(at: layout.app, to: app)
+        try layout.modifications.mark(app)
+        let lock = try DeploymentContent.acquireInstallationLock(in: otherAccount, steamFolder: drive)
+        do {
+            defer { lock.release() }
+            await #expect(throws: StepFailure.self) { try await remove(layout) }
+            #expect(try layout.modifications.paths().map(\.path) == [app.standardizedFileURL.path])
+            #expect(try SteamModifications.inspect(app) == .modified)
+        }
+
+        let result = try await remove(layout)
+        #expect(result.partialRemoval == nil)
+        #expect(try layout.modifications.paths().isEmpty)
+    }
+
+    @Test("Unreadable bundle metadata never clears an outstanding target")
+    func preservesUninspectableTarget() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        try layout.modifications.mark(layout.app)
+        try Data("not a plist".utf8).write(to: layout.outerPlist)
+
+        await #expect(throws: StepFailure.self) { try await remove(layout) }
+
+        #expect(try layout.modifications.paths().map(\.path) == [layout.app.standardizedFileURL.path])
+    }
+
+    @Test("A corrupt path record blocks removal without deleting it")
+    func preservesCorruptRecord() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        try Data("corrupt".utf8).write(to: layout.modifications.file)
+
+        let exitCode = await RemoveEverythingCommand.perform { _ in try await remove(layout) }
+
+        #expect(exitCode == 1)
+        #expect(try String(contentsOf: layout.modifications.file, encoding: .utf8) == "corrupt")
+        #expect(FileManager.default.fileExists(atPath: layout.support.path))
+        #expect(try SteamModifications.inspect(layout.app) == .modified)
     }
 
     @Test("Uninstall reports template cleanup refusal rather than claiming completion")
@@ -499,7 +702,8 @@ struct UninstallTests {
                 app: layout.app, innerPlist: layout.innerPlist, updateBlocks: [layout.updateBlock],
                 legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
                 directories: [layout.support, layout.caches], libraries: [library],
-                repair: { _ in }, stop: { _ in false })
+                modifications: layout.modifications, lockFolder: layout.root,
+                repair: { _, _ in }, stop: { _, _ in false })
         }
         #expect(try String(contentsOf: sentinel, encoding: .utf8) == "keep")
     }

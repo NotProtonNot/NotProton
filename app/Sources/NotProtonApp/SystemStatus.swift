@@ -314,7 +314,6 @@ final class SystemStatus {
             alert.addButton(withTitle: String(localized: "Cancel"))
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
-        // Held so an install or removal in another window cannot have Steam move under it.
         let lock: DeploymentContent.InstallationLock
         do {
             lock = try DeploymentContent.acquireInstallationLock()
@@ -349,7 +348,6 @@ final class SystemStatus {
         guard !picked.path(percentEncoded: false).contains(":") else {
             return String(localized: "NotProton cannot use Steam from a folder with a colon in its name.")
         }
-        // Moving on would leave the old copy patched, out of reach of Repair and Remove Everything.
         let deployed = SupportPaths.Steam.deployedDylib(inBundle: current).path(percentEncoded: false)
         if let insert, insert.split(separator: ":").contains(Substring(deployed)) {
             return String(localized: "NotProton is installed in \(current.path(percentEncoded: false)). Use Repair Steam to remove it before choosing another copy of Steam.")
@@ -538,7 +536,7 @@ final class SystemStatus {
         await perform(from: RepairPhase.checking.label) { progress in
             let lock = try DeploymentContent.acquireInstallationLock()
             defer { lock.release() }
-            let result = try await SteamRepair.run { progress($0.label) }
+            let result = try await SteamRepair.run(report: { progress($0.label) })
 
             var parts = [String(localized: "Steam restored to its original state.")]
             if result.stoppedClient { parts.append(Self.restartHint) }
@@ -563,8 +561,6 @@ final class SystemStatus {
 
     func removeEverything() async {
         await perform(from: UninstallPhase.stoppingClient.label) { progress in
-            let lock = try DeploymentContent.acquireInstallationLock()
-            defer { lock.release() }
             let result = try await Uninstall.run { progress($0.label) }
 
             if let partial = result.partialRemoval { return partial }

@@ -8,12 +8,12 @@ enum RemoveEverythingCommand {
         dispatchMain()
     }
 
-    private static func perform() async -> Int32 {
+    static func perform(remove: @Sendable (@escaping @Sendable (UninstallPhase) -> Void) async throws -> UninstallOutcome = {
+        try await Uninstall.run(report: $0)
+    }) async -> Int32 {
         do {
-            let lock = try DeploymentContent.acquireInstallationLock()
-            defer { lock.release() }
             let output = Output()
-            let result = try await Uninstall.run { phase in
+            let result = try await remove { phase in
                 if case .restoring(.finished) = phase { return }
                 output.say(phase.label)
             }

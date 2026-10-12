@@ -67,6 +67,7 @@ enum SteamInstaller {
         compatTools: URL = SupportPaths.Steam.compatTools,
         holdingInstallationLock: Bool = false,
         lockFolder: URL = SupportPaths.applicationSupport,
+        modifications: SteamModifications = .shared,
         runnerIsRunning: @Sendable (URL) -> Bool = { RunnerInstaller.isRunning(from: $0) },
         verifyRunner: (RunnerBuild, URL) throws -> Void = RunnerInstaller.verifyClone,
         patchRunner: (RunnerBuild, URL, URL) throws -> Void = { build, root, bridge in
@@ -94,7 +95,7 @@ enum SteamInstaller {
             throw StepFailure(step: step, detail: String(localized: "The bundled NotProton dylib is invalid."))
         }
         let build = DeploymentContent.Build(version: version, builtAt: payload.builtAt,
-                                            dylibHashes: dylibHashes, steamApp: app.path(percentEncoded: false))
+                                            dylibHashes: dylibHashes)
         let record = DeploymentContent.record(beside: deployedVersion)
         let previousBuild = try DeploymentContent.readBuild(at: record)
         let support = deployedVersion.deletingLastPathComponent()
@@ -119,6 +120,7 @@ enum SteamInstaller {
         for build in builds {
             try verifyRunner(build, SupportPaths.clonedRoot(forBuild: build.id, runners: runners))
         }
+        try modifications.mark(app)
         let patching = try needsPatching(plist: plist, dylib: dylib, shipping: payload.dylib, app: app)
         let replacingFiles = try files.contains {
             try $0.needsClientStopped && !$0.matches() && FileManager.default.fileExists(atPath: $0.destination.path(percentEncoded: false))

@@ -14,7 +14,7 @@ struct SteamInstallerTests {
         return try await SteamRepair.stage(
             bundle,
             bases: manifest.bases,
-            downloads: SupportPaths.packageDownloads,
+            downloads: try isolatedValveDownloads(in: work),
             work: work.appending(path: "staging")
         )
     }
@@ -71,6 +71,10 @@ struct SteamInstallerTests {
         var deployedVersion: URL { support.appending(path: "dylib.version") }
         var backups: URL { support.appending(path: "backups") }
         var bridge: URL { support.appending(path: "bridge") }
+        var modifications: SteamModifications {
+            SteamModifications(file: work.appending(path: "steam-bundles.json"),
+                               legacyRecord: DeploymentContent.record(beside: deployedVersion))
+        }
     }
 
     private func fixture(into work: URL) async throws -> Fixture {
@@ -116,6 +120,7 @@ struct SteamInstallerTests {
             backups: fixture.backups,
             compatTools: fixture.work.appending(path: "compatibilitytools.d"),
             lockFolder: fixture.work,
+            modifications: fixture.modifications,
             runnerIsRunning: { _ in running },
             verifyRunner: verifyRunner,
             patchRunner: { _, _, _ in },
@@ -495,7 +500,41 @@ struct SteamInstallerTests {
         #expect(build.builtAt == 100)
         #expect(build.version == "9.9.9-test")
         #expect(build.dylibHashes == (try MachOBuild.hashesIgnoringSignature(of: fixture.payload.dylib)))
-        #expect(build.steamApp == fixture.app.path(percentEncoded: false))
+        #expect(try fixture.modifications.paths().map(\.path) == [fixture.app.standardizedFileURL.path])
+    }
+
+    @Test("A failed install records the bundle before copying its dylib")
+    func tracksFailedInstallation() async throws {
+        let work = try scratchDirectory("install-failure-record")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let fixture = try await self.fixture(into: work)
+        try FileManager.default.createDirectory(at: fixture.support, withIntermediateDirectories: true)
+        try Data("blocked".utf8).write(to: fixture.support.appending(path: "signatures"))
+
+        #expect(throws: (any Error).self) { try install(fixture) }
+
+        #expect(FileManager.default.fileExists(atPath: fixture.deployedDylib.path))
+        #expect(try fixture.modifications.paths().map(\.path) == [fixture.app.standardizedFileURL.path])
+        #expect(try DeploymentContent.readBuild(at: DeploymentContent.record(beside: fixture.deployedVersion)) == nil)
+    }
+
+    @Test("Installing another Steam preserves the disconnected installation")
+    func tracksBothInstallations() async throws {
+        let work = try scratchDirectory("install-two-bundles")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let first = try await fixture(into: work)
+        let other = work.appending(path: "other/Steam.app")
+        try FileManager.default.createDirectory(at: other.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: first.app, to: other)
+        let second = Fixture(work: work, app: other, payload: first.payload, support: first.support)
+        _ = try install(first)
+        try FileManager.default.moveItem(at: first.app.deletingLastPathComponent(), to: work.appending(path: "disconnected"))
+
+        _ = try install(second)
+
+        let recorded = Set(try first.modifications.paths().map(\.path))
+        let expected = Set([first.app.standardizedFileURL.path, second.app.standardizedFileURL.path])
+        #expect(recorded == expected)
     }
 
     @Test("An older package is refused before any installed files change")

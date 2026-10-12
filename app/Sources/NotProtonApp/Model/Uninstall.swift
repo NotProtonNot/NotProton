@@ -1,5 +1,3 @@
-// Self-explanatory I think
-
 import Foundation
 
 enum UninstallPhase: Sendable {
@@ -26,33 +24,34 @@ struct UninstallOutcome: Sendable {
     let steamInstalled: Bool
     let restoredValveSignature: Bool
     let removed: [String]
-    var unreachableSteam: URL? = nil
+    var unreachableSteam: [URL] = []
 
     var steamNeedsRedownload: Bool { steamInstalled && !restoredValveSignature }
 
     var partialRemoval: String? {
-        unreachableSteam.map {
+        guard !unreachableSteam.isEmpty else { return nil }
+        return unreachableSteam.map {
             String(localized: "NotProton has been partially removed, because Steam at \($0.path(percentEncoded: false)) cannot be found. Delete that copy of Steam and reinstall it to fully remove NotProton.")
-        }
+        }.joined(separator: "\n\n")
     }
 }
 
 enum Uninstall {
     static let step = String(localized: "Remove NotProton")
 
-    // Not the chosen Steam, which can be changed away from a copy on an unplugged drive.
-    static func installedSteam(record: URL = DeploymentContent.record(beside: SupportPaths.deployedVersion)) -> URL? {
-        guard let build = try? DeploymentContent.readBuild(at: record) else { return nil }
-        return URL(filePath: build.steamApp ?? SupportPaths.Steam.defaultApp.path(percentEncoded: false))
+    static func confirmation(modifications: SteamModifications = .shared) -> String {
+        let missing = ((try? modifications.paths()) ?? []).filter { SupportPaths.Steam.isUnreachable($0) }
+        guard !missing.isEmpty else {
+            return String(localized: "Steam is restored to its unmodified state and NotProton is removed, including the compatibility tool that lives inside the Steam folder. Windows games and Steam Play prefixes are not removed.")
+        }
+        return missing.map {
+            String(localized: "Steam at \($0.path(percentEncoded: false)) isn't connected, so NotProton can't be removed from it. All other NotProton data is removed, except for Windows Games and prefixes.")
+        }.joined(separator: "\n\n")
     }
 
-    static func unreachableSteam(installed: URL? = installedSteam()) -> URL? {
-        installed.flatMap { SupportPaths.Steam.isUnreachable($0) ? $0 : nil }
-    }
+    typealias Repair = @Sendable (URL, @escaping @Sendable (RepairPhase) -> Void) async throws -> Void
 
-    typealias Repair = @Sendable (@escaping @Sendable (RepairPhase) -> Void) async throws -> Void
-
-    typealias Stop = @Sendable (@Sendable () -> Void) throws -> Bool
+    typealias Stop = @Sendable (URL, @Sendable () -> Void) throws -> Bool
 
     static func run(
         app: URL = SupportPaths.Steam.app,
@@ -65,26 +64,80 @@ enum Uninstall {
             SupportPaths.packageDownloads.deletingLastPathComponent(),
         ],
         libraries: [SteamLibrary] = PrefixStore.libraries(),
-        installedSteam: URL? = installedSteam(),
+        modifications: SteamModifications = .shared,
+        lockFolder: URL = SupportPaths.applicationSupport,
         report: @escaping @Sendable (UninstallPhase) -> Void = { _ in },
-        repair: Repair = { report in _ = try await SteamRepair.run(report: report) },
-        stop: Stop = { onStopping in try SteamBundle.stopClient(step: step, onStopping: onStopping) }
+        repair: Repair? = nil,
+        stop: Stop = { app, onStopping in try SteamBundle.stopClient(app: app, step: step, onStopping: onStopping) }
     ) async throws -> UninstallOutcome {
-        let stopped = try stop { report(.stoppingClient) }
+        let lock = try DeploymentContent.acquireInstallationLock(in: lockFolder, steamFolder: nil)
+        defer { lock.release() }
+        try modifications.prepare()
+        let tracked = try modifications.paths()
+        let targets = Set((tracked + [app]).map { $0.standardizedFileURL.path }).sorted()
+            .map { URL(filePath: $0, directoryHint: .notDirectory) }
+        var stopped = false
+        var checkedClient = false
+        var detached = false
+        var steamInstalled = false
+        var restored = true
+        var missing: [URL] = []
+        var failures: [any Error] = []
 
-        report(.detaching)
-        let detached = try detach(from: app, innerPlist: innerPlist, updateBlocks: updateBlocks)
-
-        // Validate if Steam is present before restoring
-        let steamInstalled = FileManager.default.fileExists(atPath: app.path(percentEncoded: false))
-        var restored = false
-        if steamInstalled {
+        for target in targets {
             do {
-                try await repair { report(.restoring($0)) }
-                restored = true
-            } catch {}
+                let bundleLock = try DeploymentContent.acquireSteamLock(for: target, holding: lock)
+                defer { bundleLock.release() }
+                switch try SteamModifications.inspect(target) {
+                case .unreachable:
+                    if tracked.contains(target) { missing.append(target) }
+                    continue
+                case .absent, .clean:
+                    if tracked.contains(target), try !modifications.retireIfClean(target) {
+                        throw StepFailure(step: step, detail: String(localized: "Steam could not be fully restored. Please run Repair Steam again."))
+                    }
+                    continue
+                case .modified: break
+                }
+                try modifications.mark(target)
+                stopped = try stop(target) { report(.stoppingClient) } || stopped
+                checkedClient = true
+                report(.detaching)
+                detached = try detach(from: target, innerPlist: innerPlist, updateBlocks: updateBlocks) || detached
+                steamInstalled = true
+                do {
+                    if let repair {
+                        try await repair(target) { report(.restoring($0)) }
+                    } else {
+                        _ = try await SteamRepair.run(app: target, innerPlist: innerPlist,
+                                                     updateBlocks: updateBlocks, modifications: modifications,
+                                                     report: { report(.restoring($0)) })
+                    }
+                } catch { restored = false }
+                guard try modifications.retireIfClean(target) else {
+                    throw StepFailure(step: step, detail: String(localized: "Steam could not be fully restored. Please run Repair Steam again."))
+                }
+            } catch {
+                if let refusal = error as? WriteRefused {
+                    failures.append(refusal)
+                } else {
+                    failures.append(StepFailure(step: step,
+                                                detail: "\(target.path(percentEncoded: false)): \(error.localizedDescription)"))
+                }
+            }
         }
 
+        if failures.count == 1 { throw failures[0] }
+        if !failures.isEmpty {
+            throw StepFailure(step: step, detail: failures.map(\.localizedDescription).joined(separator: "\n"))
+        }
+        if !checkedClient {
+            let bundleLock = try DeploymentContent.acquireSteamLock(for: app, holding: lock)
+            defer { bundleLock.release() }
+            stopped = try stop(app) { report(.stoppingClient) }
+        }
+        _ = try SteamRepair.clearInsert(at: innerPlist)
+        _ = try UpdateBlock.remove(from: updateBlocks)
         report(.removing)
         var removed = try remove(
             legacyCompat: legacyCompat, compatTools: compatTools, directories: directories
@@ -95,7 +148,6 @@ enum Uninstall {
         if !templateFailures.isEmpty {
             throw StepFailure(step: step, detail: templateFailures.map(\.detail).joined(separator: "\n"))
         }
-
         report(.finished)
         return UninstallOutcome(
             stoppedClient: stopped,
@@ -103,7 +155,7 @@ enum Uninstall {
             steamInstalled: steamInstalled,
             restoredValveSignature: restored,
             removed: removed,
-            unreachableSteam: unreachableSteam(installed: installedSteam)
+            unreachableSteam: missing
         )
     }
 

@@ -6,8 +6,6 @@ enum DeploymentContent {
         let version: String
         let builtAt: Int64
         var dylibHashes: [String]? = nil
-        // Records from before Steam could be moved have none, and mean /Applications/Steam.app.
-        var steamApp: String? = nil
 
         func isNewer(than other: Build) -> Bool {
             let order = version.compare(other.version, options: .numeric)
@@ -66,8 +64,7 @@ enum DeploymentContent {
         }
     }
 
-    // Our own folder is always there. Steam's folder is shared with other accounts on the Mac,
-    // and is skipped while the drive it is on is unplugged.
+    // The account lock survives an unplugged drive. Steam's folder also excludes other accounts.
     static func acquireInstallationLock(
         in folder: URL = SupportPaths.applicationSupport,
         steamFolder: URL? = SupportPaths.Steam.app.deletingLastPathComponent()
@@ -85,7 +82,12 @@ enum DeploymentContent {
         }
     }
 
-    // Steam's folder may be reached through a symlink, so only our own refuses to follow one.
+    static func acquireSteamLock(for app: URL, holding lock: InstallationLock) throws -> InstallationLock {
+        let descriptor = try self.lock(app.deletingLastPathComponent(), required: false, unless: lock.descriptors.first)
+        return InstallationLock(descriptors: descriptor.map { [$0] } ?? [])
+    }
+
+    // Steam's parent may be a symlink.
     private static func lock(_ folder: URL, required: Bool, unless held: Int32? = nil) throws -> Int32? {
         let parent = folder.path(percentEncoded: false)
         let fd = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC | (required ? O_NOFOLLOW : 0))
@@ -93,7 +95,7 @@ enum DeploymentContent {
             if !required, errno == ENOENT || errno == ENOTDIR { return nil }
             throw StepFailure(step: SteamInstaller.step, detail: String(localized: "Could not lock the installation at \(parent): \(String(cString: strerror(errno)))."))
         }
-        // A second lock on the folder already held would always find it busy.
+        // flock conflicts with a second open of the same directory.
         if let held {
             var mine = stat(), this = stat()
             if fstat(held, &mine) == 0, fstat(fd, &this) == 0, mine.st_dev == this.st_dev, mine.st_ino == this.st_ino {
