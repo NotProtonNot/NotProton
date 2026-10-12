@@ -186,7 +186,6 @@ enum SteamRepair {
     static func replace(_ app: URL, with staged: URL) throws {
         let files = FileManager.default
         try WriteRefused.catching(app) {
-            // Bundle replacement cannot cross volumes.
             var staged = staged
             let folder = app.deletingLastPathComponent()
             if volume(of: staged) != volume(of: folder) {

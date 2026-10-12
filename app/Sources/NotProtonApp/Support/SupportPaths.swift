@@ -77,7 +77,6 @@ enum SupportPaths {
         static var app: URL {
             UserDefaults.standard.string(forKey: appPathKey).map { URL(filePath: $0) } ?? defaultApp
         }
-        // A missing parent distinguishes an unplugged drive from an uninstalled Steam.
         static func isUnreachable(_ bundle: URL = app) -> Bool {
             !FileManager.default.fileExists(atPath: bundle.deletingLastPathComponent().path(percentEncoded: false))
         }

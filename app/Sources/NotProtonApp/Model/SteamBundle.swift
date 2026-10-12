@@ -111,7 +111,6 @@ enum SteamBundle {
         return true
     }
 
-    // pkill takes a regular expression, not a literal path.
     static func sweepPatterns(app: URL, helpers: [URL]) -> [String] {
         ([app] + helpers).map { url in
             (url.path(percentEncoded: false) + "/").reduce(into: "") { pattern, character in

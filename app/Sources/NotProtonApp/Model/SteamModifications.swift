@@ -1,6 +1,5 @@
 import Foundation
 
-// Callers hold the account installation lock while changing this record.
 struct SteamModifications: Sendable {
     let file: URL
     let legacyRecord: URL
@@ -20,7 +19,6 @@ struct SteamModifications: Sendable {
                 .map { URL(filePath: $0, directoryHint: .notDirectory) }
         } catch let error as NSError where error.domain == NSCocoaErrorDomain
             && [NSFileReadNoSuchFileError, NSFileNoSuchFileError].contains(error.code) {}
-        // Older versions only patched /Applications/Steam.app.
         if try DeploymentContent.readBuild(at: legacyRecord) != nil {
             return [SupportPaths.Steam.defaultApp]
         }
@@ -47,7 +45,6 @@ struct SteamModifications: Sendable {
 
     private func write(_ paths: [URL]) throws {
         let paths = Set(paths.map { $0.standardizedFileURL.path }).sorted()
-        // An empty record prevents a repaired legacy install from being migrated again.
         try atomicReplace(file, with: JSONEncoder().encode(paths), step: Uninstall.step)
     }
 

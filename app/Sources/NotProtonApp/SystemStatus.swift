@@ -296,7 +296,6 @@ final class SystemStatus {
         panel.directoryURL = current.deletingLastPathComponent()
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        // The panel returns bundles as directories, with a trailing slash.
         let picked = URL(filePath: url.path)
 
         clearFailure()
@@ -344,7 +343,6 @@ final class SystemStatus {
         guard Bundle(url: picked)?.bundleIdentifier == SteamRepair.valveIdentifier else {
             return String(localized: "\(picked.lastPathComponent) is not Steam.")
         }
-        // DYLD_INSERT_LIBRARIES splits on colons.
         guard !picked.path(percentEncoded: false).contains(":") else {
             return String(localized: "NotProton cannot use Steam from a folder with a colon in its name.")
         }
