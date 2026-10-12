@@ -394,6 +394,109 @@ struct PrefixStoreTests {
                 == installed.path(percentEncoded: false))
     }
 
+    @Test("A prefix points at its Steam Workshop content folder when it exists")
+    func findsWorkshopContentDirectory() throws {
+        let dir = try scratchDirectory("workshop")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let prefix = try prefix(in: dir)
+
+        #expect(PrefixStore.workshopDirectory(of: prefix) == nil)
+
+        let workshop = prefix.library.steamapps.appending(path: "workshop/content/1574480")
+        try FileManager.default.createDirectory(at: workshop, withIntermediateDirectories: true)
+        #expect(
+            PrefixStore.workshopDirectory(of: prefix)?.path(percentEncoded: false)
+                == workshop.path(percentEncoded: false))
+    }
+
+    @Test("Game-file snapshots restore the selected version and keep a rollback copy")
+    func gameFileSnapshotsRestoreAndKeepRollback() throws {
+        let dir = try scratchDirectory("game-backup")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let prefix = try prefix(in: dir)
+        try write(
+            """
+            "AppState"
+            {
+            "appid"    "1574480"
+            "installdir"    "Agent 64"
+            }
+            """, to: prefix.library.steamapps.appending(path: "appmanifest_1574480.acf"))
+
+        let install = prefix.library.steamapps.appending(path: "common/Agent 64")
+        let modFile = install.appending(path: "BepInEx/plugins/example.dll")
+        try write("modded version", to: modFile)
+        let firstDate = try #require(PrefixStore.backupClock().date(from: "20261012-120000"))
+
+        let snapshot = try PrefixTools.backUpGameFiles(prefix, now: firstDate)
+        #expect(snapshot.gameFiles.lastPathComponent == "Agent 64")
+        #expect(try String(contentsOf: snapshot.gameFiles.appending(path: "BepInEx/plugins/example.dll"), encoding: .utf8)
+            == "modded version")
+
+        try write("broken version", to: modFile)
+        let restoreDate = try #require(PrefixStore.backupClock().date(from: "20261012-130000"))
+        let rollback = try PrefixTools.restoreGameFiles(snapshot, now: restoreDate)
+
+        #expect(try String(contentsOf: modFile, encoding: .utf8) == "modded version")
+        #expect(try String(contentsOf: rollback.gameFiles.appending(path: "BepInEx/plugins/example.dll"), encoding: .utf8)
+            == "broken version")
+        #expect(PrefixStore.gameBackups(of: prefix).count == 2)
+        #expect(FileManager.default.fileExists(atPath: prefix.pfx.path(percentEncoded: false)))
+    }
+
+    @Test("Game-file backup refuses a symlinked snapshot root")
+    func gameBackupRefusesSymlinkedRoot() throws {
+        let dir = try scratchDirectory("game-backup-link")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let prefix = try prefix(in: dir)
+        try write(
+            """
+            "AppState"
+            {
+            "appid"    "1574480"
+            "installdir"    "Agent 64"
+            }
+            """, to: prefix.library.steamapps.appending(path: "appmanifest_1574480.acf"))
+        let install = prefix.library.steamapps.appending(path: "common/Agent 64")
+        try FileManager.default.createDirectory(at: install, withIntermediateDirectories: true)
+
+        let outside = dir.appending(path: "outside")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let snapshotBase = prefix.library.steamapps.appending(path: "common/.notproton-game-backups")
+        try FileManager.default.createSymbolicLink(at: snapshotBase, withDestinationURL: outside)
+
+        #expect(PrefixStore.gameBackupRoot(of: prefix) == nil)
+        #expect(PrefixStore.gameBackups(of: prefix).isEmpty)
+    }
+
+    @Test("Game snapshots remain discoverable after the game is uninstalled")
+    func gameBackupsSurviveUninstall() throws {
+        let dir = try scratchDirectory("game-backup-uninstall")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let prefix = try prefix(in: dir)
+        try write(
+            """
+            "AppState"
+            {
+            "appid"    "1574480"
+            "installdir"    "Agent 64"
+            }
+            """, to: prefix.library.steamapps.appending(path: "appmanifest_1574480.acf"))
+        let install = prefix.library.steamapps.appending(path: "common/Agent 64")
+        try write("modded files", to: install.appending(path: "mods/example.mod"))
+        _ = try PrefixTools.backUpGameFiles(
+            prefix, now: try #require(PrefixStore.backupClock().date(from: "20261012-120000")))
+
+        try FileManager.default.removeItem(at: install)
+
+        #expect(PrefixStore.installDirectory(of: prefix) == nil)
+        let backups = PrefixStore.gameBackups(of: prefix)
+        #expect(backups.count == 1)
+        #expect(try String(
+            contentsOf: backups[0].gameFiles.appending(path: "mods/example.mod"), encoding: .utf8
+        ) == "modded files")
+    }
+
     // A prefix's ntdll, cut down to the two fields the arch is read out of: e_lfanew at
     // 0x3c, and the machine word four bytes past the signature it points at.
     private func writeNtdll(machine: UInt16?, in pfx: URL, lfanew: UInt32 = 0x40) throws {

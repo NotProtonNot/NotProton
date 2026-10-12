@@ -104,10 +104,42 @@ struct PrefixesView: View {
         } message: {
             Text(PrefixPrompt.backUpMessage(backingUp))
         }
+        .confirmationDialog(
+            PrefixPrompt.backUpGameFilesTitle(gameFilesTarget),
+            isPresented: asking(.backUpGameFiles),
+            titleVisibility: .visible
+        ) {
+            if let prefix = gameFilesTarget {
+                Button("Back Up Game Files") {
+                    model.pendingConfirmation = nil
+                    Task { await model.backUpGameFiles(prefix) }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
+        } message: {
+            Text(PrefixPrompt.backUpGameFilesMessage())
+        }
+        .confirmationDialog(
+            PrefixPrompt.restoreGameFilesTitle(gameFilesToRestore),
+            isPresented: asking(.restoreGameFiles),
+            titleVisibility: .visible
+        ) {
+            if let backup = gameFilesToRestore {
+                Button("Restore Game Files", role: .destructive) {
+                    model.pendingConfirmation = nil
+                    Task { await model.restoreGameFiles(backup) }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            Button("Cancel", role: .cancel) { model.pendingConfirmation = nil }
+        } message: {
+            Text(PrefixPrompt.restoreGameFilesMessage())
+        }
     }
 
     private enum Question {
-        case delete, rebuild, backUp
+        case delete, rebuild, backUp, backUpGameFiles, restoreGameFiles
     }
 
     private var deleting: [WinePrefix] {
@@ -130,11 +162,23 @@ struct PrefixesView: View {
         return []
     }
 
+    private var gameFilesTarget: WinePrefix? {
+        if case .backUpGameFiles(let prefix) = model.pendingConfirmation { return prefix }
+        return nil
+    }
+
+    private var gameFilesToRestore: GameFilesBackup? {
+        if case .restoreGameFiles(let backup) = model.pendingConfirmation { return backup }
+        return nil
+    }
+
     private func isAsking(_ question: Question) -> Bool {
         switch (question, model.pendingConfirmation) {
         case (.delete, .delete): true
         case (.rebuild, .rebuild(_, _)): true
         case (.backUp, .backUp): true
+        case (.backUpGameFiles, .backUpGameFiles): true
+        case (.restoreGameFiles, .restoreGameFiles): true
         default: false
         }
     }
@@ -163,6 +207,66 @@ struct PrefixesView: View {
         }
         .disabled(model.selectedPrefix == nil)
         .help("Show the selected prefix in the Finder.")
+
+        Menu {
+            if let prefix = model.selectedPrefix {
+                Button("Open Game Folder", systemImage: "folder.badge.gearshape") {
+                    model.revealGameDirectory(prefix)
+                }
+                .disabled(model.gameDirectory(for: prefix) == nil)
+                .help("Open the installed game files for manual modding.")
+
+                Button("Open Workshop Content", systemImage: "square.stack.3d.up") {
+                    model.revealWorkshopDirectory(prefix)
+                }
+                .disabled(model.workshopDirectory(for: prefix) == nil)
+                .help("Open this game's downloaded Steam Workshop items.")
+
+                Divider()
+
+                Button("Back Up Game Files…", systemImage: "externaldrive.badge.plus") {
+                    model.pendingConfirmation = .backUpGameFiles(prefix)
+                }
+                .disabled(model.gameDirectory(for: prefix) == nil || model.isBusy)
+                .help("Copy the full installed game folder to a NotProton snapshot.")
+
+                let snapshots = model.gameBackups(for: prefix)
+                Menu("Restore Game Snapshot", systemImage: "clock.arrow.circlepath") {
+                    if snapshots.isEmpty {
+                        Button("No Game Snapshots") {}.disabled(true)
+                    } else {
+                        ForEach(snapshots) { backup in
+                            Button(backup.taken?.formatted(date: .abbreviated, time: .shortened)
+                                ?? backup.url.lastPathComponent) {
+                                model.pendingConfirmation = .restoreGameFiles(backup)
+                            }
+                        }
+                    }
+                }
+                .disabled(snapshots.isEmpty || model.gameDirectory(for: prefix) == nil || model.isBusy)
+                .help(model.gameDirectory(for: prefix) == nil
+                    ? "Reinstall the game before restoring a snapshot."
+                    : "Restore a previous game-file snapshot.")
+
+                if !snapshots.isEmpty {
+                    Button("Show Snapshots in Finder", systemImage: "folder") {
+                        model.revealGameBackupDirectory(prefix)
+                    }
+                }
+
+                Divider()
+
+                Button("Back Up Wine Prefix", systemImage: "externaldrive.badge.timemachine") {
+                    model.pendingConfirmation = .backUp([prefix])
+                }
+                .disabled(model.isLoading)
+                .help("Back up Wine settings and prefix data. Game files are not included.")
+            }
+        } label: {
+            Label("Modding", systemImage: "hammer")
+        }
+        .disabled(model.selectedPrefix == nil || model.isBusy)
+        .help("Open installed game files or back up the selected prefix before modding.")
 
         Button("Refresh", systemImage: "arrow.clockwise") {
             Task { await model.load() }

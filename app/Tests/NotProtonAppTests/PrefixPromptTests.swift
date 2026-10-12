@@ -125,6 +125,22 @@ struct PrefixPromptTests {
                 == "Are you sure you want to back up these prefixes?")
     }
 
+    @Test("Game-file backup and restore prompts distinguish game files from prefix data")
+    func gameFileBackupPromptsAreExplicit() {
+        let snapshot = GameFilesBackup(
+            prefix: agent,
+            url: agent.library.steamapps.appending(path: "common/.notproton-game-backups/1574480/game.previous-20260101-120000"),
+            gameDirectoryName: "Agent 64",
+            taken: PrefixStore.backupClock().date(from: "20260101-120000")
+        )
+
+        #expect(PrefixPrompt.backUpGameFilesTitle(agent) == "Back up the game files for Agent 64: Spies Never Die?")
+        #expect(PrefixPrompt.backUpGameFilesMessage().contains("entire installed game folder"))
+        #expect(PrefixPrompt.backUpGameFilesMessage().contains("Wine prefix and data stored in it are not included"))
+        #expect(PrefixPrompt.restoreGameFilesTitle(snapshot).contains("2026"))
+        #expect(PrefixPrompt.restoreGameFilesMessage().contains("kept as another snapshot"))
+    }
+
     private func backup(of prefix: WinePrefix, stamp: String) -> PrefixBackup {
         PrefixBackup(
             prefix: prefix,

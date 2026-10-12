@@ -74,6 +74,34 @@ enum PrefixPrompt {
             : "Are you sure you want to back up this prefix?"
     }
 
+    static func backUpGameFilesTitle(_ prefix: WinePrefix?) -> String {
+        guard let prefix else { return "Back up game files?" }
+        return "Back up the game files for \(prefix.title)?"
+    }
+
+    static func backUpGameFilesMessage() -> String {
+        sentences([
+            "This copies the entire installed game folder to a NotProton snapshot in the same Steam library.",
+            "It may require free space about as large as the installed game.",
+            "The Wine prefix and data stored in it are not included. Quit the game before continuing.",
+        ])
+    }
+
+    static func restoreGameFilesTitle(_ backup: GameFilesBackup?) -> String {
+        guard let backup else { return "Restore game-file snapshot?" }
+        let when = backup.taken?.formatted(date: .abbreviated, time: .shortened)
+            ?? backup.url.lastPathComponent
+        return "Restore the game files for \(backup.prefix.title) from \(when)?"
+    }
+
+    static func restoreGameFilesMessage() -> String {
+        sentences([
+            "The current game files will first be kept as another snapshot.",
+            "This restores the game folder only; the Wine prefix and its data are unchanged.",
+            "Steam may verify or update the game before its next launch.",
+        ])
+    }
+
     static func rebuildMessage() -> String {
         sentences([
             "This tool is intended to repair a prefix after switching between Rosetta/FEX CrossOver.",

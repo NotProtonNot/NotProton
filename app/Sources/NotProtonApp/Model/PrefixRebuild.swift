@@ -128,6 +128,127 @@ extension PrefixTools {
         return slot
     }
 
+    static func backUpGameFiles(_ prefix: WinePrefix, now: Date = .now) throws -> GameFilesBackup {
+        guard !PrefixStore.isInUse(prefix) else {
+            throw StepFailure(
+                step: "Back up game files",
+                detail: "\(prefix.title) is running. Quit the game first."
+            )
+        }
+        guard let source = PrefixStore.installDirectory(of: prefix),
+            let root = PrefixStore.gameBackupRoot(of: prefix)
+        else {
+            throw StepFailure(
+                step: "Back up game files",
+                detail: "\(prefix.title) has no installed game folder to back up."
+            )
+        }
+
+        let fm = FileManager.default
+        let slot = gameBackupSlot(in: root, at: now)
+        let snapshot = slot.appending(path: source.lastPathComponent)
+        do {
+            try WriteRefused.catching(root) {
+                try fm.createDirectory(at: slot, withIntermediateDirectories: true)
+                try fm.copyItem(at: source, to: snapshot)
+            }
+        } catch let error as WriteRefused {
+            try? fm.removeItem(at: slot)
+            throw error
+        } catch {
+            try? fm.removeItem(at: slot)
+            throw StepFailure(
+                step: "Back up game files",
+                detail: "Could not copy the full game folder. Check free space and permissions. \(error.localizedDescription)"
+            )
+        }
+
+        return GameFilesBackup(
+            prefix: prefix,
+            url: slot,
+            gameDirectoryName: source.lastPathComponent,
+            taken: PrefixStore.gameBackupDate(of: slot)
+        )
+    }
+
+    @discardableResult
+    static func restoreGameFiles(_ backup: GameFilesBackup, now: Date = .now) throws -> GameFilesBackup {
+        let prefix = backup.prefix
+        guard !PrefixStore.isInUse(prefix) else {
+            throw StepFailure(
+                step: "Restore game files",
+                detail: "\(prefix.title) is running. Quit the game first."
+            )
+        }
+        guard let current = PrefixStore.installDirectory(of: prefix),
+            let root = PrefixStore.gameBackupRoot(of: prefix),
+            backup.url.deletingLastPathComponent().standardizedFileURL == root.standardizedFileURL,
+            backup.url.lastPathComponent.hasPrefix("\(PrefixStore.gameBackupPrefix)-"),
+            backup.gameDirectoryName == current.lastPathComponent
+        else {
+            throw StepFailure(
+                step: "Restore game files",
+                detail: "The selected backup does not match this game's current install folder."
+            )
+        }
+
+        let source = backup.gameFiles
+        let fm = FileManager.default
+        let sourceValues = try? source.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard sourceValues?.isDirectory == true, sourceValues?.isSymbolicLink != true else {
+            throw StepFailure(
+                step: "Restore game files",
+                detail: "The selected game backup is missing or invalid."
+            )
+        }
+
+        let rollbackSlot = gameBackupSlot(in: root, at: now)
+        let rollbackGame = rollbackSlot.appending(path: current.lastPathComponent)
+        let staging = current.deletingLastPathComponent()
+            .appending(path: ".notproton-restore-\(UUID().uuidString)")
+        do {
+            try WriteRefused.catching(current) {
+                try fm.createDirectory(at: rollbackSlot, withIntermediateDirectories: true)
+                try fm.moveItem(at: current, to: rollbackGame)
+                do {
+                    try fm.copyItem(at: source, to: staging)
+                    try fm.moveItem(at: staging, to: current)
+                } catch {
+                    try? fm.removeItem(at: staging)
+                    try fm.moveItem(at: rollbackGame, to: current)
+                    try? fm.removeItem(at: rollbackSlot)
+                    throw error
+                }
+            }
+        } catch let error as WriteRefused {
+            throw error
+        } catch {
+            throw StepFailure(
+                step: "Restore game files",
+                detail: "Could not restore the selected snapshot. The previous game files were preserved when possible. \(error.localizedDescription)"
+            )
+        }
+
+        return GameFilesBackup(
+            prefix: prefix,
+            url: rollbackSlot,
+            gameDirectoryName: current.lastPathComponent,
+            taken: PrefixStore.gameBackupDate(of: rollbackSlot)
+        )
+    }
+
+    private static func gameBackupSlot(in root: URL, at now: Date) -> URL {
+        let stamp = PrefixStore.backupClock().string(from: now)
+        let fm = FileManager.default
+        var slot = root.appending(path: "\(PrefixStore.gameBackupPrefix)-\(stamp)")
+        var next = 2
+        while fm.fileExists(atPath: slot.path(percentEncoded: false)) {
+            slot = root.appending(path: "\(PrefixStore.gameBackupPrefix)-\(stamp)-\(next)")
+            next += 1
+        }
+        return slot
+    }
+
     private static func backupSlot(in root: URL, at now: Date) -> URL {
         let stamp = PrefixStore.backupClock().string(from: now)
 

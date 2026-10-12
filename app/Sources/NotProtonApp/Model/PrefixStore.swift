@@ -60,7 +60,20 @@ struct PrefixBackup: Sendable, Hashable, Identifiable {
     var title: String { prefix.title }
 }
 
+struct GameFilesBackup: Sendable, Hashable, Identifiable {
+    let prefix: WinePrefix
+    let url: URL
+    let gameDirectoryName: String
+    let taken: Date?
+
+    var id: String { url.path(percentEncoded: false) }
+    var gameFiles: URL { url.appending(path: gameDirectoryName) }
+}
+
 enum PrefixStore {
+
+    static let gameBackupFolder = ".notproton-game-backups"
+    static let gameBackupPrefix = "game.previous"
 
     static func libraries(vdf: URL = SupportPaths.Steam.libraryFoldersVDF) -> [SteamLibrary] {
         guard let text = try? String(contentsOf: vdf, encoding: .utf8) else {
@@ -139,8 +152,87 @@ enum PrefixStore {
     static func installDirectory(of prefix: WinePrefix) -> URL? {
         guard let folder = manifestValue("installdir", appID: prefix.appID, in: prefix.library)
         else { return nil }
+        guard !folder.isEmpty, folder != ".", folder != "..",
+            !folder.contains("/"), !folder.contains("\\")
+        else { return nil }
         let url = prefix.library.steamapps.appending(path: "common").appending(path: folder)
-        return FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
+        guard
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+            values.isDirectory == true, values.isSymbolicLink != true
+        else { return nil }
+        return url
+    }
+
+    static func gameBackupRoot(of prefix: WinePrefix) -> URL? {
+        guard prefix.appID.allSatisfy(\.isNumber) else { return nil }
+        let common = prefix.library.steamapps.appending(path: "common")
+        guard
+            let values = try? common.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+            values.isDirectory == true, values.isSymbolicLink != true
+        else { return nil }
+        let base = common.appending(path: gameBackupFolder)
+        let root = base.appending(path: prefix.appID)
+
+        for directory in [base, root] {
+            let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isSymbolicLink == true { return nil }
+            if FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)),
+                values?.isDirectory != true { return nil }
+        }
+        return root
+    }
+
+    static func gameBackups(of prefix: WinePrefix) -> [GameFilesBackup] {
+        guard let root = gameBackupRoot(of: prefix) else { return [] }
+        let fm = FileManager.default
+        let entries = (try? fm.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+
+        return entries.compactMap { entry in
+            let name = entry.lastPathComponent
+            guard name.hasPrefix("\(gameBackupPrefix)-") else { return nil }
+            guard let backupValues = try? entry.resourceValues(
+                forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            ), backupValues.isDirectory == true, backupValues.isSymbolicLink != true else { return nil }
+            let children = (try? fm.contentsOfDirectory(
+                at: entry, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            guard children.count == 1,
+                let game = children.first,
+                let values = try? game.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                values.isDirectory == true, values.isSymbolicLink != true
+            else { return nil }
+
+            let stamp = name.dropFirst(gameBackupPrefix.count + 1).prefix(15)
+            return GameFilesBackup(
+                prefix: prefix,
+                url: entry,
+                gameDirectoryName: game.lastPathComponent,
+                taken: backupClock().date(from: String(stamp))
+            )
+        }
+        .sorted { ($0.taken ?? .distantPast) > ($1.taken ?? .distantPast) }
+    }
+
+    static func gameBackupDate(of backup: URL) -> Date? {
+        let name = backup.lastPathComponent
+        guard name.hasPrefix("\(gameBackupPrefix)-") else { return nil }
+        let stamp = name.dropFirst(gameBackupPrefix.count + 1).prefix(15)
+        return backupClock().date(from: String(stamp))
+    }
+
+    static func workshopDirectory(of prefix: WinePrefix) -> URL? {
+        let url = prefix.library.steamapps
+            .appending(path: "workshop/content")
+            .appending(path: prefix.appID)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: url.path(percentEncoded: false), isDirectory: &isDirectory
+        ), isDirectory.boolValue else { return nil }
+        return url
     }
 
     private static func manifestValue(_ key: String, appID: String, in library: SteamLibrary) -> String? {

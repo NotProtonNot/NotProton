@@ -52,6 +52,8 @@ final class PrefixesModel {
         case rebuild([WinePrefix], InstalledTool)
         case backUp([WinePrefix])
         case deleteBackups([PrefixBackup])
+        case backUpGameFiles(WinePrefix)
+        case restoreGameFiles(GameFilesBackup)
     }
 
     var selectedPrefix: WinePrefix? {
@@ -143,6 +145,53 @@ final class PrefixesModel {
 
     func reveal(_ prefix: WinePrefix) {
         PrefixTools.reveal(prefix)
+    }
+
+    func gameDirectory(for prefix: WinePrefix) -> URL? {
+        PrefixStore.installDirectory(of: prefix)
+    }
+
+    func revealGameDirectory(_ prefix: WinePrefix) {
+        guard let directory = gameDirectory(for: prefix) else { return }
+        PrefixTools.reveal(at: directory)
+    }
+
+    func workshopDirectory(for prefix: WinePrefix) -> URL? {
+        PrefixStore.workshopDirectory(of: prefix)
+    }
+
+    func revealWorkshopDirectory(_ prefix: WinePrefix) {
+        guard let directory = workshopDirectory(for: prefix) else { return }
+        PrefixTools.reveal(at: directory)
+    }
+
+    func gameBackups(for prefix: WinePrefix) -> [GameFilesBackup] {
+        PrefixStore.gameBackups(of: prefix)
+    }
+
+    func gameBackupDirectory(for prefix: WinePrefix) -> URL? {
+        PrefixStore.gameBackupRoot(of: prefix)
+    }
+
+    func revealGameBackupDirectory(_ prefix: WinePrefix) {
+        guard let directory = gameBackupDirectory(for: prefix),
+            FileManager.default.fileExists(atPath: directory.path(percentEncoded: false))
+        else { return }
+        PrefixTools.reveal(at: directory)
+    }
+
+    func backUpGameFiles(_ prefix: WinePrefix) async {
+        await eachInTurn([prefix], { try PrefixTools.backUpGameFiles($0) }) { saved in
+            guard let first = saved.first else { return nil }
+            return "Backed up the game files for \(first.prefix.title)."
+        }
+    }
+
+    func restoreGameFiles(_ backup: GameFilesBackup) async {
+        await eachInTurn([backup.prefix], { _ in try PrefixTools.restoreGameFiles(backup) }) { restored in
+            guard let first = restored.first else { return nil }
+            return "Restored the game files for \(first.prefix.title). The previous files were kept as a snapshot."
+        }
     }
 
     func delete(_ targets: [WinePrefix]) async {
