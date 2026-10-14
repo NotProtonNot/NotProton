@@ -1478,6 +1478,97 @@ terminate() {
 }
 trap terminate TERM INT HUP
 
+np_env_names=""
+# Outside the support directory on purpose: a hard reinstall removes everything there
+# that the app does not know about, which would take a user's descriptors with it.
+np_feat_dir="$HOME/.config/notproton/features.d"
+np_feat_requires() {
+  np_feat_hit=""
+  for np_feat_file in "$np_feat_dir"/*.conf; do
+    [ -r "$np_feat_file" ] || continue
+    sed -n 's/^[[:space:]]*key[[:space:]]*=[[:space:]]*\(.*\)$/\1/p' "$np_feat_file" \
+      | grep -qx "$1" || continue
+    np_feat_hit=$(sed -n \
+      's/^[[:space:]]*requires[[:space:]]*=[[:space:]]*\(.*\)$/\1/p' "$np_feat_file" \
+      | while IFS= read -r np_feat_req; do
+          # Leading parens: a case pattern's ) can otherwise close the $( ) around this.
+          case "$np_feat_req" in
+            (/*) [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; } ;;
+            (*)  [ -f "$HOME/$np_feat_req" ] \
+                   && { printf '%s' "$HOME/$np_feat_req"; break; } ;;
+          esac
+        done)
+    [ -n "$np_feat_hit" ] && break
+  done
+  printf '%s' "$np_feat_hit"
+}
+np_dev_add() {
+  if [ ! -f "$2" ]; then
+    echo "=== $1 requested but no dylib at $2 ===" >> "$log" 2>&1 || true
+    return 0
+  fi
+  case ":$STEAM_DYLD_INSERT_LIBRARIES:" in
+    *":$2:"*) return 0 ;;
+  esac
+  if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
+    STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES:$2"
+  else
+    STEAM_DYLD_INSERT_LIBRARIES="$2"
+  fi
+  export STEAM_DYLD_INSERT_LIBRARIES
+  echo "=== $1 will be loaded from $2 ===" >> "$log" 2>&1 || true
+}
+
+# Each descriptor whose key is switched on gets what it asks for: "inject = 1" loads the
+# dylib its "requires" resolved to, and each "env = NAME=VALUE" is exported and carried
+# into the bundle. Nothing here knows which features exist.
+np_feat_field() {
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*\)$/\1/p" "$1"
+}
+for np_feat_file in "$np_feat_dir"/*.conf; do
+  [ -r "$np_feat_file" ] || continue
+  np_feat_key=$(np_feat_field "$np_feat_file" key | head -1)
+  [ -n "$np_feat_key" ] || continue
+  case "$np_feat_key" in
+    NOTPROTON_[A-Z0-9_]*) ;;
+    *) echo "=== features: $np_feat_file key $np_feat_key is not a NOTPROTON_ name ===" \
+         >> "$log" 2>&1 || true; continue ;;
+  esac
+  eval "np_feat_val=\${$np_feat_key:-}"
+  np_feat_on=$(np_feat_field "$np_feat_file" on | head -1)
+  [ -n "$np_feat_on" ] || np_feat_on=1
+  # shellcheck disable=SC2154 # eval assigns np_feat_val above
+  [ "$np_feat_val" = "$np_feat_on" ] || continue
+
+  if [ "$(np_feat_field "$np_feat_file" inject | head -1)" = 1 ]; then
+    np_dev_add "$np_feat_key" "$(np_feat_requires "$np_feat_key")"
+  fi
+
+  # Fed by here-document, not a pipe: a piped loop runs in a subshell and its exports
+  # would not survive it.
+  while IFS= read -r np_feat_env; do
+    # A descriptor with no env still yields one empty line through the here-document.
+    [ -n "$np_feat_env" ] || continue
+    np_feat_name=${np_feat_env%%=*}
+    case "$np_feat_name" in
+      [A-Z_][A-Z0-9_]*) ;;
+      *) echo "=== features: $np_feat_file env $np_feat_env is not NAME=VALUE ===" \
+           >> "$log" 2>&1 || true; continue ;;
+    esac
+    [ "$np_feat_name" = "$np_feat_env" ] && continue
+    # The name is checked above, so it is safe to build an assignment around it; the
+    # value goes through a variable so spaces and quotes in it survive.
+    # shellcheck disable=SC2034 # the eval below reads it
+    np_feat_value=${np_feat_env#*=}
+    eval "export $np_feat_name=\"\$np_feat_value\""
+    np_env_names="$np_env_names $np_feat_name"
+    echo "=== $np_feat_key sets $np_feat_env ===" >> "$log" 2>&1 || true
+  done <<NP_FEAT_ENV
+$(np_feat_field "$np_feat_file" env)
+NP_FEAT_ENV
+done
+
+
 game_cwd="$(pwd)"
 if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
   echo "=== overlay injected from $STEAM_DYLD_INSERT_LIBRARIES ===" >> "$log" 2>&1 || true
@@ -1485,7 +1576,8 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+# shellcheck disable=SC2086 # np_env_names is a list of names and has to split
+for name in $np_env_names $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"

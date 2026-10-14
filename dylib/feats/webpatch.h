@@ -17,6 +17,10 @@ void np_webpatch_set_fallback_tool(const char *name);
 // fallback would drop are skipped, as is anything past NP_WEBPATCH_FEX_TOOLS_MAX.
 void np_webpatch_set_fex_tools(const char *const *names, size_t count);
 
+
+// Supplies the readiness object and Developer rows, for checks that must not read
+// whatever features.d an install happens to carry.
+void np_webpatch_set_features(const char *ready, const char *rows);
 // The compat UIs, named so a caller can compare against the table rather than a literal
 // of its own that a rename would leave behind. forcetool calls SpecifyCompatTool straight
 // out; selecttool reads its list from the CompatManager routes.
