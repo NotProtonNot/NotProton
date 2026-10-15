@@ -93,7 +93,8 @@ enum SupportedRunners {
     // First entry is what windows-only games get when Steam has no mapping.
     static let toolPreference = [
         legacyToolName, "notproton-fex", "notproton-fex-rosetta", "notproton-preview",
-        "notproton-fex-41069", "notproton-fex-rosetta-41069", "notproton-preview-41069", "notproton-26.3",
+        "notproton-fex-41069", "notproton-fex-rosetta-41069", "notproton-preview-41069",
+        "notproton-fex-41073", "notproton-fex-rosetta-41073", "notproton-preview-41073", "notproton-26.3",
     ]
 
     static let legacyToolName = "notproton"
@@ -235,6 +236,43 @@ enum SupportedRunners {
             tools: [
                 CompatTool(name: "notproton-fex-41069", flavor: .fex, display: "CrossOver 2026 10 06-ARM64 - FEX"),
                 CompatTool(name: "notproton-fex-rosetta-41069", flavor: .rosetta, display: "CrossOver 2026 10 06-ARM64 - Rosetta"),
+            ]
+        ),
+        RunnerBuild(
+            bundleVersion: "27.0.0.41073",
+            releaseVersion: "20261015",
+            flavor: nil,
+            loaderSHA256: "57144ccad16e75a171d48ea4b20974183e76c1cd5f5022bfc4b8917016b126b5",
+            cleanNtdll: [
+                .x86_64Windows: "f489347e59d4e8b43c2b0d2abbff9ee31e2059d45fd75fc04e2f4c0d8b04464a",
+                .i386Windows: "5249b95eea6df765257b2e5212831f511d8f66134abe3c231b8e73d8f5b4707e",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "901bff9138707d90efecc592bd9bd3062075a350add4b3a283b089c1da635a61",
+                .i386Windows: "7d3df0ee9dd61693293ba74a8d2c588b4dce26fb7f7a78c0c5ed5bdc58869e14",
+            ],
+            tools: [
+                CompatTool(name: "notproton-preview-41073", flavor: .rosetta, display: "CrossOver 2026 10 15-X86 - Rosetta"),
+            ]
+        ),
+        RunnerBuild(
+            bundleVersion: "27.0.0.41073",
+            releaseVersion: "20261015",
+            flavor: "fex",
+            loaderSHA256: "f4cedebfb30efc1e91e46ee25296abeb526fe7d814041d7cc6ca693bd4b8cb7b",
+            cleanNtdll: [
+                .x86_64Windows: "3d24426735defd222fd9518b094b738dc1c12afd13efc41a855013ed0f825129",
+                .i386Windows: "3ee764335e50709285361e2542731385f0b06e593a76aa84a3c328c278164c4f",
+                .aarch64Windows: "a6678f9d0818e1cdb325e1ce8a07a540433f544b6f756c52a6ab1cfd3f632408",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "2b47ed8c19d1d15d0f82519d39d64bf34113b285c4ada325bb64c5e587326d33",
+                .i386Windows: "3f4b0d9589c1f374e3c2fd135263f2bf3c8300e09dd010fd778936dd71e894ad",
+                .aarch64Windows: "2efb13f3303adc2c8ee61b93e027e4e94730a2e6b0162c7e6aebd4104200f07c",
+            ],
+            tools: [
+                CompatTool(name: "notproton-fex-41073", flavor: .fex, display: "CrossOver 2026 10 15-ARM64 - FEX"),
+                CompatTool(name: "notproton-fex-rosetta-41073", flavor: .rosetta, display: "CrossOver 2026 10 15-ARM64 - Rosetta"),
             ]
         ),
     ]
