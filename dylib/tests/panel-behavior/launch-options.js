@@ -222,7 +222,54 @@ for (const form of Object.keys(FORMS)) {
                 && profiles.alerts.at(-1)?.includes('Invalid profile file'),
                 'rejects unsupported imported settings');
 
-  failed += t.failed;
+     for (const [label, incoming] of [
+          ['duplicate profile names', [
+               { ...importedProfile, name: 'Duplicate' },
+               { ...importedProfile, name: ' duplicate ' },
+          ]],
+          ['a merged library larger than 50 profiles', Array.from({ length: 49 }, (_, index) => ({
+               ...importedProfile, name: `Shared ${index}`,
+          }))],
+     ]) {
+          const before = JSON.stringify([...sharedStorage]);
+          const writesBefore = profiles.written.length;
+          const confirmationsBefore = profiles.confirmations.length;
+          if (input) input.props.onChange({ target: { value: 'shared.json', files: [{
+               size: 4096,
+               content: JSON.stringify({
+                    format: 'notproton-performance-profiles', version: 1, appID: 287700,
+                    profiles: incoming,
+               }),
+          }] } });
+          t.ok(JSON.stringify([...sharedStorage]) === before,
+                     `rejects ${label} without changing saved profiles`);
+          t.ok(profiles.written.length === writesBefore,
+                     `rejects ${label} without changing launch options`);
+          t.ok(profiles.confirmations.length === confirmationsBefore
+                     && profiles.alerts.at(-1)?.includes('Invalid profile file'),
+                     `validates ${label} before asking for confirmation`);
+     }
+
+     const fillLibrary = Array.from({ length: 48 }, (_, index) => ({
+          ...importedProfile, name: `Shared ${index}`,
+     }));
+     for (const incoming of [fillLibrary, [{ ...importedProfile, name: 'BALANCED', factor: '3.0' }]]) {
+          if (input) input.props.onChange({ target: { value: 'shared.json', files: [{
+               size: 4096,
+               content: JSON.stringify({
+                    format: 'notproton-performance-profiles', version: 1, appID: 287700,
+                    profiles: incoming,
+               }),
+          }] } });
+          const stored = JSON.parse([...sharedStorage.values()][0]);
+          t.ok(stored.length === 50, 'allows imports and replacements at the 50-profile boundary');
+     }
+     const replaced = JSON.parse([...sharedStorage.values()][0])
+          .filter(profile => profile.name.toLowerCase() === 'balanced');
+     t.ok(replaced.length === 1 && replaced[0].factor === '3.0',
+                'replaces an existing name case-insensitively without adding a duplicate');
+
+     failed += t.failed;
 }
 console.log(failed ? `\n${failed} failure(s)` : '\nquoted launch options pass in both shapes');
 process.exit(failed ? 1 : 0);

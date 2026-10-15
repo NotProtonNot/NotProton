@@ -230,7 +230,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "Object.keys(x.values).some(k=>!KS.includes(k)||typeof x.values[k]!==\"string\"||!allowed[k].includes(x.values[k]))||" \
     "typeof x.factor!==\"string\"||!factors.includes(x.factor))throw Error(\"invalid profile\");" \
     "return{name:x.name.trim(),values:Object.fromEntries(KS.map(k=>[k,x.values[k]||\"\"])),factor:x.factor}})," \
-    "names=incoming.map(x=>x.name).join(\", \"),p=lp();" \
+    "keys=incoming.map(x=>x.name.toLowerCase()),p=lp();" \
+    "if(new Set(keys).size!==keys.length||new Set(p.map(x=>x.name.toLowerCase()).concat(keys)).size>50)throw Error(\"duplicate names or too many profiles\");" \
+    "const names=incoming.map(x=>x.name).join(\", \");" \
     "if(!window.confirm(\"Import \"+incoming.length+\" profile(s) for this game?\\n\\n\"+names+\"\\n\\nMatching names will be replaced.\"))return;" \
     "incoming.forEach(x=>{const i=p.findIndex(y=>y.name.toLowerCase()===x.name.toLowerCase());if(i<0)p.push(x);else p[i]=x});" \
     "localStorage.setItem(PK,JSON.stringify(p));setProfileRevision(profileRevision+1)}catch(_){window.alert(\"Invalid profile file. Choose an exported NotProton profile file for this game.\")}};" \
