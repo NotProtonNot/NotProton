@@ -185,8 +185,12 @@ static void selfcheck(void) {
             if (strcmp(S->probe, g_shapes[o].probe) == 0)
                 wrong("[%s] and [%s] share a probe", nm, g_shapes[o].name);
         }
-        for (size_t i = 0; i < S->count; i++)
+        size_t required = 0;
+        for (size_t i = 0; i < S->count; i++) {
             check_gate(nm, i, &S->gates[i], S->gates, S->count);
+            required += !S->gates[i].optional;
+        }
+        if (!required) wrong("[%s] has no required gate", nm);
         total += S->count;
     }
 
@@ -230,10 +234,16 @@ static const np_ui_shape_t *shape_of(const char *buf, size_t len) {
     return NULL;
 }
 
-static void check_output(const char *out, size_t out_len) {
+static void check_output(const char *out, size_t out_len, const int *applied) {
     const np_ui_shape_t *S = shape_of(out, out_len);
     if (!S) { wrong("the patched chunk no longer matches any known compat UI"); return; }
     for (size_t g = 0; g < S->count; g++) {
+        if (!applied[g]) {
+            if (count_matches(out, out_len, S->gates[g].replace))
+                wrong("[%s] optional gate %zu was skipped but its replacement is in the patch",
+                      S->name, g);
+            continue;
+        }
         if (count_matches(out, out_len, S->gates[g].find) != 0)
             wrong("[%s] gate %zu anchor survived the patch", S->name, g);
         if (count_matches(out, out_len, S->gates[g].replace)
@@ -306,6 +316,36 @@ static int extract(const char *chunk, const char *out_path) {
     return 0;
 }
 
+static void check_optional_drift(const np_ui_shape_t *S, size_t g, const uint8_t *buf,
+                                 size_t len, const int *applied) {
+    char *copy = malloc(len + 1);
+    if (!copy) { wrong("out of memory"); return; }
+    memcpy(copy, buf, len + 1);
+    np_cap_t caps[NP_CAP_MAX];
+    for (size_t i = 0; i < len; ) {
+        size_t used = match_at(copy, len, i, S->gates[g].find, caps);
+        if (!used) { i++; continue; }
+        copy[i + used - 1] = '\x01';
+        i += used;
+    }
+    int without[NP_GATE_MAX];
+    memcpy(without, applied, sizeof(without));
+    without[g] = 0;
+
+    int saved = np_log_level;
+    np_log_level = -1;
+    size_t out_len = 0;
+    char *out = np_webpatch_transform((const uint8_t *)copy, len, &out_len, NULL);
+    np_log_level = saved;
+    if (out) {
+        check_output(out, out_len, without);
+        free(out);
+    } else {
+        wrong("[%s] drift in optional gate %zu left the whole shape unpatched", S->name, g);
+    }
+    free(copy);
+}
+
 int main(int argc, char **argv) {
     if (argc == 4 && strcmp(argv[1], "--extract") == 0)
         return extract(argv[2], argv[3]);
@@ -323,12 +363,21 @@ int main(int argc, char **argv) {
         uint8_t *buf = slurp(argv[i], &len);
         if (!buf) { wrong("cannot read %s", argv[i]); continue; }
 
+        const np_ui_shape_t *S = shape_of((const char *)buf, len);
+        int applied[NP_GATE_MAX] = {0};
+        for (size_t g = 0; S && g < S->count; g++)
+            applied[g] = count_matches((const char *)buf, len, S->gates[g].find)
+                         == (size_t)S->gates[g].expect;
+
         size_t out_len = 0;
         char *out = np_webpatch_transform(buf, len, &out_len, NULL);
         if (out) {
-            check_output(out, out_len);
+            check_output(out, out_len, applied);
             printf("APPLIED  %s\n", argv[i]);
             free(out);
+            for (size_t g = 0; S && g < S->count; g++)
+                if (S->gates[g].optional && applied[g])
+                    check_optional_drift(S, g, buf, len, applied);
         } else {
             printf("REJECTED %s\n", argv[i]);
         }
