@@ -18,11 +18,15 @@ let package = Package(
     platforms: [.macOS("15.0")],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+        .package(url: "https://github.com/lorenzofiamingo/swiftui-cached-async-image", exact: "2.1.1")
     ],
     targets: [
         .executableTarget(
             name: "NotProtonApp",
-            dependencies: [.product(name: "Sparkle", package: "Sparkle")],
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "CachedAsyncImage", package: "swiftui-cached-async-image")
+            ],
             path: "Sources/NotProtonApp",
             resources: (hasPayload ? [.copy("Resources/payload")] : []) + [
                 .process("Resources/Localization"),
