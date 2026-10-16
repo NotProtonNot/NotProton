@@ -232,6 +232,40 @@ struct PrefixToolsTests {
             atPath: samplePrefix().root.appending(path: PrefixTools.winetricksLogName).path(percentEncoded: false)))
     }
 
+    @Test("Winetricks accepts a Visual C++ installer that finds a newer runtime already installed")
+    func winetricksAcceptsNewerVisualCpp() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "np-winetricks-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = SteamLibrary(root: dir.appending(path: "library"))
+        let prefix = WinePrefix(appID: "2075800", name: "Game", library: library, lastUsed: nil)
+        let runner = dir.appending(path: "runner")
+        let unix = runner.appending(path: "lib/wine/x86_64-unix")
+        for folder in [prefix.pfx, unix, dir.appending(path: "cache")] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        func executable(_ url: URL, _ body: String) throws {
+            try Data(body.utf8).write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path(percentEncoded: false))
+        }
+        // Wine passes on only the low byte of 1638 (ERROR_PRODUCT_VERSION).
+        try executable(unix.appending(path: "wine"), "#!/bin/sh\ncase \"$1\" in *.exe) exit 102 ;; esac\nexit 102\n")
+        let script = dir.appending(path: "cache/winetricks")
+        try executable(script, """
+            #!/bin/sh
+            "$WINE" vc_redist.x86.exe /q; echo "x86 $?"
+            "$WINE" 'C:\\redist\\VC_redist.x64.exe' /q; echo "x64 $?"
+            "$WINE" regedit.exe /S x.reg; echo "regedit $?"
+            echo "bin $WINE_BIN"
+            """)
+
+        let log = try PrefixTools.winetricks(["vcrun2022"], in: prefix, script: script, runner: runner)
+        let output = try String(contentsOf: log, encoding: .utf8)
+        #expect(output.contains("x86 236"))
+        #expect(output.contains("x64 236"))
+        #expect(output.contains("regedit 102"), "only installers have the code rewritten")
+        #expect(output.contains("bin \(unix.appending(path: "wine").path(percentEncoded: false))"))
+    }
+
     @Test("Every kind offered by the file picker is a kind that can be run")
     func pickerTypesMatchWhatRuns() {
         let extensions = PrefixTools.runnableTypes.compactMap(\.preferredFilenameExtension)
