@@ -171,17 +171,104 @@ struct UpdateBlockTests {
         #expect(try String(contentsOf: cfg, encoding: .utf8) == "Other=2\n")
     }
 
-    // A config that cannot be read is not one this changed, so removal leaves it alone.
-    @Test("A config that cannot be read is left alone")
-    func anUnreadableConfigIsUntouched() throws {
+    // Read as UTF-8, this file used to come back empty, so removing the block deleted it.
+    @Test("Removing the block keeps the bytes of a file that is not UTF-8")
+    func removalKeepsAFileThatIsNotUTF8() throws {
         let work = try scratchDirectory("cfg")
         defer { try? FileManager.default.removeItem(at: work) }
         let cfg = work.appending(path: "steam.cfg")
-        try UpdateBlock.write(to: [cfg])
-        try Data([0xFF, 0xFE, 0x00, 0x80, 0x00]).write(to: cfg)
+        let other = Data("Name=caf".utf8) + Data([0xE9, 0x0A])
+        try (Data("BootStrapperInhibitUpdateOnLaunch=enable\n".utf8) + other).write(to: cfg)
 
-        #expect(try UpdateBlock.remove(from: [cfg]).isEmpty)
-        #expect(FileManager.default.fileExists(atPath: cfg.path(percentEncoded: false)))
+        #expect(try UpdateBlock.remove(from: [cfg]) == [cfg.path(percentEncoded: false)])
+        #expect(try Data(contentsOf: cfg) == other)
+    }
+
+    @Test("Writing the block keeps the bytes of a file that is not UTF-8")
+    func writingKeepsAFileThatIsNotUTF8() throws {
+        let work = try scratchDirectory("cfg")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let cfg = work.appending(path: "steam.cfg")
+        let other = Data("Name=caf".utf8) + Data([0xE9, 0x0A])
+        try other.write(to: cfg)
+
+        try UpdateBlock.write(to: [cfg])
+
+        let block = Data("BootStrapperInhibitUpdateOnLaunch=enable\n".utf8)
+        #expect(try Data(contentsOf: cfg) == other + block)
+        #expect(UpdateBlock.isPresent(at: [cfg]))
+    }
+
+    // "\r\n" is one Character, so this file used to read as one line and removal deleted it.
+    @Test("Removing the block from a CRLF file keeps the other lines")
+    func removalKeepsTheRestOfACRLFFile() throws {
+        let work = try scratchDirectory("cfg")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let cfg = work.appending(path: "steam.cfg")
+        try Data("BootStrapperInhibitUpdateOnLaunch=enable\r\nOther=2\r\n".utf8).write(to: cfg)
+
+        #expect(UpdateBlock.isPresent(at: [cfg]))
+        #expect(try UpdateBlock.remove(from: [cfg]) == [cfg.path(percentEncoded: false)])
+        #expect(try String(contentsOf: cfg, encoding: .utf8) == "Other=2\r\n")
+    }
+
+    @Test("Writing the block into a CRLF file keeps its line endings")
+    func writingKeepsCRLFLineEndings() throws {
+        let work = try scratchDirectory("cfg")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let cfg = work.appending(path: "steam.cfg")
+        try Data("Other=2\r\n".utf8).write(to: cfg)
+
+        try UpdateBlock.write(to: [cfg])
+
+        let text = try String(contentsOf: cfg, encoding: .utf8)
+        #expect(text == "Other=2\r\nBootStrapperInhibitUpdateOnLaunch=enable\r\n")
+        #expect(UpdateBlock.isPresent(at: [cfg]))
+    }
+
+    @Test("A required copy that cannot be read is refused and left as it is")
+    func anUnreadableRequiredCopyIsRefused() throws {
+        let work = try scratchDirectory("cfg")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let cfg = work.appending(path: "steam.cfg")
+        let text = "BootStrapperInhibitUpdateOnLaunch=enable\nOther=2\n"
+        try unreadable(cfg, holding: text)
+        defer { try? readable(cfg) }
+
+        #expect(throws: WriteRefused.self) { try UpdateBlock.remove(from: [cfg]) }
+        #expect(throws: WriteRefused.self) { try UpdateBlock.write(to: [cfg]) }
+
+        try readable(cfg)
+        #expect(try String(contentsOf: cfg, encoding: .utf8) == text)
+    }
+
+    @Test("A best-effort copy that cannot be read is skipped and left as it is")
+    func anUnreadableBestEffortCopyIsSkipped() throws {
+        let work = try scratchDirectory("cfg")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let required = work.appending(path: "steam.cfg")
+        let inner = work.appending(path: "inner.cfg")
+        let text = "Other=2\n"
+        try unreadable(inner, holding: text)
+        defer { try? readable(inner) }
+
+        #expect(try UpdateBlock.write(to: [required, inner]) == [required.path(percentEncoded: false)])
+
+        try readable(inner)
+        #expect(try String(contentsOf: inner, encoding: .utf8) == text)
+    }
+
+    private func unreadable(_ url: URL, holding text: String) throws {
+        try Data(text.utf8).write(to: url)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000], ofItemAtPath: url.path(percentEncoded: false)
+        )
+    }
+
+    private func readable(_ url: URL) throws {
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: url.path(percentEncoded: false)
+        )
     }
 
     @Test("The shipped paths are the two the client actually reads")
