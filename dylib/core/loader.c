@@ -283,6 +283,7 @@ static void np_init(void) {
     // before that occurs.
     np_compat_ensure_tool_manifest();
     np_hooks_spawn_install();
+    np_hooks_activate_install();
 
     if (pthread_create(&g_install, NULL, install_thread, NULL) == 0)
         g_install_started = 1;
