@@ -251,6 +251,20 @@ enum PrefixTools {
     static let winetricksSHA256 = "431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b"
     static let winetricksLogName = "winetricks.log"
 
+    // Wine keeps only the low byte of an exit code, so a Visual C++ installer's 1638
+    // (a newer version is already installed) arrives as 102, which Winetricks treats as a failure.
+    // 236 is the code Winetricks already accepts as "newer version detected".
+    static let winetricksWine = #"""
+        #!/bin/sh
+        "$NOTPROTON_WINE" "$@"
+        status=$?
+        case "$status:${1##*[\\/]}" in
+          102:[Vv][Cc]*[Rr][Ee][Dd][Ii][Ss][Tt]*.[Ee][Xx][Ee]) exit 236 ;;
+        esac
+        exit "$status"
+
+        """#
+
     static func winetricksVerbs(_ text: String) -> [String] {
         text.split(whereSeparator: \.isWhitespace).map(String.init)
     }
@@ -289,10 +303,20 @@ enum PrefixTools {
             throw StepFailure(step: step, detail: String(localized: "\(prefix.title) is running. Quit the game first."))
         }
         let loader = try readyLoader(step: step, prefix: prefix, runner: runner, flavor: flavor)
+        let wrapper = script.deletingLastPathComponent().appending(path: "notproton-wine")
+        do {
+            try Data(winetricksWine.utf8).write(to: wrapper, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path(percentEncoded: false))
+        } catch {
+            throw StepFailure(step: step, detail: error.localizedDescription)
+        }
 
         // cabextract comes from the runner's bin, which environment() puts on PATH.
         var environment = environment(prefix: prefix, runner: runner, flavor: flavor)
-        environment["WINE"] = loader.path(percentEncoded: false)
+        environment["WINE"] = wrapper.path(percentEncoded: false)
+        environment["NOTPROTON_WINE"] = loader.path(percentEncoded: false)
+        // Winetricks reads the architecture from WINE_BIN, which would otherwise be the wrapper.
+        environment["WINE_BIN"] = loader.path(percentEncoded: false)
 
         let log = prefix.root.appending(path: winetricksLogName)
         let status = try Shell.logged(
