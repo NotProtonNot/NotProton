@@ -3751,6 +3751,9 @@
         }
       }
     },
+    "The trial version is not supported." : {
+      "shouldTranslate" : false
+    },
     "There is no ntdll to patch at %@." : {
       "localizations" : {
         "zh-Hans" : {
