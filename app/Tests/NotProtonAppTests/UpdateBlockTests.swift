@@ -171,6 +171,19 @@ struct UpdateBlockTests {
         #expect(try String(contentsOf: cfg, encoding: .utf8) == "Other=2\n")
     }
 
+    // A config that cannot be read is not one this changed, so removal leaves it alone.
+    @Test("A config that cannot be read is left alone")
+    func anUnreadableConfigIsUntouched() throws {
+        let work = try scratchDirectory("cfg")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let cfg = work.appending(path: "steam.cfg")
+        try UpdateBlock.write(to: [cfg])
+        try Data([0xFF, 0xFE, 0x00, 0x80, 0x00]).write(to: cfg)
+
+        #expect(try UpdateBlock.remove(from: [cfg]).isEmpty)
+        #expect(FileManager.default.fileExists(atPath: cfg.path(percentEncoded: false)))
+    }
+
     @Test("The shipped paths are the two the client actually reads")
     func shippedPathsAreTheClientPaths() {
         let paths = UpdateBlock.paths.map { $0.path(percentEncoded: false) }

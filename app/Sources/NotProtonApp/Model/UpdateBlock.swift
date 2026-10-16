@@ -95,9 +95,12 @@ enum UpdateBlock {
         for url in urls {
             let path = url.path(percentEncoded: false)
             guard files.fileExists(atPath: path) else { continue }
-            let text = try? String(contentsOf: url, encoding: .utf8)
-            let kept = text.map(unblocked) ?? ""
-            guard text == nil || kept != text else { continue }
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+                AppLog.note("update block: \(path) could not be read. Changes will not be made.")
+                continue
+            }
+            let kept = unblocked(text)
+            guard kept != text else { continue }
             try WriteRefused.catching(path) {
                 if kept.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     try files.removeItem(at: url)
