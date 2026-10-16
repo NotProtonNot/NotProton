@@ -239,14 +239,21 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "globalThis.navigator?.language||\"\").toLowerCase().replace(/_/g,\"-\");" \
     "return /^(zh(-hans(-[a-z0-9]+)*|-cn|-sg)?|schinese)$/.test(l)})()"
 
-#define NP_WEB_TEXT(EN, ZH) "(" NP_WEB_IS_ZH "?\"" ZH "\":\"" EN "\")"
+#define NP_WEB_IS_IT \
+    "(()=>{const l=(globalThis.document?.documentElement?.lang||" \
+    "globalThis.navigator?.language||\"\").toLowerCase().replace(/_/g,\"-\");" \
+    "return /^(it(-[a-z0-9]+)*|italian)$/.test(l)})()"
+
+#define NP_WEB_TEXT(EN, ZH, IT) \
+    "(" NP_WEB_IS_ZH "?\"" ZH "\":" NP_WEB_IS_IT "?\"" IT "\":\"" EN "\")"
 
 #define NP_COMPAT_HINT NP_WEB_TEXT( \
     "Enable CrossOver under Properties > Compatibility to install and run the Windows version.", \
-    "请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。")
+    "请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。", \
+    "Abilita CrossOver in Propriet\\u00e0 > Compatibilit\\u00e0 per installare e avviare la versione Windows.")
 
 #define NP_IMAGE_FILES_LABEL NP_WEB_TEXT( \
-    "Image Files (*.tga,*.png,*.exe)", "图像文件 (*.tga,*.png,*.exe)")
+    "Image Files (*.tga,*.png,*.exe)", "图像文件 (*.tga,*.png,*.exe)", "File immagine (*.tga,*.png,*.exe)")
 
 #define NP_CX_OPTIONS_CSS \
     "\".MSCXPanel{margin-top:10px}" \
@@ -260,7 +267,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
     "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
-    "npZh=" NP_WEB_IS_ZH ",npL=(en,zh)=>npZh?zh:en," \
+    "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,s=L.s," \
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:g(ks[0])===on," \
@@ -275,12 +282,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "fx=v=>fe.filter(e=>!fk(e)).concat(v?[F+v]:[]).join(\";\")," \
     "fv=(fe.filter(fk).pop()||\"=2\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0]," \
     "fn=Math.max(isNaN(+fv)?2:+fv,1)," \
-    "U=[{data:\"\",label:npL(\"Off\",\"关闭\")}," \
+    "U=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
     "{data:\"1.5\",label:\"1.5x\"}," \
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
-    "B=[{data:\"\",label:npL(\"Automatic\",\"自动\")}," \
+    "B=[{data:\"\",label:npL(\"Automatic\",\"自动\",\"Automatico\")}," \
     "{data:\"d3dmetal\",label:\"D3DMetal\"}," \
     "{data:\"dxmt\",label:\"DXMT\"}," \
     "{data:\"dxvk\",label:\"DXVK\"}," \
@@ -289,30 +296,30 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"MSCXPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
     "(0," RT ".jsx)(\"style\",{children:" NP_CX_OPTIONS_CSS "})," \
-    "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\"),children:[" \
+    "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",v.data]]" \
     ".concat(\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]])" \
     ".concat(\"\"===v.data||\"dxmt\"===v.data?[]:" \
     "[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]])" \
     ".concat(\"dxmt\"===v.data?[]:[[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
-    "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\"),\"1\")," \
+    "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\",\"Metal HUD\"),\"1\")," \
     "dm&&T([\"D3DM_ENABLE_METALFX\"],\"DLSS\",\"1\")," \
     "\"dxmt\"===b&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
-    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
+    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"),\"1\",\"0\")," \
     "T([\"WINEMSYNC\"],\"MSync\",\"1\",\"0\")," \
-    "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")" \
+    "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"),\"1\",\"0\")" \
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
-    "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\")," \
+    "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione impostata nel gioco)\")," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \
     "selectedOption:sw?(U.find(u=>u.data&&+u.data===fn)||{data:String(fn)}).data:\"\"," \
     "onChange:v=>s([[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
     "(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Controllers (May break Steam Input. Not recommended)\"," \
-    "\"控制器（可能导致 Steam Input 失效，不推荐）\"),children:" \
+    "\"控制器（可能导致 Steam Input 失效，不推荐）\",\"Controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),children:" \
     "T([\"NOTPROTON_RAW_CONTROLLERS\"],npL(\"Let games read controllers directly\"," \
-    "\"允许游戏直接读取控制器\"),\"1\",\"\")},\"ctl\")" \
+    "\"允许游戏直接读取控制器\",\"Lascia che i giochi leggano direttamente i controller\"),\"1\",\"\")},\"ctl\")" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \
