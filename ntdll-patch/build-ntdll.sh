@@ -42,6 +42,18 @@ FEX41069_PATCHED_X86_64=7548abd874656f6a6455e7fac659020ed755d92f4e1929a33097bbde
 FEX41069_PATCHED_I386=e16b0199db721a08201b1512476b9eff255624d2faf3696fa57ff74b1a54be5c
 FEX41069_PATCHED_AARCH64=7623c0b33350f511b431d39c7ec0c0d4f5def4183acef0eee5d4a5c694898956
 
+ROSETTA41073_CLEAN_X86_64=f489347e59d4e8b43c2b0d2abbff9ee31e2059d45fd75fc04e2f4c0d8b04464a
+ROSETTA41073_CLEAN_I386=5249b95eea6df765257b2e5212831f511d8f66134abe3c231b8e73d8f5b4707e
+ROSETTA41073_PATCHED_X86_64=901bff9138707d90efecc592bd9bd3062075a350add4b3a283b089c1da635a61
+ROSETTA41073_PATCHED_I386=7d3df0ee9dd61693293ba74a8d2c588b4dce26fb7f7a78c0c5ed5bdc58869e14
+
+FEX41073_CLEAN_X86_64=3d24426735defd222fd9518b094b738dc1c12afd13efc41a855013ed0f825129
+FEX41073_CLEAN_I386=3ee764335e50709285361e2542731385f0b06e593a76aa84a3c328c278164c4f
+FEX41073_CLEAN_AARCH64=a6678f9d0818e1cdb325e1ce8a07a540433f544b6f756c52a6ab1cfd3f632408
+FEX41073_PATCHED_X86_64=2b47ed8c19d1d15d0f82519d39d64bf34113b285c4ada325bb64c5e587326d33
+FEX41073_PATCHED_I386=3f4b0d9589c1f374e3c2fd135263f2bf3c8300e09dd010fd778936dd71e894ad
+FEX41073_PATCHED_AARCH64=2efb13f3303adc2c8ee61b93e027e4e94730a2e6b0162c7e6aebd4104200f07c
+
 install=0
 [ "${1:-}" = "--install" ] && install=1
 
@@ -59,6 +71,7 @@ flavor_of() {
         case "$(sha "$cand")" in
             "$FEX_CLEAN_AARCH64")      echo fex; return 0 ;;
             "$FEX41069_CLEAN_AARCH64") echo fex-41069; return 0 ;;
+            "$FEX41073_CLEAN_AARCH64") echo fex-41073; return 0 ;;
         esac
     done
     for cand in "$CX_ROOT/lib/wine/x86_64-windows/ntdll.dll.notproton-orig" \
@@ -67,11 +80,12 @@ flavor_of() {
         case "$(sha "$cand")" in
             "$ROSETTA_CLEAN_X86_64")      echo rosetta; return 0 ;;
             "$ROSETTA41069_CLEAN_X86_64") echo rosetta-41069; return 0 ;;
+            "$ROSETTA41073_CLEAN_X86_64") echo rosetta-41073; return 0 ;;
             "$CX26_CLEAN_X86_64")         echo cx26; return 0 ;;
         esac
     done
     die "no ntdll under $CX_ROOT/lib/wine matches a pinned build
-       pass FLAVOR=rosetta, rosetta-41069, cx26, fex or fex-41069 to choose the pins anyway"
+       pass FLAVOR=rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069 or fex-41073 to choose the pins anyway"
 }
 
 if [ -z "${FLAVOR:-}" ]; then
@@ -81,19 +95,22 @@ fi
 case "$FLAVOR" in
     rosetta)       tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.40921 ;;
     rosetta-41069) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41069 ;;
+    rosetta-41073) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41073 ;;
     cx26)          tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=26.3.0.39832 ;;
     fex)           tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc clang ld.lld"
                    BUILD=27.0.0.40921-fex ;;
     fex-41069)     tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc clang ld.lld"
                    BUILD=27.0.0.41069-fex ;;
-    *)             die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, cx26, fex or fex-41069" ;;
+    fex-41073)     tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc clang ld.lld"
+                   BUILD=27.0.0.41073-fex ;;
+    *)             die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069 or fex-41073" ;;
 esac
 
 for t in $tools; do
     command -v "$t" >/dev/null || die "$t not found (brew install mingw-w64 llvm)"
 done
 
-if [ "${FLAVOR%-41069}" = fex ] && [ ! -x "$OBJCOPY" ]; then
+if [ "${FLAVOR%%-*}" = fex ] && [ ! -x "$OBJCOPY" ]; then
     die "$OBJCOPY not found (brew install llvm)"
 fi
 
@@ -171,6 +188,22 @@ case "$FLAVOR" in
             "$FEX41069_CLEAN_I386"    "$FEX41069_PATCHED_I386"
         patch_one aarch64-windows build64.sh fex-41069 detour64-fex-41069.bin \
             "$FEX41069_CLEAN_AARCH64" "$FEX41069_PATCHED_AARCH64"
+        ;;
+    rosetta-41073)
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh   41073 detour2-41073.bin \
+            "$ROSETTA41073_CLEAN_X86_64" "$ROSETTA41073_PATCHED_X86_64"
+        patch_one i386-windows   build32.sh 41073 detour32-41073.bin \
+            "$ROSETTA41073_CLEAN_I386"   "$ROSETTA41073_PATCHED_I386"
+        ;;
+    fex-41073)
+        ARCHES="x86_64-windows i386-windows aarch64-windows"
+        patch_one x86_64-windows  build.sh   fex-41073 detour2-fex-41073.bin \
+            "$FEX41073_CLEAN_X86_64"  "$FEX41073_PATCHED_X86_64"
+        patch_one i386-windows    build32.sh fex-41073 detour32-fex-41073.bin \
+            "$FEX41073_CLEAN_I386"    "$FEX41073_PATCHED_I386"
+        patch_one aarch64-windows build64.sh fex-41073 detour64-fex-41073.bin \
+            "$FEX41073_CLEAN_AARCH64" "$FEX41073_PATCHED_AARCH64"
         ;;
 esac
 

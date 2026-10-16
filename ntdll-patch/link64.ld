@@ -1,7 +1,7 @@
 /* aarch64 ntdll.dll cave layout, link time only */
 SECTIONS {
   . = CAVE_VA;
-  .cave : {
+  .cave CAVE_VA : {
     shim64.o(.text)
     *(.text .text.*)
     . = ALIGN(8);
