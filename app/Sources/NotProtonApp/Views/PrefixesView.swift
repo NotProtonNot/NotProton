@@ -370,7 +370,7 @@ struct PrefixesView: View {
                 ForEach(rows) {row in
                     GridCell(app: row, allRows: rows, model: model)
                         .contextMenu {
-                            toolButtons(for: row.prefix )
+                            actions(for: model.selectedPrefixes.isEmpty ? [row.prefix.id] : model.selection)
                         }
                 }
             }
@@ -456,7 +456,14 @@ struct PrefixesView: View {
             VStack {
                 Group {
                     if let artURL {
-                        CachedAsyncImage(url: artURL) {phase in
+                        CachedAsyncImage(
+                            url: artURL,
+                            urlCache: URLCache(
+                                memoryCapacity: 20_000_000,
+                                diskCapacity: 200_000_000,
+                                directory: SteamArtCache.cacheDir
+                            )
+                        ) {phase in
                             if let image = phase.image {
                                 image
                                     .resizable()
@@ -514,15 +521,33 @@ struct PrefixesView: View {
             }
             .task(priority: .high) {
                 // async art fetch
-                artURL = await getArt(app.appID)
+                artURL = await SteamArtCache.shared.url(for: app.appID)
             }
         }
+    }
+}
+
+actor SteamArtCache {
+    public static let shared = SteamArtCache()
+    public static let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("SteamArt")
+    
+    public var urls: [Int: URL?] = [:] // appid:art. nil url means nothing found
+    public var inpr: [Int: Task<URL?, Never>] = [:] // currently being fetched
+    
+    init() {
+        if let data = try? Data(contentsOf: SteamArtCache.cacheDir.appendingPathComponent("Art.plist")) {
+            let dec = PropertyListDecoder()
+            urls = (try? dec.decode([Int:URL?].self, from: data)) ?? [:]
+        }
         
-        // get art from steam cdn.
-        // TODO: cache the url to better take advantage of that cachedasyncimage?
-        private func getArt(_ appId: Int) async -> URL? {
+    }
+    
+    func url(for id: Int) async -> URL? {
+        if let cached = urls[id] {return cached} // return cached path
+        if let task = inpr[id] {return await task.value} // wait for in progress run and return its value
+        let task = Task<URL?, Never> {
             let body: [String: Any] = [
-                "ids": [["appid": appId]],
+                "ids": [["appid": id]],
                 "context": ["language": "english", "country_code": "US"],
                 "data_request": ["include_assets": true],
             ]
@@ -534,8 +559,6 @@ struct PrefixesView: View {
             
             guard let (data, _) = try? await URLSession.shared.data(from: components.url!) else {return nil}
             
-            print(String(decoding: data, as: UTF8.self))
-            
             guard
                 let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let items = (json["response"] as? [String: Any])?["store_items"] as? [[String: Any]],
@@ -544,10 +567,28 @@ struct PrefixesView: View {
                 let file = (assets["library_capsule"] as? String)
                     else { return nil }
             
-            print(file)
-            
             return URL(string: "https://shared.akamai.steamstatic.com/store_item_assets/"
                        + format.replacingOccurrences(of: "${FILENAME}", with: file))
         }
+        
+        inpr[id] = task
+        let url = await task.value
+        inpr[id] = nil
+        
+        if let url {
+            urls[id] = url
+            let enc = PropertyListEncoder()
+            enc.outputFormat = .xml
+            if let data = try? enc.encode(urls) {
+                do {
+                    try data.write(to: SteamArtCache.cacheDir.appendingPathComponent("Art.plist"))
+                } catch {
+                    print("error saving: \(error)")
+                }
+            }
+        }
+        return url
     }
+    
 }
+
