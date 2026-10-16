@@ -65,6 +65,7 @@ DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib dylib-install sigcheck fonts fonts-install app-payload app app-zip \
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
+        featcheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
@@ -256,11 +257,22 @@ peicon-fixtures:
 	exit $$rc
 
 GATECHECK         := $(OUT_DIR)/gatecheck
+FEATCHECK         := $(OUT_DIR)/featcheck
 WEBPATCH_FIXTURES := dylib/tests/webpatch-fixtures
 
 $(GATECHECK): dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h
 	@mkdir -p $(dir $@)
 	$(TEST_CC) -O1 -o $@ dylib/tests/gatecheck.c
+
+$(FEATCHECK): dylib/tests/featcheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -O1 -o $@ dylib/tests/featcheck.c
+
+featcheck:
+	@if [ ! -f dylib/tests/featcheck.c ]; then \
+		$(call SKIP,featcheck,dylib/tests/featcheck.c); exit 0; fi; \
+	$(MAKE) -s $(FEATCHECK) || exit 1; \
+	$(FEATCHECK)
 
 webpatch-fixtures:
 	@if [ ! -d $(WEBPATCH_FIXTURES) ] || [ ! -f dylib/tests/gatecheck.c ]; then \
