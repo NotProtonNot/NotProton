@@ -2,6 +2,8 @@
 #include "compat.h"
 #include "../util/log.h"
 #include "../util/file.h"
+#include "../util/a64.h"
+#include "../util/ptr.h"
 
 #include <dirent.h>
 #include <pthread.h>
@@ -20,6 +22,7 @@
 #define TOOL_RUN      "/run"
 
 #define COMPAT_MANAGER_ENABLED_OFF  0x7B0
+#define COMPAT_MANAGER_USER_OFF     0x300  // CUser *
 #define COMPAT_TOOL_STRIDE          0x130
 #define COMPAT_TOOL_FLAGS_OFF       0x28  // bit 0: tool needs no downloaded app
 #define COMPAT_TOOL_FLAG_NO_APP     0x1
@@ -264,6 +267,45 @@ int np_compat_probe_enabled_off(uintptr_t bis_enabled) {
 
 uint32_t np_compat_enabled_off(void) {
     return g_enabled_off;
+}
+
+static uint32_t g_windows_only_off;
+
+int np_compat_probe_windows_only_off(uintptr_t get_wildcard_mapping, uintptr_t lookup) {
+    if (!get_wildcard_mapping || !lookup) return 0;
+
+    // The offset only exists in the code. Right before calling the lookup,
+    // GetWildcardMapping puts manager + offset in x0. An x0 built from SP is a
+    // local variable.
+    for (uintptr_t pc = get_wildcard_mapping; pc < get_wildcard_mapping + 0x100; pc += 4) {
+        uintptr_t target;
+        if (!a64_bl(pc, *(const uint32_t *)pc, &target) || target != lookup) continue;
+
+        for (int back = 1; back <= 4 && pc - 4u * back >= get_wildcard_mapping; back++) {
+            uint32_t rd, rn, imm;
+            if (a64_add_imm(*(const uint32_t *)(pc - 4u * back), &rd, &rn, &imm) &&
+                rd == 0 && rn != A64_SP) {
+                g_windows_only_off = imm;
+                NP_LOG("np_compat_probe_windows_only_off: windows-only table at 0x%x", imm);
+                return 1;
+            }
+        }
+        break;
+    }
+    NP_WARN("np_compat_probe_windows_only_off: no table argument for 0x%lx in 0x%lx",
+            (unsigned long)lookup, (unsigned long)get_wildcard_mapping);
+    return 0;
+}
+
+bool np_compat_is_windows_only_table(const void *compat_mgr, const void *map) {
+    return compat_mgr && g_windows_only_off &&
+           map == (const uint8_t *)compat_mgr + g_windows_only_off;
+}
+
+void *np_compat_user(const void *compat_mgr) {
+    if (!compat_mgr) return NULL;
+    uint64_t user = *(const uint64_t *)((const uint8_t *)compat_mgr + COMPAT_MANAGER_USER_OFF);
+    return np_plausible_ptr(user) ? (void *)(uintptr_t)user : NULL;
 }
 
 uint32_t np_compat_tool_off(uint32_t reference_off) {

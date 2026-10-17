@@ -44,6 +44,7 @@ SRCS := \
 	dylib/feats/compat.c \
 	dylib/feats/webui.c \
 	dylib/feats/compatsvc.c \
+	dylib/feats/usershortcuts.c \
 	dylib/feats/webpatch.c \
 	dylib/feats/input_access.c \
 	vendor/cJSON.c

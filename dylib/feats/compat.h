@@ -40,6 +40,13 @@ int np_compat_probe_tool_layout(uintptr_t appid_gate, uintptr_t oslist_gate);
 int np_compat_probe_enabled_off(uintptr_t bis_enabled);
 uint32_t np_compat_enabled_off(void);
 
+// Reads the windows-only table's offset out of the lookup call in GetWildcardMapping,
+// returns 0 when the call is not found.
+int  np_compat_probe_windows_only_off(uintptr_t get_wildcard_mapping, uintptr_t lookup);
+bool np_compat_is_windows_only_table(const void *compat_mgr, const void *map);
+
+void *np_compat_user(const void *compat_mgr);
+
 // Live position of a field by its reference offset. Fields ahead of the
 // insertion point come back unchanged.
 uint32_t np_compat_tool_off(uint32_t reference_off);

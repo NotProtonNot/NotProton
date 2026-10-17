@@ -4,6 +4,7 @@
 #include "../core/macho.h"
 #include "../feats/webui.h"
 #include "../feats/compat.h"
+#include "../feats/usershortcuts.h"
 #include "../util/log.h"
 #include <stdlib.h>
 #include <string.h>
@@ -133,6 +134,11 @@ int np_hooks_install_all(const struct mach_header_64 *mh, intptr_t slide,
         np_lookup_address(resolved, "CCompatManager::GetOSListOverrideForApp.oslist_gate"));
     np_compat_probe_enabled_off(
         np_lookup_address(resolved, "CCompatManager::BIsCompatibilityToolEnabled"));
+    np_compat_probe_windows_only_off(
+        np_lookup_address(resolved, "CCompatManager::GetWildcardMapping"),
+        np_lookup_address(resolved, "CCompatManager::WindowsOnlyLookup"));
+    np_usershortcuts_bind(mh, slide,
+        np_lookup_address(resolved, "CUserShortcuts::SetShortcutExe"));
 
     uintptr_t register_fn = np_lookup_address(resolved,
                                              "CWebUIJobDispatcher::RegisterHandler");

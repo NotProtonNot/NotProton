@@ -2,6 +2,7 @@
 // reaches it through a function pointer an installer sets. Including the unit rather than
 // linking points the probes at synthesised instructions and the pointers at stubs. No Steam.
 #include "../feats/compat.c"
+#include "../feats/usershortcuts.c"
 
 #include <stdio.h>
 #include <pthread.h>
@@ -25,6 +26,18 @@ const char *np_home_dir(void) {
         atomic_store(&home_ready, 1);
     }
     return "/nonexistent";
+}
+
+int np_get_section_containing(const struct mach_header_64 *mh, intptr_t slide,
+                              uintptr_t addr, uintptr_t *out_base, size_t *out_size) {
+    (void)mh; (void)slide; (void)addr; (void)out_base; (void)out_size;
+    return -1;
+}
+
+uintptr_t np_rtti_vptr(const struct mach_header_64 *mh, intptr_t slide,
+                       uintptr_t text_base, size_t text_size, const char *type_name) {
+    (void)mh; (void)slide; (void)text_base; (void)text_size; (void)type_name;
+    return 0;
 }
 
 static int failures;
@@ -446,6 +459,206 @@ static void installed_fn_cases(void) {
     check(last_priority == 0, "mapping an app to no tool at all reaches the client as nothing");
 }
 
+static const uint32_t SET_SHORTCUT_EXE[] = {
+    0xD10103FF, 0xA90157F6, 0xA9024FF4, 0xA9037BFD, 0x9100C3FD, 0xAA0303F3, 0xB940380A,
+    0x3100055F, 0x54000200, 0xAA0003F4, 0xF9402808, 0x91001109, 0x93407D4A, 0x8B0A150B,
+    0xB940116D, 0xAA0803EC, 0x6B0101BF, 0x54000068, 0xAA0903EC, 0x54000222, 0xD37BE94A,
+    0xB86A698A, 0x3100055F, 0x54FFFEA1, 0xB40000D3, 0xF90003E1, 0x900056E1, 0x912B9021,
+    0xAA1303E0, 0x94167236, 0x52800000, 0xA9437BFD, 0xA9424FF4, 0xA94157F6, 0x910103FF,
+    0xD65F03C0, 0xF9400D75, 0x910042A0, 0xAA0203E1, 0x9416718C, 0xAA1503E0, 0xAA1303E1,
+    0x9400000B, 0xB40000B3, 0xF9400268, 0xB4000068, 0x39400108, 0x35FFFDE8, 0xAA1403E0,
+    0xAA1503E1, 0x97FFFDB6, 0x52800020, 0x17FFFFEB,
+};
+#define SET_EXE_NOTIFY_BL 50
+
+static const uint32_t SHORTCUT_NOTIFY[] = {
+    0xD100C3FF, 0xA9014FF4, 0xA9027BFD, 0x910083FD, 0xAA0003F3, 0xB9400028, 0xB9000BE8,
+    0xF9403428, 0xF100011F, 0x1A9F07E8, 0x390033E8, 0xF9400414,
+};
+
+static const uint32_t GET_WILDCARD_MAPPING[] = {
+    0xD10143FF, 0xA90257F6, 0xA9034FF4, 0xA9047BFD, 0x910103FD, 0x34000541, 0xAA0103F4,
+    0xAA0003F5, 0xB90017FF, 0x910FE000, 0x910053E1, 0x97FFFF0B, 0xAA0003F3, 0xB4000180,
+    0xF9400268, 0xB9401108, 0x7103E91F, 0x5400010B, 0xF90003F4, 0xF0008E20, 0x912A6000,
+    0x900077E1, 0x91024C21, 0x97E8D865, 0x14000023, 0xB9001FF4, 0x39006FFF, 0x911A62A0,
+    0x910073E1, 0x91006FE2, 0x97FF0A8C, 0x340003C0,
+};
+#define WILDCARD_LOOKUP_BL 30
+
+#define NOTIFY_AT 64
+
+static uintptr_t bl_dest(const uint32_t *at) {
+    uintptr_t target = 0;
+    a64_bl((uintptr_t)at, *at, &target);
+    return target;
+}
+
+static void shortcut_probe_cases(void) {
+    static uint32_t code[NOTIFY_AT + 16];
+    memcpy(code, SET_SHORTCUT_EXE, sizeof(SET_SHORTCUT_EXE));
+    memcpy(code + NOTIFY_AT, SHORTCUT_NOTIFY, sizeof(SHORTCUT_NOTIFY));
+    code[SET_EXE_NOTIFY_BL] = 0x94000000u | (uint32_t)(NOTIFY_AT - SET_EXE_NOTIFY_BL);
+
+    check(probe_layout((uintptr_t)code, (uintptr_t)code, sizeof(code)) == 1,
+          "SetShortcutExe gives up the table layout");
+    check(g_layout.root == 0x38 && g_layout.nodes == 0x50 && g_layout.stride == 32,
+          "the tree root, node array and stride come from the walk");
+    check(g_layout.key == 0x10 && g_layout.value == 0x18,
+          "a node keys on the appid and points at the shortcut");
+    check(g_layout.exe == 0x10 && g_layout.remote == 0x68,
+          "the exe string and the remote id come from the setter and its notify");
+
+    layout_t kept = g_layout;
+    code[SET_EXE_NOTIFY_BL] = 0xD503201Fu;
+    check(probe_layout((uintptr_t)code, (uintptr_t)code, sizeof(code)) == 0,
+          "a setter that never notifies is refused");
+    check(memcmp(&g_layout, &kept, sizeof(kept)) == 0, "a refused walk keeps the last layout");
+    check(probe_layout(0, 0, 0) == 0, "an unresolved setter is refused");
+    code[SET_EXE_NOTIFY_BL] = 0x94000000u | (uint32_t)(NOTIFY_AT - SET_EXE_NOTIFY_BL);
+    check(probe_layout((uintptr_t)code, (uintptr_t)code, NOTIFY_AT * 4) == 0,
+          "a notify outside the text section is refused");
+
+    const uint32_t *call = &GET_WILDCARD_MAPPING[WILDCARD_LOOKUP_BL];
+    check(np_compat_probe_windows_only_off((uintptr_t)GET_WILDCARD_MAPPING,
+                                           bl_dest(call)) == 1,
+          "the lookup call in GetWildcardMapping gives up its table");
+    check(g_windows_only_off == 0x698, "the table is the call's first argument");
+
+    g_windows_only_off = 0;
+    check(np_compat_probe_windows_only_off((uintptr_t)GET_WILDCARD_MAPPING,
+                                           bl_dest(call) + 4) == 0,
+          "a lookup GetWildcardMapping never calls is refused");
+    check(g_windows_only_off == 0, "a refused probe leaves no table");
+}
+
+#define TEST_USER_SIZE       0x10000
+#define TEST_SHORTCUTS_OFF   0x5CC8
+#define TEST_GATE_OFF        0x698
+#define TEST_MANAGER_SIZE    0x800
+
+typedef struct {
+    uint8_t *mgr;
+    uint8_t *user;
+    uint8_t  nodes[3][32];
+    uint8_t *shortcut[3];
+} shortcut_world_t;
+
+static const uint32_t world_appid[3] = { 0x80000002u, 0x80000001u, 0x80000003u };
+
+static void put_node(shortcut_world_t *w, int i, int32_t left, int32_t right) {
+    memcpy(w->nodes[i] + NODE_LEFT_OFF, &left, sizeof(left));
+    memcpy(w->nodes[i] + NODE_RIGHT_OFF, &right, sizeof(right));
+    memcpy(w->nodes[i] + 0x10, &world_appid[i], sizeof(uint32_t));
+    memcpy(w->nodes[i] + 0x18, &w->shortcut[i], sizeof(uint8_t *));
+}
+
+static void set_exe(shortcut_world_t *w, int i, const char *exe) {
+    memcpy(w->shortcut[i] + 0x10, &exe, sizeof(exe));
+}
+
+static void build_world(shortcut_world_t *w) {
+    w->mgr  = calloc(1, TEST_MANAGER_SIZE);
+    w->user = calloc(1, TEST_USER_SIZE);
+    memcpy(w->mgr + COMPAT_MANAGER_USER_OFF, &w->user, sizeof(w->user));
+
+    uint8_t *shortcuts = w->user + TEST_SHORTCUTS_OFF;
+    memcpy(shortcuts, &g_vptr, sizeof(g_vptr));
+    int32_t root = 0;
+    memcpy(shortcuts + 0x38, &root, sizeof(root));
+    uint8_t *nodes = &w->nodes[0][0];
+    memcpy(shortcuts + 0x50, &nodes, sizeof(nodes));
+
+    for (int i = 0; i < 3; i++) w->shortcut[i] = calloc(1, 0x80);
+    put_node(w, 0, 1, 2);
+    put_node(w, 1, NODE_NONE, NODE_NONE);
+    put_node(w, 2, NODE_NONE, NODE_NONE);
+}
+
+static void free_world(shortcut_world_t *w) {
+    for (int i = 0; i < 3; i++) free(w->shortcut[i]);
+    free(w->user);
+    free(w->mgr);
+}
+
+static void shortcut_exe_cases(void) {
+    static const char vptr_target = 0;
+    g_vptr = (uintptr_t)&vptr_target;
+    atomic_store(&g_shortcuts_off, 0);
+    atomic_store(&g_scan_missed, 0);
+
+    shortcut_world_t w = {0};
+    build_world(&w);
+
+    set_exe(&w, 0, "\"C:\\Games\\Game.EXE\"");
+    set_exe(&w, 1, "/Applications/Game/run.exe");
+    set_exe(&w, 2, "\"/Applications/Game.app\"");
+
+    check(np_usershortcuts_runs_exe(w.user, world_appid[0]), "a quoted browsed exe takes the default");
+    check(atomic_load(&g_shortcuts_off) == TEST_SHORTCUTS_OFF,
+          "the table is found inside CUser by its vptr");
+    check(np_usershortcuts_runs_exe(w.user, world_appid[1]), "a typed unquoted exe takes the default");
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[2]), "a Mac app is left alone");
+    check(!np_usershortcuts_runs_exe(w.user, 0x80000004u), "an appid with no shortcut is left alone");
+    check(!np_usershortcuts_runs_exe(w.user, 0x00000002u), "a Steam appid is never a shortcut");
+    check(!np_usershortcuts_runs_exe(NULL, world_appid[0]), "no user answers no");
+
+    set_exe(&w, 2, "C:\\Games\\setup.Exe");
+    check(np_usershortcuts_runs_exe(w.user, world_appid[2]), "the extension matches in any case");
+    set_exe(&w, 2, "C:\\Games\\launch.exe.bat");
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[2]), "only the last extension counts");
+    set_exe(&w, 2, "C:\\Games.exe\\launcher");
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[2]), "a dot in a folder name is no extension");
+    set_exe(&w, 2, "");
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[2]), "an empty exe is left alone");
+    set_exe(&w, 2, NULL);
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[2]), "a shortcut with no exe is left alone");
+    set_exe(&w, 2, (const char *)(uintptr_t)0x10);
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[2]), "an exe pointer below 4 GB is not read");
+    set_exe(&w, 2, &"C:\\Games\\setup.exe"[1]);
+    check(np_usershortcuts_runs_exe(w.user, world_appid[2]), "an unaligned exe string is still read");
+
+    put_node(&w, 2, NODE_NONE, 0);
+    check(!np_usershortcuts_runs_exe(w.user, 0x80000004u), "a looping tree stops at the depth cap");
+    put_node(&w, 2, NODE_NONE, -2);
+    check(!np_usershortcuts_runs_exe(w.user, 0x80000004u), "a corrupt node index stops the walk");
+    put_node(&w, 2, NODE_NONE, NODE_NONE);
+
+    uint64_t remote = 0x1234;
+    memcpy(w.shortcut[1] + 0x68, &remote, sizeof(remote));
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[1]), "a remote client's shortcut is left alone");
+    remote = 0;
+    memcpy(w.shortcut[1] + 0x68, &remote, sizeof(remote));
+
+    check(np_compat_user(w.mgr) == w.user, "the manager hands over its CUser");
+    g_windows_only_off = TEST_GATE_OFF;
+    check(np_compat_is_windows_only_table(w.mgr, w.mgr + TEST_GATE_OFF),
+          "the probed table is the windows-only one");
+    check(!np_compat_is_windows_only_table(w.mgr, w.mgr + TEST_GATE_OFF - 0x60),
+          "any other table is not");
+    check(!np_compat_is_windows_only_table(NULL, w.mgr + TEST_GATE_OFF),
+          "no manager has no table");
+    g_windows_only_off = 0;
+    check(!np_compat_is_windows_only_table(w.mgr, w.mgr),
+          "without a probed table nothing matches");
+
+    memset(w.user + TEST_SHORTCUTS_OFF, 0, sizeof(uintptr_t));
+    atomic_store(&g_shortcuts_off, 0);
+    check(!np_usershortcuts_runs_exe(w.user, world_appid[0]), "a CUser with no table answers no");
+    check(atomic_load(&g_scan_missed) == (uintptr_t)w.user, "the failed search is remembered");
+
+    uint8_t *other = calloc(1, TEST_USER_SIZE);
+    memcpy(other + TEST_SHORTCUTS_OFF, w.user + TEST_SHORTCUTS_OFF, 0x60);
+    memcpy(other + TEST_SHORTCUTS_OFF, &g_vptr, sizeof(g_vptr));
+    check(np_usershortcuts_runs_exe(other, world_appid[0]), "a new CUser is searched again");
+
+    int32_t empty = NODE_NONE;
+    memcpy(other + TEST_SHORTCUTS_OFF + 0x38, &empty, sizeof(empty));
+    check(!np_usershortcuts_runs_exe(other, world_appid[0]), "an empty tree has no shortcuts");
+    free(other);
+
+    free_world(&w);
+}
+
 int main(void) {
     concurrent_fallback_cases();
     probe_cases();
@@ -456,6 +669,8 @@ int main(void) {
     tool_launch_cases();
     stale_tool_cases();
     installed_fn_cases();
+    shortcut_probe_cases();
+    shortcut_exe_cases();
 
     if (failures) {
         printf("==> compat: %d check(s) failed\n", failures);

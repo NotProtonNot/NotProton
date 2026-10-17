@@ -159,6 +159,7 @@ static const struct { uint64_t build; const char *type_name; uintptr_t vptr; } e
     {1790904859, "40CCompatManager_SpecifyCompatTool_Request",     0x16ad2b0},
     {1790904859, "41CCompatManager_SpecifyCompatTool_Response",    0x16ad360},
     {1790904859, "40CCompatManager_StateChanged_Notification",     0x16ad410},
+    {1790904859, "14CUserShortcuts",                              0x1793de0},
 };
 
 static int run_rtti(const struct mach_header_64 *mh, intptr_t slide,

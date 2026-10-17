@@ -166,6 +166,25 @@
       }
     },
     {
+      "name": "CCompatManager::WindowsOnlyLookup",
+      "aob_hex": "",
+      "anchor": {
+        "kind": "call_target",
+        "value": "GetWildcardMapping: Invalid unAppID k_nAppIdAll",
+        "call_path": [
+          3
+        ]
+      }
+    },
+    {
+      "name": "CUserShortcuts::SetShortcutExe",
+      "aob_hex": "FF 03 01 D1 F6 57 01 A9 F4 4F 02 A9 FD 7B 03 A9 FD C3 00 91 F3 03 03 AA 0A 38 40 B9 5F 05 00 31 ?? ?? ?? ?? F4 03 00 AA 08 28 40 F9 09 11 00 91 4A 7D 40 93 0B 15 0A 8B 6D 11 40 B9 EC 03 08 AA BF 01 01 6B ?? ?? ?? ?? EC 03 09 AA ?? ?? ?? ?? 4A E9 7B D3 8A 69 6A B8 5F 05 00 31 ?? ?? ?? ?? ?? ?? ?? ?? E1 03 00 F9",
+      "anchor": {
+        "kind": "string",
+        "value": "shortcut not found for app id %u"
+      }
+    },
+    {
       "name": "LaunchBuilder::SteamVRSupportCheck",
       "aob_hex": "F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F3 03 01 AA 08 00 40 F9 08 29 40 F9 00 01 3F D6",
       "anchor": {
