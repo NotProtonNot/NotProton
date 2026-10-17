@@ -116,6 +116,7 @@ jobs:
           make -s peicon-fixtures
           make -s panel-behavior
           make -s spawn-env
+          make -s activatecheck
           make -s compatcheck
           make -s compatsvc-check
           make -s shortcutcheck

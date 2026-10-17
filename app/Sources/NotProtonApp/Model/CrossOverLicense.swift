@@ -25,7 +25,8 @@ enum CrossOverLicense {
     private static let licenseBase = "com.codeweavers.CrossOver"
 
     static let notActivatedTitle = String(localized: "CrossOver does not appear to be activated.")
-    static let notActivatedAdvice = String(localized: "Please run CrossOver and try again.")
+    static let trialUnsupported = String(localized: "The trial version is not supported.")
+    static let notActivatedAdvice = "\(String(localized: "Please run CrossOver and try again.")) \(trialUnsupported)"
     static var notActivated: String { "\(notActivatedTitle) \(notActivatedAdvice)" }
 
     static let defaultOpenssl = "/usr/bin/openssl"

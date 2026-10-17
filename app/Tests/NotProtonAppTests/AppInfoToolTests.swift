@@ -96,6 +96,65 @@ struct AppInfoToolTests {
         return Data(file.bytes)
     }
 
+    private static func platformEntry(
+        _ appID: UInt32, _ oslist: String?, common: Bool = true, table: [String]? = nil
+    ) -> [UInt8] {
+        var kv = Cache()
+        func key(_ name: String) {
+            if let table { kv.u32(UInt32(table.firstIndex(of: name)!)) }
+            else { kv.cstring(name) }
+        }
+        kv.bytes.append(0x00)
+        key("appinfo")
+        if common {
+            kv.bytes.append(0x00)
+            key("common")
+            kv.bytes.append(0x01)
+            key("name")
+            kv.cstring("App \(appID)")
+            if let oslist {
+                kv.bytes.append(0x01)
+                key("oslist")
+                kv.cstring(oslist)
+            }
+            kv.bytes.append(0x08)
+        }
+        kv.bytes.append(contentsOf: [0x08, 0x08])
+        return entry(appID: appID, keyData: kv.bytes)
+    }
+
+    private static func platforms(
+        ended: Bool = true, firstSize: UInt32? = nil, stringTable: Bool = false
+    ) -> Data {
+        let table = stringTable ? ["appinfo", "common", "name", "oslist"] : nil
+        var entries = Cache()
+        var first = platformEntry(10, "windows,macos", table: table)
+        if let firstSize {
+            var size = Cache()
+            size.u32(firstSize)
+            first.replaceSubrange(4..<8, with: size.bytes)
+        }
+        entries.bytes.append(contentsOf: first)
+        entries.bytes.append(contentsOf: platformEntry(20, "windows", table: table))
+        entries.bytes.append(contentsOf: platformEntry(30, nil, table: table))
+        entries.bytes.append(contentsOf: platformEntry(40, "linux", table: table))
+        entries.bytes.append(contentsOf: platformEntry(50, "macos", table: table))
+        entries.bytes.append(contentsOf: platformEntry(60, nil, common: false, table: table))
+        if ended { entries.u32(0) }
+        var file = Cache()
+        file.u32(stringTable ? 0x0756_4429 : 0x0756_4428)
+        file.u32(1)
+        if let table {
+            file.u64(UInt64(16 + entries.bytes.count))
+            file.bytes.append(contentsOf: entries.bytes)
+            file.u32(UInt32(table.count))
+            for key in table { file.cstring(key) }
+        } else {
+            file.bytes.append(contentsOf: entries.bytes)
+        }
+        return Data(file.bytes)
+    }
+
     private func read(_ cache: Data, _ appID: String) throws -> CommandResult {
         let tool = try InstallPayload.locate().appinfo
         let path = URL.temporaryDirectory.appending(path: "np-appinfo-\(UUID().uuidString).vdf")
@@ -147,6 +206,43 @@ struct AppInfoToolTests {
 
         #expect(result.status != 0)
         #expect(result.stdout.isEmpty, "a caller reading key=value lines must get none")
+    }
+
+    @Test("--platforms lists Mac games, and Windows games including those with no oslist or a Mac build too",
+          arguments: [false, true])
+    func listsPlatforms(stringTable: Bool) throws {
+        let result = try read(Self.platforms(stringTable: stringTable), "--platforms")
+
+        #expect(result.status == 0)
+        #expect(result.stdout == "mac=10,50\nwindows=10,20,30\n")
+    }
+
+    @Test("--platforms on a cache that stops early prints nothing and fails", arguments: [false, true])
+    func refusesTruncatedPlatforms(stringTable: Bool) throws {
+        let result = try read(Self.platforms(ended: false, stringTable: stringTable), "--platforms")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty, "a half list would hide the rest of the library")
+    }
+
+    @Test("--platforms rejects invalid entry sizes", arguments: [UInt32(1), 59, UInt32.max], [false, true])
+    func refusesInvalidPlatformEntrySize(_ size: UInt32, stringTable: Bool) throws {
+        let result = try read(Self.platforms(firstSize: size, stringTable: stringTable), "--platforms")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test("An app cannot borrow its section terminator from outside its entry")
+    func refusesKeysOutsideEntry() throws {
+        var cache = Self.v28(appID: 2100)
+        var size = Cache()
+        size.u32(UInt32(cache.count - 8 - 8 - 4 - 1))
+        cache.replaceSubrange(12..<16, with: size.bytes)
+        let result = try read(cache, "2100")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty)
     }
 
     @Test("A cache that is not a cache fails instead of printing garbage")

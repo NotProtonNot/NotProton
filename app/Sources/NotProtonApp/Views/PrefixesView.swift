@@ -210,7 +210,7 @@ struct PrefixesView: View {
 
     private var gameWidth: CGFloat {
         let widths = model.prefixes.map { prefix -> CGFloat in
-            var width = TextWidth.of(prefix.title)
+            var width = min(TextWidth.of(prefix.title), TextWidth.maxTitle)
             if model.isStale(prefix) { width += 22 }
             if prefix.name == nil {
                 width += TextWidth.of(String(localized: "No longer installed"), size: NSFont.smallSystemFontSize) + 6
@@ -267,11 +267,12 @@ struct PrefixesView: View {
                         .disabled(model.isBusy || model.tools.isEmpty)
                         .accessibilityLabel("Needs rebuilding")
                     }
-                    Text(prefix.title).help(prefix.title)
+                    Text(prefix.title).lineLimit(1).help(prefix.title)
                     if prefix.name == nil {
                         Text("No longer installed")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                     if model.busy.contains(prefix.id) {
                         ProgressView().controlSize(.small)

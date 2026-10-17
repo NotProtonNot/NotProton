@@ -98,7 +98,11 @@ enum PrefixStore {
     }
 
     // Every appid under compatdata that actually has a prefix.
-    static func all(libraries: [SteamLibrary] = PrefixStore.libraries()) -> [WinePrefix] {
+    static func all(
+        libraries: [SteamLibrary] = PrefixStore.libraries(),
+        userdata: URL = SupportPaths.Steam.userData.appending(path: "userdata")
+    ) -> [WinePrefix] {
+        var shortcuts: [String: String]?
         var found: [WinePrefix] = []
         for library in libraries {
             let entries = (try? FileManager.default.contentsOfDirectory(
@@ -115,10 +119,16 @@ enum PrefixStore {
                     isDirectory.boolValue
                 else { continue }
 
+                var name = appName(appID: appID, in: library)
+                if name == nil, let id = UInt32(appID), id & 0x8000_0000 != 0 {
+                    if shortcuts == nil { shortcuts = shortcutNames(userdata: userdata) }
+                    name = shortcuts?[appID]
+                }
+
                 found.append(
                     WinePrefix(
                         appID: appID,
-                        name: appName(appID: appID, in: library),
+                        name: name,
                         library: library,
                         lastUsed: (try? pfx.resourceValues(forKeys: [.contentModificationDateKey]))?
                             .contentModificationDate
@@ -134,6 +144,74 @@ enum PrefixStore {
 
     static func appName(appID: String, in library: SteamLibrary) -> String? {
         manifestValue("name", appID: appID, in: library)
+    }
+
+    static func shortcutNames(userdata: URL) -> [String: String] {
+        let accounts = (try? FileManager.default.contentsOfDirectory(
+            at: userdata, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        )) ?? []
+        var names: [String: String] = [:]
+        for account in accounts.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let vdf = account.appending(path: "config/shortcuts.vdf")
+            guard let data = try? Data(contentsOf: vdf) else { continue }
+            names.merge(shortcutNames(vdf: data)) { first, _ in first }
+        }
+        return names
+    }
+
+    static func shortcutNames(vdf data: Data) -> [String: String] {
+        let bytes = [UInt8](data)
+        var names: [String: String] = [:]
+        var offset = 0
+
+        func cString() -> String? {
+            guard let end = bytes[offset...].firstIndex(of: 0) else { return nil }
+            defer { offset = end + 1 }
+            return String(decoding: bytes[offset..<end], as: UTF8.self)
+        }
+
+        func skip(_ count: Int) -> Bool {
+            guard bytes.count - offset >= count else { return false }
+            offset += count
+            return true
+        }
+
+        // Binary KeyValues: type byte, key, value; 0x08 closes a map.
+        func map(depth: Int) -> Bool {
+            guard depth < 16 else { return false }
+            var appID: UInt32?
+            var appName: String?
+            while offset < bytes.count {
+                let type = bytes[offset]
+                offset += 1
+                if type == 0x08 { break }
+                guard let key = cString()?.lowercased() else { return false }
+                switch type {
+                case 0x00:
+                    guard map(depth: depth + 1) else { return false }
+                case 0x01:
+                    guard let value = cString() else { return false }
+                    if key == "appname" { appName = value }
+                case 0x02:
+                    guard bytes.count - offset >= 4 else { return false }
+                    if key == "appid" {
+                        appID = bytes[offset..<offset + 4].reversed().reduce(0) { $0 << 8 | UInt32($1) }
+                    }
+                    offset += 4
+                case 0x03, 0x04, 0x06:
+                    guard skip(4) else { return false }
+                case 0x07, 0x0a:
+                    guard skip(8) else { return false }
+                default:
+                    return false
+                }
+            }
+            if let appID, let appName, !appName.isEmpty { names[String(appID)] = appName }
+            return true
+        }
+
+        _ = map(depth: 0)
+        return names
     }
 
     static func installDirectory(of prefix: WinePrefix) -> URL? {

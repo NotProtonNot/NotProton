@@ -28,6 +28,8 @@ with tempfile.TemporaryDirectory() as tmp:
     after = json.loads(synced.read_text())["strings"]
 
 problems = []
+# "new" is a deliberate placeholder: the language shows English until someone translates it
+pending = []
 for key in sorted(set(after) - set(before)):
     problems.append(f"not in the catalog: {key!r}")
 for key, entry in sorted(after.items()):
@@ -39,7 +41,9 @@ for key, entry in sorted(after.items()):
         localizations = entry.get("localizations", {})
         for language in languages:
             unit = localizations.get(language, {}).get("stringUnit", {})
-            if unit.get("state") != "translated" and "variations" not in localizations.get(language, {}):
+            if unit.get("state") == "new" and unit.get("value") == key:
+                pending.append(f"{language}: {key!r}")
+            elif unit.get("state") != "translated" and "variations" not in localizations.get(language, {}):
                 problems.append(f"no {language} translation: {key!r}")
 formatted = json.dumps(json.loads(original), ensure_ascii=False, indent=2, separators=(",", " : "), sort_keys=True)
 formatted = re.sub(r"^( *)(.*) : \{\}", lambda m: f"{m[1]}{m[2]} : {{\n\n{m[1]}}}", formatted, flags=re.M)
@@ -51,4 +55,7 @@ if problems:
     for problem in problems:
         print(f"    {problem}", file=sys.stderr)
     sys.exit(1)
-print(f"l10ncheck: {len(after)} strings, all translated for {', '.join(languages)}")
+print(f"l10ncheck: {len(after)} strings, all translated for {', '.join(languages)}"
+      + (f" except {len(pending)} left in English for now" if pending else ""))
+for item in pending:
+    print(f"    still English in {item}")

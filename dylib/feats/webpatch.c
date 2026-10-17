@@ -1,5 +1,6 @@
 // Enables Steam Play in the UI/enables the Compatibility tab in game properties
 #include "webpatch.h"
+#include "nativeplatform.h"
 #include "../util/log.h"
 
 #include <stdlib.h>
@@ -34,7 +35,10 @@ typedef struct {
     const char *find;
     const char *replace;
     int         expect;   // exact occurrence count, else abort
+    int         optional; // skipped in the event that it doesn't match the current Steam client
 } np_gate_t;
+
+#define NP_GATE_MAX 32
 
 typedef struct { const char *at; size_t len; } np_cap_t;
 
@@ -88,6 +92,8 @@ static const char *marker_text(char c) {
 
 static size_t match_at(const char *src, size_t len, size_t pos,
                        const char *find, np_cap_t *caps) {
+    if (cap_index((unsigned char)find[0]) < 0 && !marker_text(find[0]) && src[pos] != find[0])
+        return 0;
     for (int i = 0; i < NP_CAP_MAX; i++) { caps[i].at = NULL; caps[i].len = 0; }
 
     if (cap_index((unsigned char)find[0]) >= 0 && pos &&
@@ -126,10 +132,27 @@ static size_t match_at(const char *src, size_t len, size_t pos,
     return s - pos;
 }
 
+static void mark_start(unsigned char *can_start, const char *find) {
+    if (marker_text(find[0])) {
+        memset(can_start, 1, 256);
+    } else if (cap_index((unsigned char)find[0]) >= 0) {
+        for (int c = 0; c < 256; c++)
+            if (is_ident_char((unsigned char)c) && !(c >= '0' && c <= '9')) can_start[c] = 1;
+    } else {
+        can_start[(unsigned char)find[0]] = 1;
+    }
+}
+
 static size_t count_matches(const char *src, size_t len, const char *find) {
     np_cap_t caps[NP_CAP_MAX];
-    size_t n = 0;
+    size_t n = 0, lit = 0;
+    while (find[lit] && cap_index((unsigned char)find[lit]) < 0 && !marker_text(find[lit])) lit++;
     for (size_t i = 0; i < len; ) {
+        if (lit) {
+            const char *at = memmem(src + i, len - i, find, lit);
+            if (!at) break;
+            i = (size_t)(at - src);
+        }
         size_t used = match_at(src, len, i, find, caps);
         if (used) { n++; i += used; } else i++;
     }
@@ -225,20 +248,42 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "||k===\"CX_GRAPHICS_BACKEND\"&&L.g(k)===\"d3dmetal\");" \
     "ks.length&&L.s(ks.map(k=>[k,\"\"]))}"
 
+#define NP_CX_TOOL_QUERY \
+    "(r,id)=>[r[0],v=>{r[1](v);const d=r[0].data;if(!id||!d)return;" \
+    "const n=v||d.default_tool_identifier||\"" NP_FALLBACK_TOOL "\",a=(d.aliases||[]).find(x=>x.alias===n)," \
+    "t=globalThis.appDetailsStore?.GetAppDetails(id);t&&MSCXPick(t,a?a.current_tool_name:n)}]"
+
 // CrossOver options panel. Not in great shape, but it'll do
 #define NP_WEB_IS_ZH \
     "(()=>{const l=(globalThis.document?.documentElement?.lang||" \
     "globalThis.navigator?.language||\"\").toLowerCase().replace(/_/g,\"-\");" \
     "return /^(zh(-hans(-[a-z0-9]+)*|-cn|-sg)?|schinese)$/.test(l)})()"
 
-#define NP_WEB_TEXT(EN, ZH) "(" NP_WEB_IS_ZH "?\"" ZH "\":\"" EN "\")"
+#define NP_WEB_IS_IT \
+    "(()=>{const l=(globalThis.document?.documentElement?.lang||" \
+    "globalThis.navigator?.language||\"\").toLowerCase().replace(/_/g,\"-\");" \
+    "return /^(it(-[a-z0-9]+)*|italian)$/.test(l)})()"
+
+#define NP_WEB_TEXT(EN, ZH, IT) \
+    "(" NP_WEB_IS_ZH "?\"" ZH "\":" NP_WEB_IS_IT "?\"" IT "\":\"" EN "\")"
 
 #define NP_COMPAT_HINT NP_WEB_TEXT( \
     "Enable CrossOver under Properties > Compatibility to install and run the Windows version.", \
-    "请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。")
+    "请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。", \
+    "Abilita CrossOver in Propriet\\u00e0 > Compatibilit\\u00e0 per installare e avviare la versione Windows.")
 
 #define NP_IMAGE_FILES_LABEL NP_WEB_TEXT( \
-    "Image Files (*.tga,*.png,*.exe)", "图像文件 (*.tga,*.png,*.exe)")
+    "Image Files (*.tga,*.png,*.exe)", "图像文件 (*.tga,*.png,*.exe)", "File immagine (*.tga,*.png,*.exe)")
+
+#define NP_LIBRARY_WINDOWS_HINT NP_WEB_TEXT( \
+    "Show only games that run on Windows and do not have a macOS version", \
+    "Show only games that run on Windows and do not have a macOS version", \
+    "Show only games that run on Windows and do not have a macOS version")
+
+#define NP_LIBRARY_WINDOWS_SUMMARY NP_WEB_TEXT( \
+    "Runs on Windows, no Mac OS version", \
+    "Runs on Windows, no Mac OS version", \
+    "Runs on Windows, no Mac OS version")
 
 #define NP_CX_OPTIONS_CSS \
     "\".MSCXPanel{margin-top:10px}" \
@@ -252,7 +297,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
     "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
-    "npZh=" NP_WEB_IS_ZH ",npL=(en,zh)=>npZh?zh:en," \
+    "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,s=L.s," \
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:g(ks[0])===on," \
@@ -267,12 +312,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "fx=v=>fe.filter(e=>!fk(e)).concat(v?[F+v]:[]).join(\";\")," \
     "fv=(fe.filter(fk).pop()||\"=2\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0]," \
     "fn=Math.max(isNaN(+fv)?2:+fv,1)," \
-    "U=[{data:\"\",label:npL(\"Off\",\"关闭\")}," \
+    "U=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
     "{data:\"1.5\",label:\"1.5x\"}," \
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
-    "B=[{data:\"\",label:npL(\"Automatic\",\"自动\")}," \
+    "B=[{data:\"\",label:npL(\"Automatic\",\"自动\",\"Automatico\")}," \
     "{data:\"d3dmetal\",label:\"D3DMetal\"}," \
     "{data:\"dxmt\",label:\"DXMT\"}," \
     "{data:\"dxvk\",label:\"DXVK\"}," \
@@ -281,30 +326,30 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"MSCXPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
     "(0," RT ".jsx)(\"style\",{children:" NP_CX_OPTIONS_CSS "})," \
-    "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\"),children:[" \
+    "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",v.data]]" \
     ".concat(\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]])" \
     ".concat(\"\"===v.data||\"dxmt\"===v.data?[]:" \
     "[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]])" \
     ".concat(\"dxmt\"===v.data?[]:[[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
-    "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\"),\"1\")," \
+    "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\",\"Metal HUD\"),\"1\")," \
     "dm&&T([\"D3DM_ENABLE_METALFX\"],\"DLSS\",\"1\")," \
     "\"dxmt\"===b&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
-    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
+    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"),\"1\",\"0\")," \
     "T([\"WINEMSYNC\"],\"MSync\",\"1\",\"0\")," \
-    "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")" \
+    "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"),\"1\",\"0\")" \
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
-    "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\")," \
+    "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione impostata nel gioco)\")," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \
     "selectedOption:sw?(U.find(u=>u.data&&+u.data===fn)||{data:String(fn)}).data:\"\"," \
     "onChange:v=>s([[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
     "(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Controllers (May break Steam Input. Not recommended)\"," \
-    "\"控制器（可能导致 Steam Input 失效，不推荐）\"),children:" \
+    "\"控制器（可能导致 Steam Input 失效，不推荐）\",\"Controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),children:" \
     "T([\"NOTPROTON_RAW_CONTROLLERS\"],npL(\"Let games read controllers directly\"," \
-    "\"允许游戏直接读取控制器\"),\"1\",\"\")},\"ctl\")" \
+    "\"允许游戏直接读取控制器\",\"Lascia che i giochi leggano direttamente i controller\"),\"1\",\"\")},\"ctl\")" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \
@@ -317,6 +362,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
 #define NP_CX_OPTIONS_STATEMENT \
     "var MSCXLaunch=" NP_CX_LAUNCH ";" \
+    "var MSCXPick=" NP_CX_PICK ";" \
+    "var MSCXToolQuery=" NP_CX_TOOL_QUERY ";" \
     "var MSCXOpts=" NP_CX_OPTIONS_CAPTURE(NP_C3, NP_C4) ";"
 
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
@@ -351,13 +398,13 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 static const np_gate_t g_gates_forcetool[] = {
     // SteamPlay settings section
     { "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".CI)()?",
-      "function " NP_C1 "(" NP_C2 "){return true?", 1 },
+      "function " NP_C1 "(" NP_C2 "){return true?", 1, 0 },
     // AppProperties Compatibility tab (app and non-Steam-shortcut variants)
     { "(0," NP_C1 ".CI)()&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")",
-      "true&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")", 2 },
+      "true&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")", 2, 0 },
     // Settings page Compatibility entry, keeping the SteamOS exclusion (!rf())
     { "Compatibility:{visible:" NP_C1 "&&(0," NP_C2 ".CI)()&&!(0," NP_C2 ".rf)()",
-      "Compatibility:{visible:" NP_C1 "&&true&&!(0," NP_C2 ".rf)()", 1 },
+      "Compatibility:{visible:" NP_C1 "&&true&&!(0," NP_C2 ".rf)()", 1, 0 },
     { "return(0," NP_C1 ".jsxs)(" NP_C1 ".Fragment,{children:[0!=" NP_C2 ".length&&(0," NP_C1 ".jsx)(" NP_C3 ",{label:(0," NP_C4 ".we)"
       "(\"#AppProperties_CompatilibityForceTool\"),checked:" NP_C5 ",onChange:" NP_C6 ",disabled:!" NP_C7 "||0===" NP_C2 ".length}),"
       NP_C5 "&&" NP_C2 ".length>0&&(0," NP_C1 ".jsx)(" NP_C8 ".m,{strClassName:" NP_C9 "().TopGap,rgOptions:" NP_C10 ","
@@ -367,7 +414,7 @@ static const np_gate_t g_gates_forcetool[] = {
       "(\"#AppProperties_CompatilibityForceTool\"),checked:" NP_C5 ",onChange:" NP_C6 ",disabled:!" NP_C7 "||0===" NP_C2 ".length}),"
       NP_C5 "&&" NP_C2 ".length>0&&(0," NP_C1 ".jsx)(" NP_C8 ".m,{strClassName:" NP_C9 "().TopGap+\" MSCXNoBottomGap\",rgOptions:" NP_C10 ","
       "selectedOption:" NP_C11 ".strCompatToolName,onChange:" NP_C12 "=>{SteamClient.Apps.SpecifyCompatTool"
-      "(" NP_C11 ".unAppID," NP_C12 ".data);MSCXPick(" NP_C11 "," NP_C12 ".data)}})]})", 1 },
+      "(" NP_C11 ".unAppID," NP_C12 ".data);MSCXPick(" NP_C11 "," NP_C12 ".data)}})]})", 1, 0 },
     // Compatibility page container
     { NP_C1 "=(0," NP_C2 ".PA)(" NP_C3 "=>(0," NP_C4 ".jsxs)(" NP_C5
       ".nB,{children:[(0," NP_C4 ".jsx)(\"div\",{className:" NP_C6
@@ -379,16 +426,16 @@ static const np_gate_t g_gates_forcetool[] = {
       ".nB,{children:[(0," NP_C4 ".jsx)(\"div\",{className:" NP_C6
       "().HiddenIfNotLast,children:(0," NP_C7 ".we)(\"#AppProperties_CompatibilityNoOptions\")}),"
       "(0," NP_C4 ".jsx)(" NP_C8 ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(" NP_C9
-      ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(MSCXOpts,{..." NP_C3 "})]}));", 1 },
+      ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(MSCXOpts,{..." NP_C3 "})]}));", 1, 0 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
-      "get is_invalid_os_type(){return false}", 1 },
+      "get is_invalid_os_type(){return false}", 1, 0 },
     // Reminder banner for 32 bit Mac games
     { NP_C1 ".is_invalid_os_type&&(0," NP_C2 ".jsx)(" NP_C3 ",{})",
       "!" NP_C1 ".local_per_client_data?.installed&&"
       NP_C1 ".most_available_per_client_data?.is_invalid_os_type&&"
-      "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1 },
+      "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1, 0 },
     { "(0," NP_C1 ".we)(\"#GameList_Entry_Invalid_OSType2\")",
-      NP_COMPAT_HINT, 1 },
+      NP_COMPAT_HINT, 1, 0 },
 };
 
 // Support for new compatibility tab UI in the Steam beta
@@ -397,10 +444,10 @@ static const np_gate_t g_gates_selecttool[] = {
     { "(0," NP_C1 ".CI)()&&" NP_C2 ".push({title:(0," NP_C3 ".we)"
       "(\"#AppProperties_CompatibilityPage\")",
       "true&&" NP_C2 ".push({title:(0," NP_C3 ".we)"
-      "(\"#AppProperties_CompatibilityPage\")", 2 },
+      "(\"#AppProperties_CompatibilityPage\")", 2, 0 },
     // Settings page Compatibility entry.
     { "Compatibility:{visible:" NP_C1 "&&(0," NP_C2 ".CI)(),title:",
-      "Compatibility:{visible:" NP_C1 "&&true,title:", 1 },
+      "Compatibility:{visible:" NP_C1 "&&true,title:", 1, 0 },
     { "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".jsxs)(" NP_C4 ".XY,{label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_SteamPlay\"),children:[(0," NP_C3 ".jsx)(" NP_C6 ",{details:" NP_C2 ".details}),"
       "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
@@ -411,24 +458,42 @@ static const np_gate_t g_gates_selecttool[] = {
       "(\"#Settings_SteamPlay_SteamPlay\"),children:[(0," NP_C3 ".jsx)(" NP_C6 ",{details:" NP_C2 ".details}),"
       "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_ShowAll\"),feature:" NP_C8 ".OK})]}),"
-      "(0," NP_C3 ".jsx)(MSCXOpts,{details:" NP_C2 ".details})]})}", 1 },
+      "(0," NP_C3 ".jsx)(MSCXOpts,{details:" NP_C2 ".details})]})}", 1, 0 },
+    // Compatibility Tool selector, wrapped to drop settings a FEX tool cannot use
+    { "[" NP_C1 "," NP_C2 "]=(0," NP_C3 ".cT)(" NP_C4 ");if(" NP_C1 ".isLoading||!" NP_C1
+      ".data?.tools?.length)return null;",
+      "[" NP_C1 "," NP_C2 "]=(typeof MSCXToolQuery==\"function\"?MSCXToolQuery:r=>r)"
+      "((0," NP_C3 ".cT)(" NP_C4 ")," NP_C4 ");if(" NP_C1
+      ".isLoading||!" NP_C1 ".data?.tools?.length)return null;", 1, 1 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
-      "get is_invalid_os_type(){return false}", 1 },
+      "get is_invalid_os_type(){return false}", 1, 0 },
     // Reminder banner for 32 bit Mac games
     { NP_C1 ".is_invalid_os_type&&(0," NP_C2 ".jsx)(" NP_C3 ",{})",
       "!" NP_C1 ".local_per_client_data?.installed&&"
       NP_C1 ".most_available_per_client_data?.is_invalid_os_type&&"
-      "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1 },
+      "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1, 0 },
     { "(0," NP_C1 ".we)(\"#GameList_Entry_Invalid_OSType2\")",
-      NP_COMPAT_HINT, 1 },
+      NP_COMPAT_HINT, 1, 0 },
 };
+
+#define NP_PLATFORM_LISTS "window.__NOTPROTON_NATIVE_PLATFORM__"
+#define NP_MAC_64(APP) \
+    "(" NP_PLATFORM_LISTS ".mac.has(" APP ".appid)&&!" APP ".most_available_per_client_data?.is_invalid_os_type)"
+#define NP_MAC_CHECK(OS, APP) \
+    "(0," OS ".Pr)()&&" NP_PLATFORM_LISTS ".mac.has(" APP ".appid)?!" APP \
+    ".most_available_per_client_data?.is_invalid_os_type:(0," OS ".Pr)()&&" \
+    NP_PLATFORM_LISTS ".windows.has(" APP ".appid)?!1:(0," OS ".Pr)()?" \
+    APP ".is_available_on_current_platform&&!" APP ".most_available_per_client_data?.is_invalid_os_type:"
+#define NP_WINDOWS_ONLY_CASE(OS, APP) \
+    "case\"notprotonWindows\":return(0," OS ".Pr)()&&" NP_PLATFORM_LISTS ".windows.has(" APP ".appid)&&!" \
+    NP_MAC_64(APP) ";"
 
 static const np_gate_t g_fixes[] = {
     { "(\"#AddNonSteam_Filter_Exe_MacOS\"),rFilePatterns:[\"*.app\"]",
-      "(\"#AddNonSteam_Filter_Exe_MacOS\"),rFilePatterns:[\"*.app\",\"*.exe\"]", 1 },
+      "(\"#AddNonSteam_Filter_Exe_MacOS\"),rFilePatterns:[\"*.app\",\"*.exe\"]", 1, 0 },
     { "{strFileTypeName:\"Image Files (*.tga,*.png)\",rFilePatterns:[\"*.tga\",\"*.png\"]}",
       "{strFileTypeName:" NP_IMAGE_FILES_LABEL ","
-      "rFilePatterns:[\"*.tga\",\"*.png\",\"*.exe\"]}", 1 },
+      "rFilePatterns:[\"*.tga\",\"*.png\",\"*.exe\"]}", 1, 0 },
     // Makes Steam's default compatibility tool setting work
     { "r=(0,s.q3)(()=>u.rV.settings.bCompatEnabled),a=function(e,t){const[r,i]=n.useState([]);"
       "return n.useEffect(()=>{SteamClient.Apps.GetAvailableCompatTools(e).then(i)},[e,t]),r}"
@@ -438,7 +503,7 @@ static const np_gate_t g_fixes[] = {
       "return n.useEffect(()=>{SteamClient.Apps.GetAvailableCompatTools(e).then(i)},[e,t]),r}"
       "(t.unAppID,r),o=r&&!!t.strCompatToolName&&t.nCompatToolPriority==h.JN,"
       "l=a.length?(a.find(e=>e.strToolName===u.rV.settings.strCompatTool)||a[0]).strToolName:\"\"",
-      1 },
+      1, 0 },
     // Shows the default tool picker before a default has been saved
     { "return " NP_C1 "?(0," NP_C2 ".jsx)(" NP_C3 ".B,{feature:" NP_C4 ".OK,label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_DefaultTool\"),rgOptions:" NP_C6 ",disabled:0==" NP_C6 ".length,"
@@ -447,11 +512,80 @@ static const np_gate_t g_fixes[] = {
       NP_C3 ".B,{feature:" NP_C4 ".OK,label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_DefaultTool\"),rgOptions:" NP_C6 ",disabled:0==" NP_C6 ".length,"
       "selectedOption:" NP_C1 "||\"" NP_FALLBACK_TOOL "\",",
-      1 },
+      1, 0 },
     { "this.m_bServicesInitialized=!0,SteamClient.UI.NotifyAppInitialized()",
-      "this.m_bServicesInitialized=!0," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1 },
+      "this.m_bServicesInitialized=!0," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1, 0 },
+    // Pr means macOS, td means Windows.
+    // Steam Play makes every game count as available, so the Apple filter goes by oslist.
+    // Games missing from appinfo.vdf, and other platforms, keep Steam's check.
+    // NotProton forces is_invalid_os_type to false, so 32-bit Mac games are found through the per-client copy.
+    { "case " NP_C1 "." NP_C2 ":return!!(0," NP_C3 ".td)()||" NP_C4
+      ".is_available_on_current_platform&&!" NP_C4 ".is_invalid_os_type;",
+      NP_WINDOWS_ONLY_CASE(NP_C3, NP_C4) "case " NP_C1 "." NP_C2 ":return " NP_MAC_CHECK(NP_C3, NP_C4)
+      "!!(0," NP_C3 ".td)()||" NP_C4 ".is_available_on_current_platform&&!" NP_C4 ".is_invalid_os_type;", 1, 0 },
+    { "case " NP_C1 "." NP_C2 ":return(0," NP_C3 ".CI)()&&!(0," NP_C3 ".mP)()?"
+      NP_C4 "(" NP_C5 "):(0," NP_C3 ".td)()?!0:" NP_C5
+      ".is_available_on_current_platform&&!" NP_C5 ".is_invalid_os_type;",
+      NP_WINDOWS_ONLY_CASE(NP_C3, NP_C5) "case " NP_C1 "." NP_C2 ":return " NP_MAC_CHECK(NP_C3, NP_C5)
+      "(0," NP_C3 ".CI)()&&!(0," NP_C3 ".mP)()?" NP_C4 "(" NP_C5 "):(0,"
+      NP_C3 ".td)()?!0:" NP_C5 ".is_available_on_current_platform&&!" NP_C5 ".is_invalid_os_type;", 1, 0 },
 };
 #define NP_FIX_COUNT (sizeof(g_fixes) / sizeof(g_fixes[0]))
+
+#define NP_NATIVE_MAC_FILTER_FIX (NP_FIX_COUNT - 2)
+#define NP_UPDATED_NATIVE_MAC_FILTER_FIX (NP_FIX_COUNT - 1)
+
+static const np_gate_t g_library_filters[] = {
+    // Library list and search
+    { "if(!" NP_C1 "(" NP_C2 "[" NP_C3 ".W6]," NP_C4 "(" NP_C5 "))||!" NP_C1 "(" NP_C2 "[" NP_C3 ".sc],",
+      "if(!(this.m_filterSpec.notprotonWindows?((npGroup,npCheck)=>{"
+      "const npApple=npGroup.rgOptions.includes(" NP_C3 ".Pu);return " NP_C1 "({...npGroup,"
+      "rgOptions:[...npGroup.rgOptions.filter(npOption=>npOption!==" NP_C3 ".Pu),\"notprotonWindows\"]},"
+      "npOption=>npOption===\"notprotonWindows\"?npCheck(npOption)||npApple&&npCheck(" NP_C3 ".Pu):npCheck(npOption))"
+      "})(" NP_C2 "[" NP_C3 ".W6]," NP_C4 "(" NP_C5 ")):" NP_C1 "(" NP_C2 "[" NP_C3 ".W6]," NP_C4 "(" NP_C5 ")))||!"
+      NP_C1 "(" NP_C2 "[" NP_C3 ".sc],", 2, 0 },
+    // Saved library filter
+    { ",strSearchText:" NP_C1 "&&" NP_C1 ".strSearchText||\"\",filterGroups:",
+      ",strSearchText:" NP_C1 "&&" NP_C1 ".strSearchText||\"\","
+      "notprotonWindows:!!" NP_C1 "?.notprotonWindows,filterGroups:", 1, 0 },
+    { "SelectOption(" NP_C1 "," NP_C2 "," NP_C3 "){let " NP_C4 "=this.m_filterSpec.filterGroups[" NP_C1 "].rgOptions;",
+      "SelectOption(" NP_C1 "," NP_C2 "," NP_C3 "){if(" NP_C1 "===\"notprotonWindows\"){"
+      "this.m_filterSpec.notprotonWindows=!!" NP_C3 ";return}let " NP_C4 "=this.m_filterSpec.filterGroups[" NP_C1 "].rgOptions;", 1, 0 },
+    { "Reset(){this.m_filterSpec.strSearchText=\"\",",
+      "Reset(){this.m_filterSpec.notprotonWindows=!1,this.m_filterSpec.strSearchText=\"\",", 1, 0 },
+    { "get bIsEmpty(){return this.searchText.length==0&&",
+      "get bIsEmpty(){return!this.m_filterSpec.notprotonWindows&&this.searchText.length==0&&", 1, 0 },
+    { "let " NP_C1 "=this.GetSelectedOptions(" NP_C2 ".W6);" NP_C1 ".length>0&&" NP_C3 ".push(" NP_C1 ".map("
+      NP_C4 "=>{if(" NP_C4 "==" NP_C2 ".Pu){",
+      "let " NP_C1 "=this.GetSelectedOptions(" NP_C2 ".W6);this.m_filterSpec.notprotonWindows&&(" NP_C1 "=[..."
+      NP_C1 ",\"notprotonWindows\"]);" NP_C1 ".length>0&&" NP_C3 ".push(" NP_C1 ".map(" NP_C4 "=>{if(" NP_C4
+      "===\"notprotonWindows\")return " NP_LIBRARY_WINDOWS_SUMMARY ";if(" NP_C4 "==" NP_C2 ".Pu){", 1, 0 },
+    // Library toolbar
+    { "," NP_C1 "=" NP_C2 ".n6.currentAppFilter.BIsSelected(" NP_C3 ".W6," NP_C3 ".Pu);return(0,"
+      NP_C4 ".jsxs)(\"div\",{className:" NP_C5 "().Bar,",
+      "," NP_C1 "=" NP_C2 ".n6.currentAppFilter.BIsSelected(" NP_C3 ".W6," NP_C3 ".Pu),npStore=" NP_C2 ".n6,"
+      "npWindows=!!" NP_C2 ".n6.currentAppFilter.m_filterSpec.notprotonWindows;return(0,"
+      NP_C4 ".jsxs)(\"div\",{className:" NP_C5 "().Bar,", 1, 0 },
+    { "children:[" NP_C1 "&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,toolTipContent:" NP_C4
+      "?\"#GameList_View_Platform_Linux\":\"#GameList_View_Platform_Apple\",className:(0," NP_C5 ".A)("
+      NP_C6 "().CheckboxWithImage," NP_C7 "&&" NP_C6 "().Disabled," NP_C8 "&&" NP_C6 "().Active),onClick:()=>"
+      NP_C7 "||" NP_C9 "(" NP_C10 ".W6," NP_C10 ".Pu,!" NP_C8 "),children:[" NP_C4 "&&(0," NP_C2 ".jsx)("
+      NP_C11 ".Wy0,{}),!" NP_C4 "&&(0," NP_C2 ".jsx)(" NP_C11 ".kPc,{})]})",
+      "children:["
+      NP_C1 "&&!" NP_C4 "&&" NP_C11 ".Xz0&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,"
+      "toolTipContent:" NP_LIBRARY_WINDOWS_HINT ",className:(0," NP_C5 ".A)(" NP_C6 "().CheckboxWithImage,"
+      NP_C7 "&&" NP_C6 "().Disabled,npWindows&&" NP_C6 "().Active),onClick:()=>" NP_C7
+      "||npStore.SelectCollectionsAppFilterOption(\"notprotonWindows\",null,!npWindows),"
+      "children:[(0," NP_C2 ".jsx)(\"style\",{children:\".\"+" NP_C6 "().CheckboxWithImage+"
+      "\" .SVGIcon_WindowsLogo{width:13px;height:13px}.\"+" NP_C6 "().CheckboxWithImage+"
+      "\" .SVGIcon_WindowsLogo rect{fill:inherit}\"}),(0," NP_C2 ".jsx)(" NP_C11 ".Xz0,{})]}),"
+      NP_C1 "&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,toolTipContent:" NP_C4
+      "?\"#GameList_View_Platform_Linux\":\"#GameList_View_Platform_Apple\",className:(0," NP_C5 ".A)("
+      NP_C6 "().CheckboxWithImage," NP_C7 "&&" NP_C6 "().Disabled," NP_C8 "&&" NP_C6 "().Active),onClick:()=>"
+      NP_C7 "||" NP_C9 "(" NP_C10 ".W6," NP_C10 ".Pu,!" NP_C8 "),children:[" NP_C4 "&&(0," NP_C2 ".jsx)("
+      NP_C11 ".Wy0,{}),!" NP_C4 "&&(0," NP_C2 ".jsx)(" NP_C11 ".kPc,{})]})", 1, 0 },
+};
+#define NP_LIBRARY_FILTER_COUNT (sizeof(g_library_filters) / sizeof(g_library_filters[0]))
 
 typedef struct {
     const char     *name;
@@ -467,6 +601,8 @@ static const np_ui_shape_t g_shapes[] = {
       g_gates_selecttool, sizeof(g_gates_selecttool) / sizeof(g_gates_selecttool[0]) },
 };
 #define NP_SHAPE_COUNT (sizeof(g_shapes) / sizeof(g_shapes[0]))
+_Static_assert(sizeof(g_gates_forcetool) / sizeof(np_gate_t) <= NP_GATE_MAX, "gate table too long");
+_Static_assert(sizeof(g_gates_selecttool) / sizeof(np_gate_t) <= NP_GATE_MAX, "gate table too long");
 
 static int has_suffix(const char *s, const char *suf) {
     size_t ls = strlen(s), lf = strlen(suf);
@@ -516,18 +652,36 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
     }
     int    fix_on[NP_FIX_COUNT];
     size_t fix_live = 0;
+    char *native_mac_js = NULL;
     for (size_t f = 0; f < NP_FIX_COUNT; f++) {
         size_t n = count_matches(s, src_len, g_fixes[f].find);
         fix_on[f] = n == (size_t)g_fixes[f].expect;
+        if ((f == NP_NATIVE_MAC_FILTER_FIX || f == NP_UPDATED_NATIVE_MAC_FILTER_FIX) && fix_on[f]) {
+            free(native_mac_js);
+            native_mac_js = np_nativeplatform_javascript();
+        }
         if (fix_on[f]) { fix_live++; continue; }
         if (n)
             NP_WARN("webpatch: fix %zu expected %d occurrence(s), found %zu; "
                     "leaving it alone", f, g_fixes[f].expect, n);
     }
+    if (!native_mac_js && (fix_on[NP_NATIVE_MAC_FILTER_FIX] || fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX])) {
+        NP_WARN("webpatch: no platform list from appinfo.vdf, the Apple filter stays stock");
+        fix_live -= fix_on[NP_NATIVE_MAC_FILTER_FIX] + fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX];
+        fix_on[NP_NATIVE_MAC_FILTER_FIX] = fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX] = 0;
+    }
+    int library_filter = fix_on[NP_NATIVE_MAC_FILTER_FIX] || fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX];
+    for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++)
+        library_filter = count_matches(s, src_len, g_library_filters[g].find) ==
+                         (size_t)g_library_filters[g].expect;
 
-    if (!shape && !fix_live)
+    if (!shape && !fix_live) {
+        free(native_mac_js);
         return NULL;   // Not the part carrying the compat UI.
+    }
 
+    int    gate_on[NP_GATE_MAX] = {0};
+    size_t gate_live = 0;
     if (shape) {
         if (out_shape)
             *out_shape = shape->name;
@@ -535,7 +689,12 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         int drifted = 0;
         for (size_t g = 0; g < shape->count; g++) {
             size_t n = count_matches(s, src_len, shape->gates[g].find);
-            if (n != (size_t)shape->gates[g].expect) {
+            gate_on[g] = n == (size_t)shape->gates[g].expect;
+            if (gate_on[g]) { gate_live++; continue; }
+            if (shape->gates[g].optional) {
+                NP_WARN("webpatch: [%s] optional gate %zu expected %d occurrence(s), "
+                        "found %zu; skipping it", shape->name, g, shape->gates[g].expect, n);
+            } else {
                 NP_WARN("webpatch: [%s] gate %zu expected %d occurrence(s), found %zu",
                         shape->name, g, shape->gates[g].expect, n);
                 drifted = 1;
@@ -544,16 +703,37 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         if (drifted) {
             NP_ERR("webpatch: [%s] compat UI left unpatched, a Steam update moved the "
                    "anchors", shape->name);
+            free(native_mac_js);
             return NULL;
         }
     }
 
     np_out_t out = {0};
     np_cap_t caps[NP_CAP_MAX];
+    if (native_mac_js && !out_put(&out, native_mac_js, strlen(native_mac_js))) {
+        free(native_mac_js);
+        return NULL;
+    }
+    free(native_mac_js);
+    unsigned char can_start[256] = {0};
+    for (size_t g = 0; shape && g < shape->count; g++)
+        if (gate_on[g]) mark_start(can_start, shape->gates[g].find);
+    for (size_t f = 0; f < NP_FIX_COUNT; f++)
+        if (fix_on[f]) mark_start(can_start, g_fixes[f].find);
+    for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++)
+        mark_start(can_start, g_library_filters[g].find);
     for (size_t i = 0; i < src_len; ) {
+        size_t plain = i;
+        while (plain < src_len && !can_start[(unsigned char)s[plain]]) plain++;
+        if (plain > i) {
+            if (!out_put(&out, s + i, plain - i)) { free(out.buf); return NULL; }
+            i = plain;
+            continue;
+        }
         const np_gate_t *hit = NULL;
         size_t used = 0;
         for (size_t g = 0; shape && g < shape->count; g++) {
+            if (!gate_on[g]) continue;
             used = match_at(s, src_len, i, shape->gates[g].find, caps);
             if (used) { hit = &shape->gates[g]; break; }
         }
@@ -561,6 +741,10 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
             if (!fix_on[f]) continue;
             used = match_at(s, src_len, i, g_fixes[f].find, caps);
             if (used) { hit = &g_fixes[f]; break; }
+        }
+        for (size_t g = 0; !hit && library_filter && g < NP_LIBRARY_FILTER_COUNT; g++) {
+            used = match_at(s, src_len, i, g_library_filters[g].find, caps);
+            if (used) { hit = &g_library_filters[g]; break; }
         }
         int ok = hit ? out_expand(&out, hit->replace, caps)
                      : out_put(&out, s + i, 1);
@@ -571,7 +755,8 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
     if (!out_reserve(&out, 0)) { free(out.buf); return NULL; }
     out.buf[out.len] = '\0';
     *out_len = out.len;
+    if (library_filter) NP_LOG("webpatch: Windows library filter button added");
     NP_LOG("webpatch: [%s] %zu gates, %zu fixes applied",
-           shape ? shape->name : "no compat UI", shape ? shape->count : 0, fix_live);
+           shape ? shape->name : "no compat UI", gate_live, fix_live);
     return out.buf;
 }

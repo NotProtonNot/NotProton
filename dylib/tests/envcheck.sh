@@ -35,6 +35,31 @@ is "user value first" "winhttp=n,b;steamclient=n;steamclient64=n;lsteamclient=b"
 WINEDLLOVERRIDES="lsteamclient=n"
 eval "$overrides_line"
 is "trio outranks user" "lsteamclient=n;steamclient=n;steamclient64=n;lsteamclient=b" "$WINEDLLOVERRIDES"
+vc_overrides="vcruntime140_1=n,b;"
+WINEDLLOVERRIDES="vcruntime140_1=b"
+eval "$overrides_line"
+is "user outranks the native runtime" \
+  "vcruntime140_1=n,b;vcruntime140_1=b;steamclient=n;steamclient64=n;lsteamclient=b" "$WINEDLLOVERRIDES"
+vc_overrides=""
+
+echo "== Microsoft's Visual C++ runtime loads when it is installed =="
+vc_fn=$(sed -n '/^native_vc_runtime() {/,/^}/p' "$SRC")
+[ -n "$vc_fn" ] || { echo "FAIL: native_vc_runtime not found"; exit 1; }
+eval "$vc_fn"
+vc_work=$(mktemp -d)
+WINEPREFIX="$vc_work/pfx"
+sys32="$WINEPREFIX/drive_c/windows/system32"
+mkdir -p "$sys32"
+pe() { printf 'MZ%062d%s' 0 "$2" > "$sys32/$1.dll"; }
+is "empty prefix overrides nothing" "" "$(native_vc_runtime)"
+pe vcruntime140 "Wine builtin DLL"
+pe msvcp140_2 "Wine builtin DLL"
+is "Wine's own copies are left alone" "" "$(native_vc_runtime)"
+pe msvcp140_2 "This program cannot be run in DOS mode."
+pe vcruntime140_1 "This program cannot be run in DOS mode."
+: > "$sys32/msvcp140.dll"
+is "Microsoft's copies load first" "msvcp140=n,b;msvcp140_2=n,b;vcruntime140_1=n,b;" "$(native_vc_runtime)"
+rm -rf "$vc_work"
 
 echo "== Apple GPTK initialization and launcher environment =="
 work=$(mktemp -d)

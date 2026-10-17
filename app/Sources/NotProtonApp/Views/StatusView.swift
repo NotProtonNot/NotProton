@@ -599,7 +599,7 @@ struct StatusView: View {
             let names = tools.filter { $0.build == row.buildID }.map(\.display)
             lines.append(contentsOf: names)
         }
-        if row.copy == .none, row.licensed == false { lines.append(String(localized: "Open CrossOver to activate it.")) }
+        if row.copy == .none, row.licensed == false { lines.append("\(String(localized: "Open CrossOver to activate it.")) \(CrossOverLicense.trialUnsupported)") }
         if let install = row.install {
             var path = install.bundle.path(percentEncoded: false)
             if path.count > 1, path.hasSuffix("/") { path.removeLast() }

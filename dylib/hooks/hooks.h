@@ -73,4 +73,6 @@ void np_hooks_launch_install(const struct mach_header_64 *mh, intptr_t slide);
 // can spawn anything, so this one does not wait for steamclient the way the rest do.
 void np_hooks_spawn_install(void);
 
+void np_hooks_activate_install(void);
+
 #endif // NOTPROTON_HOOKS_HOOKS_H

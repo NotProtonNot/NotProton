@@ -87,6 +87,19 @@ is "a helper is not, or the shim reports it to Steam as a running app" \
 	unset "$(gameid run)"
 is "and neither is runinprefix" unset "$(gameid runinprefix)"
 
+appid() {
+	env -u SteamAppId -u SteamGameId verb=waitforexitandrun STEAM_COMPAT_APP_ID=0 \
+		SteamAppId="$1" SteamGameId="$2" log=/dev/null ids="$ids" \
+		sh -ec 'eval "$ids"; echo "${SteamAppId-unset} $SteamGameId"'
+}
+is "a shortcut does not pass its ID off as a Steam app" \
+	"unset 11332531184899981312" "$(appid 2638560530 11332531184899981312)"
+is "the largest shortcut ID is still a shortcut" \
+	"unset 18446744069448138752" "$(appid 4294967295 18446744069448138752)"
+is "a Steam app keeps its app ID" "1222670 1222670" "$(appid 1222670 1222670)"
+is "a mod is not a shortcut" "1222670 11332531184884426766" "$(appid 1222670 11332531184884426766)"
+is "a game ID that is not a number is left alone" "7 bogus" "$(appid 7 bogus)"
+
 if [ "$fails" -eq 0 ]; then
 	echo "==> routecheck: all assertions hold"
 else

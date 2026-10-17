@@ -2,6 +2,7 @@
 #include "hooks.h"
 #include "../feats/compat.h"
 #include "../feats/compatsvc.h"
+#include "../feats/usershortcuts.h"
 #include "../util/ptr.h"
 #include "../util/log.h"
 #include <stdint.h>
@@ -87,6 +88,30 @@ static void *hook_FindToolForTargetApp(void *self, uint32_t appid) {
         NP_DBG("hook_FindToolForTargetApp: appID %u is windows-only, defaulting to CrossOver tool",
                appid);
     return crossover;
+}
+
+static void *orig_WindowsOnlyLookup = NULL;
+// Returns a bool, but the whole register is passed through in case this resolves
+// to the wrong function.
+typedef uint64_t (*fn_WindowsOnlyLookup)(const void *map, const uint32_t *appid,
+                                         const uint8_t *fallback);
+
+static uint64_t hook_WindowsOnlyLookup(const void *map, const uint32_t *appid,
+                                       const uint8_t *fallback) {
+    fn_WindowsOnlyLookup orig = (fn_WindowsOnlyLookup)orig_WindowsOnlyLookup;
+    if (!orig) {
+        static const char once = 0;
+        if (np_log_first_hit(&once, 0))
+            NP_ERR("hook_WindowsOnlyLookup: no original, reporting every key missing");
+        return fallback ? *fallback : 0;
+    }
+    uint64_t found = orig(map, appid, fallback);
+    if ((uint32_t)found || !appid)
+        return found;
+    void *mgr = np_compat_manager();
+    if (!np_compat_is_windows_only_table(mgr, map))
+        return found;
+    return np_usershortcuts_runs_exe(np_compat_user(mgr), *appid);
 }
 
 static void *orig_InternalSpecifyCompatTool = NULL;
@@ -202,6 +227,12 @@ static np_patch_entry_t g_hooks[] = {
         .signature = "CCompatManager::FindToolForTargetApp",
         .entry    = (void *)hook_FindToolForTargetApp,
         .trampoline = &orig_FindToolForTargetApp,
+    },
+    {
+        .label    = "CCompatManager::WindowsOnlyLookup",
+        .signature = "CCompatManager::WindowsOnlyLookup",
+        .entry    = (void *)hook_WindowsOnlyLookup,
+        .trampoline = &orig_WindowsOnlyLookup,
     },
     {
         .label    = "CCompatManager::InternalSpecifyCompatTool",

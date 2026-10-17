@@ -679,19 +679,18 @@ struct PrefixesModelTests {
         #expect(model.busy.isEmpty)
     }
 
-    // What a live wineserver looks like: a socket directory named after the prefix's
-    // device and inode, with something holding a file open inside it for lsof to find.
+    // The prefix lock keeps this test out of Wine's real socket directory.
     private func hold(_ prefix: WinePrefix) throws -> () -> Void {
-        let dir = try #require(PrefixStore.serverDirectory(of: prefix))
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let socket = dir.appending(path: "socket")
-        try Data().write(to: socket)
-
-        let handle = try FileHandle(forReadingFrom: socket)
-        return {
-            try? handle.close()
-            try? FileManager.default.removeItem(at: dir)
+        let lock = prefix.root.appending(path: ".notproton-prefix.lock")
+        let fd = open(lock.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        try #require(fd >= 0)
+        do {
+            try #require(flock(fd, LOCK_EX | LOCK_NB) == 0)
+        } catch {
+            close(fd)
+            throw error
         }
+        return { FileLock.release(fd) }
     }
 
     @Test("Deleting nothing is not an operation")

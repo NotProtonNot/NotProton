@@ -237,13 +237,37 @@ case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null)
 case "$app_id" in ''|*[!0-9]*) app_id=0 ;; esac
 echo "app_id=$app_id (STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID)" >> "$log" 2>&1 || true
 
+# Steam gives every non-Steam shortcut a game ID ending in 0x02000000.
+shortcut_game_id() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#1}" -le 20 ] || return 1
+  high=0
+  low="$1"
+  if [ "${#1}" -gt 10 ]; then
+    high="${1%??????????}"
+    low="${1#"$high"}"
+  fi
+  high="${high#"${high%%[!0]*}"}"
+  low="${low#"${low%%[!0]*}"}"
+  [ $(( (${high:-0} % 4294967296 * 1410065408 + ${low:-0}) % 4294967296 )) = 33554432 ]
+}
+
 # Steam does not set SteamAppId or SteamGameId for helpers like the install-script
 # evaluator. If they are set, SteamAPI_Init registers the helper as the running game so the
 # real launch fails with AppError_16. Not applicable to non-Steam shortcuts, which come in
 # as waitforexitandrun.
 case "$verb" in
   waitforexitandrun)
-    [ -n "$SteamAppId" ] || export SteamAppId="$app_id"
+    # Some games are poorly engineered and treat a shortcut's SteamAppID as if it were a real
+    # Steam appid. Those games immediately fail Steam ownership checks rather than looking
+    # inward and realizing that the actual game build that is running is a version that was
+    # sold outside of Steam and that the applicable ownership checks should be performed (not
+    # the Steam ones). Rockstar: do better?
+    if shortcut_game_id "$SteamGameId"; then
+      unset SteamAppId
+    else
+      [ -n "$SteamAppId" ] || export SteamAppId="$app_id"
+    fi
     [ -n "$SteamGameId" ] || export SteamGameId="$app_id"
     ;;
 esac
@@ -1033,6 +1057,18 @@ link_fonts() {
   done
 }
 
+# Wine loads its own VC++ runtime over Microsoft's, which breaks some games
+native_vc_runtime() {
+  for name in concrt140 msvcp140 msvcp140_1 msvcp140_2 msvcp140_atomic_wait msvcp140_codecvt_ids \
+    vcamp140 vccorlib140 vcomp140 vcruntime140 vcruntime140_1; do
+    dll="$WINEPREFIX/drive_c/windows/system32/$name.dll"
+    [ -f "$dll" ] || continue
+    if [ "$(dd if="$dll" bs=1 skip=64 count=16 2>/dev/null)" != "Wine builtin DLL" ]; then
+      printf '%s=n,b;' "$name"
+    fi
+  done
+}
+
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
   stage_step="prefix lock"
@@ -1243,7 +1279,8 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   install_legacy_steam_dll
   export WINEDLLPATH="$prefix_steam:$WINEDLLPATH"
   # If the same DLL appears twice in WINEDLLOVERRIDES, the last entry wins.
-  export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}steamclient=n;steamclient64=n;lsteamclient=b"
+  vc_overrides=$(native_vc_runtime)
+  export WINEDLLOVERRIDES="${vc_overrides}${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}steamclient=n;steamclient64=n;lsteamclient=b"
   native_client="$STEAM_COMPAT_CLIENT_INSTALL_PATH"
   if [ -z "$native_client" ]; then
     native_client="$HOME/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS"
