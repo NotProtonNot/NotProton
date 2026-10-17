@@ -1520,8 +1520,10 @@ np_dev_add() {
 }
 
 # Each descriptor whose key is switched on gets what it asks for: "inject = 1" loads the
-# dylib its "requires" resolved to, and each "env = NAME=VALUE" is exported and carried
-# into the bundle. Nothing here knows which features exist.
+# dylib its "requires" resolved to, each "env = NAME=VALUE" is exported and carried into
+# the bundle, "stage" clones a directory of DLLs into the prefix, and "overrides" adds to
+# WINEDLLOVERRIDES so those DLLs win over the builtins. Nothing here knows which features
+# exist.
 np_feat_field() {
   sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*\)$/\1/p" "$1"
 }
@@ -1542,6 +1544,41 @@ for np_feat_file in "$np_feat_dir"/*.conf; do
 
   if [ "$(np_feat_field "$np_feat_file" inject | head -1)" = 1 ]; then
     np_dev_add "$np_feat_key" "$(np_feat_requires "$np_feat_key")"
+  fi
+
+  # Re-staged every launch, so it survives a prefix the user rebuilt and repairs itself
+  # if a game overwrote one of the files. Cloned where the filesystem allows it.
+  np_feat_stage=$(np_feat_field "$np_feat_file" stage | head -1)
+  if [ -n "$np_feat_stage" ]; then
+    case "$np_feat_stage" in
+      (/*) ;;
+      (*) np_feat_stage="$HOME/$np_feat_stage" ;;
+    esac
+    np_feat_sys32="$WINEPREFIX/drive_c/windows/system32"
+    if [ ! -d "$np_feat_stage" ]; then
+      echo "=== $np_feat_key stages from $np_feat_stage, which is not there ===" \
+        >> "$log" 2>&1 || true
+    elif [ ! -d "$np_feat_sys32" ]; then
+      echo "=== $np_feat_key cannot stage, no $np_feat_sys32 ===" >> "$log" 2>&1 || true
+    else
+      for np_feat_src in "$np_feat_stage"/*; do
+        [ -f "$np_feat_src" ] || continue
+        np_feat_dst="$np_feat_sys32/$(basename "$np_feat_src")"
+        if cp -c -f "$np_feat_src" "$np_feat_dst" 2>/dev/null \
+           || cp -f "$np_feat_src" "$np_feat_dst"; then
+          echo "=== $np_feat_key staged $(basename "$np_feat_src") ===" >> "$log" 2>&1 || true
+        else
+          echo "=== $np_feat_key failed to stage $np_feat_src ===" >> "$log" 2>&1 || true
+        fi
+      done
+    fi
+  fi
+
+  # Appended, never assigned: the bridge's own overrides are already in there.
+  np_feat_over=$(np_feat_field "$np_feat_file" overrides | head -1)
+  if [ -n "$np_feat_over" ]; then
+    export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$np_feat_over"
+    echo "=== $np_feat_key adds overrides $np_feat_over ===" >> "$log" 2>&1 || true
   fi
 
   # Fed by here-document, not a pipe: a piped loop runs in a subshell and its exports

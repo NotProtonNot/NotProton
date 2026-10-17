@@ -64,7 +64,7 @@ DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib dylib-install sigcheck fonts fonts-install app-payload app app-zip \
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
-        featcheck \
+        featcheck featstagecheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
@@ -119,6 +119,11 @@ routecheck:
 bridgecheck:
 	@if [ ! -f dylib/tests/bridgecheck.sh ]; then $(call SKIP,bridgecheck,dylib/tests/bridgecheck.sh); exit 0; fi; \
 	sh dylib/tests/bridgecheck.sh dylib/feats/compat_run.sh
+
+featstagecheck:
+	@if [ ! -f dylib/tests/featstagecheck.sh ]; then \
+		$(call SKIP,featstagecheck,dylib/tests/featstagecheck.sh); exit 0; fi; \
+	sh dylib/tests/featstagecheck.sh dylib/feats/compat_run.sh
 
 gamedrivecheck:
 	@if [ ! -f dylib/tests/gamedrivecheck.sh ]; then $(call SKIP,gamedrivecheck,dylib/tests/gamedrivecheck.sh); exit 0; fi; \
