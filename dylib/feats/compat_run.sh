@@ -237,13 +237,37 @@ case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null)
 case "$app_id" in ''|*[!0-9]*) app_id=0 ;; esac
 echo "app_id=$app_id (STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID)" >> "$log" 2>&1 || true
 
+# Steam gives every non-Steam shortcut a game ID ending in 0x02000000.
+shortcut_game_id() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#1}" -le 20 ] || return 1
+  high=0
+  low="$1"
+  if [ "${#1}" -gt 10 ]; then
+    high="${1%??????????}"
+    low="${1#"$high"}"
+  fi
+  high="${high#"${high%%[!0]*}"}"
+  low="${low#"${low%%[!0]*}"}"
+  [ $(( (${high:-0} % 4294967296 * 1410065408 + ${low:-0}) % 4294967296 )) = 33554432 ]
+}
+
 # Steam does not set SteamAppId or SteamGameId for helpers like the install-script
 # evaluator. If they are set, SteamAPI_Init registers the helper as the running game so the
 # real launch fails with AppError_16. Not applicable to non-Steam shortcuts, which come in
 # as waitforexitandrun.
 case "$verb" in
   waitforexitandrun)
-    [ -n "$SteamAppId" ] || export SteamAppId="$app_id"
+    # Some games are poorly engineered and treat a shortcut's SteamAppID as if it were a real
+    # Steam appid. Those games immediately fail Steam ownership checks rather than looking
+    # inward and realizing that the actual game build that is running is a version that was
+    # sold outside of Steam and that the applicable ownership checks should be performed (not
+    # the Steam ones). Rockstar: do better?
+    if shortcut_game_id "$SteamGameId"; then
+      unset SteamAppId
+    else
+      [ -n "$SteamAppId" ] || export SteamAppId="$app_id"
+    fi
     [ -n "$SteamGameId" ] || export SteamGameId="$app_id"
     ;;
 esac
