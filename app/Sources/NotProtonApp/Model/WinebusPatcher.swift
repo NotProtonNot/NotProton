@@ -101,6 +101,32 @@ enum WinebusPatcher {
                 cavePad: 0xcc
             ),
         ],
+        // 41073 ships the very same winebus.sys as 41069, in both its builds.
+        "27.0.0.41073": [
+            WinebusPatch(
+                arch: .x86_64Windows,
+                cleanSHA256: "fd60af0afdeac0d19c23e134d1d2f66d3376eebac1904d5e644e24500fc8b8ea",
+                patchedSHA256: "57df15bc49f77d94578cde325953c84ea8d7d363a908323133374f52f3cb00f8",
+                payloadResource: "winebus-cap-41069",
+                payloadSHA256: "120620526ae5066285abea6b94f4bee35321732f538507c46503d0e3b1b5d6e4",
+                hookRVA: 0x2110,
+                hookTargetRVA: 0x1100,
+                caveRVA: 0x6c20
+            ),
+        ],
+        "27.0.0.41073-fex": [
+            WinebusPatch(
+                arch: .x86_64Windows,
+                cleanSHA256: "09594bcc90bd55935f5f07a887efaee362ac800b3ba15ca7eb2809eb142ec1ce",
+                patchedSHA256: "df89dc44d547f23dcba699f2d402af90902edf39f847c88f5c3e996a8839fae2",
+                payloadResource: "winebus-cap-fex-41069",
+                payloadSHA256: "cde2fa77b8739935cc5700f095a1a48c8a0b14d5d71946049dba1767fe0f58bb",
+                hookRVA: 0x4473,
+                hookTargetRVA: 0x5d00,
+                caveRVA: 0x6020,
+                cavePad: 0xcc
+            ),
+        ],
     ]
 
     static func patches(for build: RunnerBuild) -> [WinebusPatch] {

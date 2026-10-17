@@ -734,6 +734,12 @@
     },
     "%@/winebus.sys is not the patched copy" : {
       "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/winebus.sys non è la copia con la patch"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4174,6 +4180,12 @@
     },
     "Patch winebus" : {
       "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Patch di winebus"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6425,6 +6437,22 @@
         }
       }
     },
+    "The patched winebus.sys hashes %@ and build %@ expects %@. Nothing was written." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'hash del winebus.sys con la patch è %1$@ e la build %2$@ si aspetta %3$@. Non è stato scritto nulla."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修补后的 winebus.sys 哈希值为 %@，但构建版本 %@ 预期为 %@。未写入任何内容。"
+          }
+        }
+      }
+    },
     "The trial version is not supported." : {
       "localizations" : {
         "it" : {
@@ -6441,18 +6469,14 @@
         }
       }
     },
-    "The patched winebus.sys hashes %@ and build %@ expects %@. Nothing was written." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修补后的 winebus.sys 哈希值为 %@，但构建版本 %@ 预期为 %@。未写入任何内容。"
-          }
-        }
-      }
-    },
     "The winebus.sys cave at %@ is not empty padding after the code, so writing the detour could overwrite live code." : {
       "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La cave di winebus.sys a %@ non è riempimento vuoto dopo il codice: scrivere il detour potrebbe sovrascrivere codice attivo."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -6463,6 +6487,12 @@
     },
     "The winebus.sys hook site at %@ holds %@ instead of %@, so the offsets do not belong to this build." : {
       "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il punto di aggancio di winebus.sys a %1$@ contiene %2$@ invece di %3$@: gli offset non appartengono a questa build."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7317,6 +7347,12 @@
     },
     "winebus.sys is not an x86_64 PE image." : {
       "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "winebus.sys non è un'immagine PE x86_64."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
