@@ -12,6 +12,12 @@
 int   np_log_level = NP_LVL_INFO;
 FILE *np_log_file;
 
+static const char *g_platform_js;
+
+char *np_nativeplatform_javascript(void) {
+    return g_platform_js ? strdup(g_platform_js) : NULL;
+}
+
 static int g_wrong;
 
 static void wrong(const char *fmt, ...) {
@@ -204,8 +210,16 @@ static void selfcheck(void) {
                           f, g_shapes[sh].name, g);
     }
 
-    printf("%zu shapes, %zu gates, %zu fixes checked\n",
-           NP_SHAPE_COUNT, total, NP_FIX_COUNT);
+    for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++) {
+        check_gate("library", g, &g_library_filters[g], g_library_filters, NP_LIBRARY_FILTER_COUNT);
+        for (size_t f = 0; f < NP_FIX_COUNT; f++)
+            if (strstr(g_fixes[f].find, g_library_filters[g].find) ||
+                strstr(g_library_filters[g].find, g_fixes[f].find))
+                wrong("fix %zu and library anchor %zu share an anchor", f, g);
+    }
+
+    printf("%zu shapes, %zu gates, %zu fixes, %zu library anchors checked\n",
+           NP_SHAPE_COUNT, total, NP_FIX_COUNT, NP_LIBRARY_FILTER_COUNT);
     check_paths();
 }
 
@@ -316,6 +330,48 @@ static int extract(const char *chunk, const char *out_path) {
     return 0;
 }
 
+static const np_gate_t *library_anchor(size_t i) {
+    return i < NP_LIBRARY_FILTER_COUNT ? &g_library_filters[i]
+                                       : &g_fixes[NP_NATIVE_MAC_FILTER_FIX + i - NP_LIBRARY_FILTER_COUNT];
+}
+#define NP_LIBRARY_ANCHORS (NP_LIBRARY_FILTER_COUNT + 2)
+
+static int extract_library(const char *chunk, const char *out_path) {
+    size_t len = 0;
+    uint8_t *buf = slurp(chunk, &len);
+    if (!buf) { fprintf(stderr, "cannot read %s\n", chunk); return 1; }
+    FILE *o = fopen(out_path, "wb");
+    if (!o) { fprintf(stderr, "cannot write %s\n", out_path); free(buf); return 1; }
+
+    const size_t pad = 160;
+    np_cap_t caps[NP_CAP_MAX];
+    size_t fixes = 0;
+    for (size_t a = 0; a < NP_LIBRARY_ANCHORS; a++) {
+        size_t hits = 0;
+        for (size_t i = 0; i < len; ) {
+            size_t used = match_at((const char *)buf, len, i, library_anchor(a)->find, caps);
+            if (!used) { i++; continue; }
+            size_t from = i > pad ? i - pad : 0;
+            size_t to   = i + used + pad < len ? i + used + pad : len;
+            fwrite(buf + from, 1, to - from, o);
+            fputs("\n", o);
+            hits++;
+            i += used;
+        }
+        if (a >= NP_LIBRARY_FILTER_COUNT) { fixes += hits; continue; }
+        if (hits != (size_t)library_anchor(a)->expect) {
+            fprintf(stderr, "library anchor %zu found %zu times in %s\n", a, hits, chunk);
+            fclose(o); free(buf);
+            return 1;
+        }
+    }
+    fclose(o);
+    free(buf);
+    if (fixes != 1) { fprintf(stderr, "%zu filter fixes in %s\n", fixes, chunk); return 1; }
+    printf("extracted fixture to %s\n", out_path);
+    return 0;
+}
+
 static void check_optional_drift(const np_ui_shape_t *S, size_t g, const uint8_t *buf,
                                  size_t len, const int *applied) {
     char *copy = malloc(len + 1);
@@ -346,9 +402,124 @@ static void check_optional_drift(const np_ui_shape_t *S, size_t g, const uint8_t
     free(copy);
 }
 
+static const char g_test_lists[] =
+    "window.__NOTPROTON_NATIVE_PLATFORM__={mac:new Set([1,4]),windows:new Set([2,4])};\n";
+
+static char *library_transform(const char *src, size_t len, size_t *out_len) {
+    int saved = np_log_level;
+    np_log_level = -1;
+    char *out = np_webpatch_transform((const uint8_t *)src, len, out_len, NULL);
+    np_log_level = saved;
+    return out;
+}
+
+static int write_file(const char *path, const char *buf, size_t len) {
+    FILE *o = fopen(path, "wb");
+    if (!o) return 0;
+    int ok = fwrite(buf, 1, len, o) == len;
+    return fclose(o) == 0 && ok;
+}
+
+static void check_library(const char *path, const char *out_path, int literal_version) {
+    size_t len = 0;
+    uint8_t *buf = slurp(path, &len);
+    if (!buf) { wrong("cannot read %s", path); return; }
+
+    if (literal_version) {
+        const char *prefix = "this.m_filterSpec={nFormatVersion:";
+        char *version = strstr((char *)buf, prefix);
+        if (version) version += strlen(prefix);
+        char *end = version ? strchr(version, ',') : NULL;
+        if (!end || end == version) { wrong("no constructor version in %s", path); free(buf); return; }
+        size_t tail = len - (size_t)(end - (char *)buf);
+        memmove(version + 1, end, tail + 1);
+        *version = '2';
+        len = (size_t)(version - (char *)buf) + 1 + tail;
+    }
+
+    g_platform_js = g_test_lists;
+    size_t out_len = 0;
+    char *out = library_transform((const char *)buf, len, &out_len);
+    if (!out) {
+        wrong("%s was not patched", path);
+    } else {
+        if (strncmp(out, g_test_lists, sizeof(g_test_lists) - 1) != 0)
+            wrong("%s does not start with the platform lists", path);
+        if (!strstr(out, "SelectCollectionsAppFilterOption(\"notprotonWindows\""))
+            wrong("%s has no Windows button", path);
+        for (size_t a = 0; a < NP_LIBRARY_ANCHORS; a++) {
+            if (count_matches(out, out_len, library_anchor(a)->find))
+                wrong("library anchor %zu survived in %s", a, path);
+        }
+        for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++) {
+            if (count_matches(out, out_len, g_library_filters[g].replace) != (size_t)g_library_filters[g].expect)
+                wrong("library replacement %zu is missing from %s", g, path);
+        }
+        size_t again_len = 0;
+        char *again = library_transform(out, out_len, &again_len);
+        if (again) { wrong("%s was patched a second time", path); free(again); }
+        if (out_path && !write_file(out_path, out, out_len)) wrong("cannot write %s", out_path);
+        free(out);
+    }
+
+    g_platform_js = NULL;
+    out = library_transform((const char *)buf, len, &out_len);
+    if (out && (strstr(out, "__NOTPROTON") || strstr(out, "notprotonWindows")))
+        wrong("%s got the Apple filter without platform lists", path);
+    free(out);
+
+    g_platform_js = g_test_lists;
+    np_cap_t caps[NP_CAP_MAX];
+    for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++) {
+        char *copy = malloc(len + 1);
+        if (!copy) { wrong("out of memory"); break; }
+        memcpy(copy, buf, len + 1);
+        for (size_t i = 0; i < len; ) {
+            size_t used = match_at(copy, len, i, g_library_filters[g].find, caps);
+            if (!used) { i++; continue; }
+            copy[i + used - 1] = '\x01';
+            i += used;
+        }
+        out = library_transform(copy, len, &out_len);
+        if (!out || strstr(out, "npWindows") || strstr(out, "m_filterSpec.notprotonWindows") ||
+            !strstr(out, ".mac.has("))
+            wrong("drift in library anchor %zu of %s left a partial filter", g, path);
+        free(out);
+        free(copy);
+    }
+    g_platform_js = NULL;
+    free(buf);
+}
+
+static void check_older_filter(const char *out_path) {
+    static const char source[] =
+        "function Y(e){return t=>{switch(t){case L.Pu:return!!(0,P.td)()||"
+        "e.is_available_on_current_platform&&!e.is_invalid_os_type;}}}";
+    g_platform_js = g_test_lists;
+    size_t out_len = 0;
+    char *out = library_transform(source, sizeof(source) - 1, &out_len);
+    g_platform_js = NULL;
+    if (!out || !strstr(out, "case L.Pu:return (0,P.Pr)()&&window.__NOTPROTON_NATIVE_PLATFORM__.mac.has(e.appid)"))
+        wrong("the older filter was not patched");
+    else if (out_path && !write_file(out_path, out, out_len))
+        wrong("cannot write %s", out_path);
+    free(out);
+}
+
 int main(int argc, char **argv) {
     if (argc == 4 && strcmp(argv[1], "--extract") == 0)
         return extract(argv[2], argv[3]);
+    if (argc == 4 && strcmp(argv[1], "--extract-library") == 0)
+        return extract_library(argv[2], argv[3]);
+    if ((argc == 3 || argc == 4) &&
+        (strcmp(argv[1], "--library") == 0 || strcmp(argv[1], "--library-literal") == 0)) {
+        check_library(argv[2], argc == 4 ? argv[3] : NULL, strcmp(argv[1], "--library-literal") == 0);
+        return g_wrong;
+    }
+    if ((argc == 2 || argc == 3) && strcmp(argv[1], "--older-filter") == 0) {
+        check_older_filter(argc == 3 ? argv[2] : NULL);
+        return g_wrong;
+    }
 
     if (argc < 2) {
         selfcheck(); check_captures(); check_fallback(); check_fex_tools();

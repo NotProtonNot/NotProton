@@ -9,6 +9,10 @@
 int np_log_level = 0;
 FILE *np_log_file = NULL;
 
+char *np_nativeplatform_javascript(void) {
+    return NULL;
+}
+
 static void put_panel(const char *body) {
     for (const char *p = body; *p; p++) {
         const char *text = marker_text(*p);

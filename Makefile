@@ -46,6 +46,7 @@ SRCS := \
 	dylib/feats/compatsvc.c \
 	dylib/feats/usershortcuts.c \
 	dylib/feats/webpatch.c \
+	dylib/feats/nativeplatform.c \
 	dylib/feats/input_access.c \
 	vendor/cJSON.c
 
@@ -263,6 +264,12 @@ $(GATECHECK): dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatc
 	@mkdir -p $(dir $@)
 	$(TEST_CC) -O1 -o $@ dylib/tests/gatecheck.c
 
+NATIVEPLATFORMCHECK := $(OUT_DIR)/nativeplatformcheck
+
+$(NATIVEPLATFORMCHECK): dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/feats/nativeplatform.h dylib/util/file.c
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -O1 -o $@ dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/util/file.c
+
 webpatch-fixtures:
 	@if [ ! -d $(WEBPATCH_FIXTURES) ] || [ ! -f dylib/tests/gatecheck.c ]; then \
 		$(call SKIP,webpatch-fixtures,$(WEBPATCH_FIXTURES)); exit 0; fi; \
@@ -282,7 +289,18 @@ webpatch-fixtures:
 			if [ $$rc -ne 0 ]; then fail=1; fi; \
 		done; \
 	done; \
+	for f in $(WEBPATCH_FIXTURES)/library.*.js; do \
+		out=$$($(GATECHECK) --library "$$f" $$tmp/$$(basename $$f .js).out.js 2>&1) || { echo "$$out"; fail=1; }; \
+		out=$$($(GATECHECK) --library-literal "$$f" $$tmp/$$(basename $$f .js).literal.out.js 2>&1) || { echo "$$out"; fail=1; }; \
+	done; \
+	out=$$($(GATECHECK) --older-filter $$tmp/library.older.out.js 2>&1) || { echo "$$out"; fail=1; }; \
+	if [ $$fail -eq 0 ]; then \
+		if command -v node >/dev/null 2>&1; then \
+			node dylib/tests/library-filter/behavior.js $$tmp/library.*.out.js || fail=1; \
+		else echo "==> library filter: node not found, skipped"; fi; \
+	fi; \
 	rm -rf $$tmp; \
+	$(MAKE) -s $(NATIVEPLATFORMCHECK) && $(NATIVEPLATFORMCHECK) || fail=1; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "==> gate table and $$n webpatch fixtures: anchors intact, drift refused"
 
