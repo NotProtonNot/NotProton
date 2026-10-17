@@ -810,6 +810,8 @@ void np_compat_register_crossover(void *compat_mgr) {
         NP_LOG("np_compat_register_crossover: registered %s (build %s) into manager 0x%llx",
                t->name, t->build, (unsigned long long)(uintptr_t)compat_mgr);
     }
+
+    free(buffers);
 }
 
 const char *np_compat_fallback_tool_name(void) {
