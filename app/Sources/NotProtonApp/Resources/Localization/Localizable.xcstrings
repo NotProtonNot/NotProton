@@ -716,6 +716,16 @@
         }
       }
     },
+    "%@/winebus.sys is not the patched copy" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/winebus.sys 不是已修补的副本"
+          }
+        }
+      }
+    },
     "%lld backups" : {
       "localizations" : {
         "it" : {
@@ -3890,6 +3900,16 @@
         }
       }
     },
+    "Patch winebus" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修补 winebus"
+          }
+        }
+      }
+    },
     "Patched components are missing." : {
       "localizations" : {
         "it" : {
@@ -6005,6 +6025,36 @@
         }
       }
     },
+    "The patched winebus.sys hashes %@ and build %@ expects %@. Nothing was written." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修补后的 winebus.sys 哈希值为 %@，但构建版本 %@ 预期为 %@。未写入任何内容。"
+          }
+        }
+      }
+    },
+    "The winebus.sys cave at %@ is not empty padding after the code, so writing the detour could overwrite live code." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "winebus.sys 在 %@ 处的代码空隙不是代码之后的空白填充；写入跳转补丁可能会覆盖现有代码。"
+          }
+        }
+      }
+    },
+    "The winebus.sys hook site at %@ holds %@ instead of %@, so the offsets do not belong to this build." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "winebus.sys 在 %@ 处的挂钩位置内容为 %@，而非 %@，偏移量与此版本不匹配。"
+          }
+        }
+      }
+    },
     "There is no ntdll to patch at %@." : {
       "localizations" : {
         "it" : {
@@ -6797,6 +6847,16 @@
     },
     "vcrun2022 corefonts" : {
       "shouldTranslate" : false
+    },
+    "winebus.sys is not an x86_64 PE image." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "winebus.sys 不是 x86_64 PE 映像。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
