@@ -45,6 +45,7 @@ SRCS := \
 	dylib/feats/webui.c \
 	dylib/feats/compatsvc.c \
 	dylib/feats/webpatch.c \
+	dylib/feats/nativeplatform.c \
 	dylib/feats/input_access.c \
 	vendor/cJSON.c
 
@@ -258,9 +259,9 @@ peicon-fixtures:
 GATECHECK         := $(OUT_DIR)/gatecheck
 WEBPATCH_FIXTURES := dylib/tests/webpatch-fixtures
 
-$(GATECHECK): dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h
+$(GATECHECK): dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h dylib/feats/library_filter.h dylib/feats/nativeplatform.h dylib/feats/nativeplatform.c
 	@mkdir -p $(dir $@)
-	$(TEST_CC) -O1 -o $@ dylib/tests/gatecheck.c
+	$(TEST_CC) -O1 -pthread -o $@ dylib/tests/gatecheck.c dylib/feats/nativeplatform.c
 
 webpatch-fixtures:
 	@if [ ! -d $(WEBPATCH_FIXTURES) ] || [ ! -f dylib/tests/gatecheck.c ]; then \
@@ -350,7 +351,7 @@ panel-behavior:
 		echo "==> panel-behavior: node not found, skipped"; exit 0; fi; \
 	mkdir -p $(OUT_DIR) && \
 	$(TEST_CC) -O1 -o $(OUT_DIR)/panel-emit \
-	  $(PANEL_TESTS)/emit.c && \
+	  $(PANEL_TESTS)/emit.c dylib/feats/nativeplatform.c -pthread && \
 	node $(PANEL_TESTS)/behavior.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/switching.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/launch-options.js $(OUT_DIR)/panel-emit && \
