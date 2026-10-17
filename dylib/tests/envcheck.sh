@@ -44,7 +44,7 @@ np_build="test"
 library="$np_support/runners/crossover-$np_build/CrossOver/lib64/apple_gptk/external/libd3dshared.dylib"
 init=$(sed -n '/^CX_ROOT=/,/^wine_unix=/p' "$SRC")
 # shellcheck disable=SC2016 # Match the literal launcher loop.
-forward=$(sed -n '/^for name in $(env /,/^done$/p' "$SRC")
+forward=$(sed -n '/^for name in $np_env_names $(env /,/^done$/p' "$SRC")
 [ -n "$init" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }
 unset CX_APPLEGPTK_LIBD3DSHARED_PATH
 eval "$init"
@@ -73,7 +73,7 @@ drop=$(sed -n '/^np_dropped=""$/,/^fi$/p' "$SRC")
 [ -n "$drop" ] || { echo "FAIL: the arm64 settings block was not found"; exit 1; }
 drop_at=$(grep -n '^np_dropped=""$' "$SRC" | cut -d: -f1)
 # shellcheck disable=SC2016 # Match the literal launcher loop.
-forward_at=$(grep -n '^for name in $(env ' "$SRC" | cut -d: -f1)
+forward_at=$(grep -n '^for name in $np_env_names $(env ' "$SRC" | cut -d: -f1)
 [ "$drop_at" -lt "$forward_at" ] ||
   bad "the arm64 settings block runs before the forwarding loop" "< $forward_at" "$drop_at"
 seen() { sh -c 'env | sed -nE "s/^(CX_GRAPHICS_BACKEND|D3DM_[A-Z0-9_]*|DXMT_[A-Z0-9_]*|ROSETTA_[A-Z0-9_]*)=.*/\1/p" | sort | tr "\n" " "'; }
