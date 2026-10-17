@@ -3,6 +3,7 @@ import AppKit
 enum TextWidth {
 
     static let cellPadding: CGFloat = 24
+    static let maxTitle: CGFloat = 320
 
     static func of(_ text: String, size: CGFloat = NSFont.systemFontSize) -> CGFloat {
         let font = NSFont.systemFont(ofSize: size)

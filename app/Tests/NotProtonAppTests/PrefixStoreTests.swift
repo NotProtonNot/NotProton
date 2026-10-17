@@ -114,6 +114,45 @@ struct PrefixStoreTests {
         #expect(orphan?.title == "App 1649240")
     }
 
+    @Test("A non-Steam shortcut prefix is named from shortcuts.vdf")
+    func readsTheShortcutName() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = SteamLibrary(root: dir.appending(path: "library"))
+        let userdata = dir.appending(path: "userdata")
+
+        func entry(_ index: String, appID: UInt32, name: String) -> [UInt8] {
+            var out: [UInt8] = [0x00] + Array(index.utf8) + [0]
+            out += [0x02] + Array("appid".utf8) + [0]
+            out += withUnsafeBytes(of: appID.littleEndian, Array.init)
+            out += [0x01] + Array("AppName".utf8) + [0] + Array(name.utf8) + [0]
+            out += [0x07] + Array("LastPlayTime".utf8) + [0] + [UInt8](repeating: 1, count: 8)
+            out += [0x00] + Array("tags".utf8) + [0, 0x08]
+            return out + [0x08]
+        }
+        var vdf: [UInt8] = [0x00] + Array("shortcuts".utf8) + [0]
+        vdf += entry("0", appID: 0xf281_5b63, name: "Grand Theft Auto V Enhanced")
+        vdf += entry("1", appID: 0x9ea9_860b, name: "Postal2")
+        vdf += [0x08, 0x08]
+        let file = userdata.appending(path: "54303850/config/shortcuts.vdf")
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(vdf).write(to: file)
+
+        for appID in ["4068563811", "2661910027", "3000000000"] {
+            try FileManager.default.createDirectory(
+                at: library.compatdata.appending(path: "\(appID)/pfx"), withIntermediateDirectories: true)
+        }
+
+        let prefixes = PrefixStore.all(libraries: [library], userdata: userdata)
+        func title(_ appID: String) -> String? { prefixes.first { $0.appID == appID }?.title }
+
+        #expect(title("4068563811") == "Grand Theft Auto V Enhanced")
+        #expect(title("2661910027") == "Postal2")
+        #expect(title("3000000000") == "App 3000000000")
+        #expect(PrefixStore.shortcutNames(vdf: Data(vdf.prefix(40))).isEmpty)
+    }
+
     @Test("Sizing a prefix stops at a symlink instead of walking through it")
     func doesNotFollowLinksOutOfThePrefix() throws {
         let dir = try scratchDirectory("pfx")
