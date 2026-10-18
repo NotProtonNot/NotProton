@@ -191,6 +191,14 @@ struct NtdllPatcherTests {
         }
     }
 
+    @Test("A section header slot truncated despite SizeOfHeaders is refused", arguments: [0, 1, 39])
+    func sectionPlacementNeedsCompleteHeader(bytesPresent: Int) throws {
+        let image = Data(stubImage().prefix(StubPE.tableEnd + bytesPresent))
+        #expect(throws: StepFailure.self) {
+            try NtdllPatcher.apply(sectionPatch(), to: image, payload: Data([0x90]))
+        }
+    }
+
     // MARK: - Refusals
 
     @Test("A hook site holding something else is refused")

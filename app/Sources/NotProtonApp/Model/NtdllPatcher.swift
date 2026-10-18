@@ -468,6 +468,7 @@ enum NtdllPatcher {
                 detail: String(localized: "The \(patch.arch.rawValue) ntdll image ends at \(hex(imageSize)), and the detour section was pinned at \(hex(patch.caveRVA)).")
             )
         }
+        try requireRange(header, 40, in: bytes, describing: String(localized: "A header field"))
         guard header + 40 <= headersSize, bytes[header ..< header + 40].allSatisfy({ $0 == 0 }) else {
             throw StepFailure(
                 step: step,
