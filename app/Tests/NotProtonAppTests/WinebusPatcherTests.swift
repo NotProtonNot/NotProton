@@ -133,7 +133,10 @@ struct WinebusPatcherTests {
         for (id, patches) in WinebusPatcher.byBuild {
             #expect(SupportedRunners.build(id: id) != nil, "\(id) is not a supported build")
             #expect(Set(patches.map(\.arch)).count == patches.count, "\(id) patches an arch twice")
-            #expect(patches.allSatisfy { $0.arch == .x86_64Windows }, "\(id) pins a winebus.sys that is not x86_64")
+            // Only a FEX build ships an aarch64 winebus.sys (loaded by its native FEX tool).
+            for patch in patches where patch.arch == .aarch64Windows {
+                #expect(id.hasSuffix("-fex"), "\(id) pins an aarch64 winebus.sys but is not a FEX build")
+            }
         }
     }
 

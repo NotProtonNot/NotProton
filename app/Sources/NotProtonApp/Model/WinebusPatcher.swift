@@ -33,8 +33,8 @@ enum WinebusPatcher {
     static let step = String(localized: "Patch winebus")
 
     private static let machineAMD64: UInt16 = 0x8664
+    private static let machineARM64: UInt16 = 0xaa64
     private static let magicPE32Plus: UInt16 = 0x20b
-    private static let callRel32: UInt8 = 0xe8
 
     // A FEX build's x86_64 winebus.sys, which its Rosetta tool loads, is a different binary
     // from the Rosetta build's, so it has its own pins.
@@ -75,6 +75,17 @@ enum WinebusPatcher {
                 caveRVA: 0x5f00,
                 cavePad: 0xcc
             ),
+            WinebusPatch(
+                arch: .aarch64Windows,
+                cleanSHA256: "e8ac569c8f66ffdf8d558cd10332b144ac4dbd7b59c635cf971823ea8c7bc82e",
+                patchedSHA256: "231df5d004d7d7be2d35f4716b89579d3f95b35bc32cefb95124f73e916a38a4",
+                payloadResource: "winebus-cap-fex-40921-a64",
+                payloadSHA256: "a706ca16bf4e9ad96c33b769245ab475413fa981e88a7c748f2cb0ffe2b0cb9f",
+                hookRVA: 0x13100,
+                hookTargetRVA: 0x1487c,
+                caveRVA: 0x1b440,
+                cavePad: 0xcc
+            ),
         ],
         "27.0.0.41069": [
             WinebusPatch(
@@ -100,8 +111,19 @@ enum WinebusPatcher {
                 caveRVA: 0x6020,
                 cavePad: 0xcc
             ),
+            WinebusPatch(
+                arch: .aarch64Windows,
+                cleanSHA256: "4d8fb4e2016541fa6aa2284d280f8114d1f18b1a942e4a764938991eecb04680",
+                patchedSHA256: "5e18100ee7c89750d23d2b9cf51265ac90f1bed0ded9f3053f0562033ce154f4",
+                payloadResource: "winebus-cap-fex-41069-a64",
+                payloadSHA256: "9799ae1db26733aedab80afa7bc9273f595c8a6cdcdd9263b580ad5aa17fdbeb",
+                hookRVA: 0x131f4,
+                hookTargetRVA: 0x149c0,
+                caveRVA: 0x1b440,
+                cavePad: 0xcc
+            ),
         ],
-        // 41073 ships the very same winebus.sys as 41069, in both its builds.
+        // 41073 ships the very same winebus.sys as 41069, in both arches of both its builds.
         "27.0.0.41073": [
             WinebusPatch(
                 arch: .x86_64Windows,
@@ -124,6 +146,17 @@ enum WinebusPatcher {
                 hookRVA: 0x4473,
                 hookTargetRVA: 0x5d00,
                 caveRVA: 0x6020,
+                cavePad: 0xcc
+            ),
+            WinebusPatch(
+                arch: .aarch64Windows,
+                cleanSHA256: "4d8fb4e2016541fa6aa2284d280f8114d1f18b1a942e4a764938991eecb04680",
+                patchedSHA256: "5e18100ee7c89750d23d2b9cf51265ac90f1bed0ded9f3053f0562033ce154f4",
+                payloadResource: "winebus-cap-fex-41069-a64",
+                payloadSHA256: "9799ae1db26733aedab80afa7bc9273f595c8a6cdcdd9263b580ad5aa17fdbeb",
+                hookRVA: 0x131f4,
+                hookTargetRVA: 0x149c0,
+                caveRVA: 0x1b440,
                 cavePad: 0xcc
             ),
         ],
@@ -165,13 +198,15 @@ enum WinebusPatcher {
 
     static func apply(_ patch: WinebusPatch, to image: Data, payload: Data) throws -> Data {
         var bytes = [UInt8](image)
+        let expectedMachine = patch.arch == .aarch64Windows ? machineARM64 : machineAMD64
+        let branchLen = patch.arch == .aarch64Windows ? 4 : 5
 
         guard let pe = u32(bytes, 0x3c).map(Int.init), u32(bytes, pe) == 0x0000_4550,
-              u16(bytes, pe + 4) == machineAMD64, u16(bytes, pe + 24) == magicPE32Plus,
+              u16(bytes, pe + 4) == expectedMachine, u16(bytes, pe + 24) == magicPE32Plus,
               let sections = u16(bytes, pe + 6).map(Int.init),
               let optionalSize = u16(bytes, pe + 20).map(Int.init)
         else {
-            throw StepFailure(step: step, detail: String(localized: "winebus.sys is not an x86_64 PE image."))
+            throw StepFailure(step: step, detail: String(localized: "winebus.sys is not a \(patch.arch.rawValue) PE image."))
         }
 
         let optional = pe + 24
@@ -179,19 +214,19 @@ enum WinebusPatcher {
         guard let header = (0 ..< sections).map({ table + $0 * 40 }).first(where: { entry in
             guard let virtualAddress = u32(bytes, entry + 12).map(Int.init),
                   let rawSize = u32(bytes, entry + 16).map(Int.init) else { return false }
-            return patch.hookRVA >= virtualAddress && patch.hookRVA + 5 <= virtualAddress + rawSize
+            return patch.hookRVA >= virtualAddress && patch.hookRVA + branchLen <= virtualAddress + rawSize
         }), let virtualSize = u32(bytes, header + 8).map(Int.init),
               let virtualAddress = u32(bytes, header + 12).map(Int.init),
               let rawSize = u32(bytes, header + 16).map(Int.init),
               let rawOffset = u32(bytes, header + 20).map(Int.init),
               rawOffset + rawSize <= bytes.count
         else {
-            throw StepFailure(step: step, detail: String(localized: "winebus.sys is not an x86_64 PE image."))
+            throw StepFailure(step: step, detail: String(localized: "winebus.sys is not a \(patch.arch.rawValue) PE image."))
         }
 
         func offset(_ rva: Int) -> Int { rawOffset + rva - virtualAddress }
 
-        let expected = [callRel32] + rel32(from: patch.hookRVA, to: patch.hookTargetRVA)
+        let expected = branch(patch.arch, from: patch.hookRVA, to: patch.hookTargetRVA)
         let present = Array(bytes[offset(patch.hookRVA) ..< offset(patch.hookRVA) + expected.count])
         guard present == expected else {
             throw StepFailure(
@@ -213,7 +248,7 @@ enum WinebusPatcher {
 
         bytes.replaceSubrange(offset(patch.caveRVA) ..< offset(caveEnd), with: payload)
         bytes.replaceSubrange(offset(patch.hookRVA) ..< offset(patch.hookRVA) + expected.count,
-                              with: [callRel32] + rel32(from: patch.hookRVA, to: patch.caveRVA))
+                              with: branch(patch.arch, from: patch.hookRVA, to: patch.caveRVA))
         put32(UInt32(caveEnd - virtualAddress), at: header + 8, in: &bytes)
         put32(checksum(bytes, field: optional + 64), at: optional + 64, in: &bytes)
 
@@ -236,8 +271,14 @@ enum WinebusPatcher {
         return (sum & 0xffff) + UInt32(bytes.count)
     }
 
-    private static func rel32(from callRVA: Int, to targetRVA: Int) -> [UInt8] {
-        withUnsafeBytes(of: Int32(truncatingIfNeeded: targetRVA - (callRVA + 5)).littleEndian, Array.init)
+    // The direct call the hook holds and the patch rewrites: an x86_64 CALL rel32, or an
+    // aarch64 BL (both reach anywhere in the one image).
+    private static func branch(_ arch: WineArch, from hookRVA: Int, to targetRVA: Int) -> [UInt8] {
+        if arch == .aarch64Windows {
+            let imm = UInt32(truncatingIfNeeded: (targetRVA - hookRVA) >> 2) & 0x03ff_ffff
+            return withUnsafeBytes(of: (0x9400_0000 | imm).littleEndian, Array.init)
+        }
+        return [0xe8] + withUnsafeBytes(of: Int32(truncatingIfNeeded: targetRVA - (hookRVA + 5)).littleEndian, Array.init)
     }
 
     private static func put32(_ value: UInt32, at offset: Int, in bytes: inout [UInt8]) {

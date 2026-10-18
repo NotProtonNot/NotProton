@@ -51,6 +51,8 @@ let package = Package(
                 .copy("Resources/winebus-cap-fex-40921.bin"),
                 .copy("Resources/winebus-cap-41069.bin"),
                 .copy("Resources/winebus-cap-fex-41069.bin"),
+                .copy("Resources/winebus-cap-fex-40921-a64.bin"),
+                .copy("Resources/winebus-cap-fex-41069-a64.bin"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         )
