@@ -1,20 +1,13 @@
 #!/bin/sh
-# Create and configure the wine tree that the component builds need.
+# Sets up the Wine source tree that lsteamclient and the steam.exe shim are built in.
+# CrossOver doesn't ship winegcc or winebuild, so they can't be built against it.
 #
-#   ./setup-wine-tree.sh   create and configure, skipping whatever is already done
+#   ./setup-wine-tree.sh   skips any step that's already done
 #
-# CrossOver ships a runtime-only Wine with no winegcc or winebuild, so lsteamclient
-# and the steam.exe shim are built in a wine source tree and staged into the bridge
-# unsigned.
+# Uses stock Wine 11.15, the version CrossOver is based on.
 #
-# The base is stock Wine 11.15, the version the CrossOver runtime is built from
-# (wine-11.15-8895-g32f409fef6a). ntdll from a different vintage speaks a different
-# server protocol and the shipped loader refuses to boot it.
-#
-# A unix half loads into the wine loader's own process and has to match its arch. The
-# rosetta loader is x86_64, which on an Apple Silicon host needs the cross configure
-# that HOST and the two compilers below provide. The FEX loader is arm64 and wants a
-# native tree, so each gets its own build directory. The PE halves come from mingw.
+# By default this configures an x86_64 build for the Rosetta runtime. 'make bridge'
+# runs it a second time with HOST=aarch64-apple-darwin for the FEX runtime.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"

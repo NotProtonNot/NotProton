@@ -1,5 +1,5 @@
 // WebUI route registration for routes the macOS client does not serve.
-// Specific to the Steam beta client, which has a new UI.
+// Needed since the October 13th 2026 Steam client update (1791918634), which has a new UI.
 #ifndef NOTPROTON_FEATS_WEBUI_H
 #define NOTPROTON_FEATS_WEBUI_H
 
@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <mach-o/loader.h>
 
-// The Compatibility page on beta Steam needs GetCompatTools and SpecifyCompatTool,
+// The Compatibility page in the new UI needs GetCompatTools and SpecifyCompatTool,
 // neither of which are served on the macOS client, rudely.
 int np_webui_init(const struct mach_header_64 *mh, intptr_t slide,
                   uintptr_t register_fn, uintptr_t dispatch_fn,

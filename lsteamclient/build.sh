@@ -1,46 +1,19 @@
 #!/bin/bash
-# Build lsteamclient from the tree fetch.sh assembles, which is Valve's sources with
-# the files authored here laid over them. This directory holds only the authored ones.
-# The module has two halves and both come from the same SOURCES list in Makefile.in:
-# the .cpp entries are the unix half (lsteamclient.so), the .c entries are the PE side
-# (lsteamclient.dll, one per Windows arch).
+# Builds lsteamclient from the tree fetch.sh puts together: Valve's sources with
+# the files in this folder copied over them.
 #
-# The PE halves build with the wine build tree's own make. The unix half cannot,
-# and that is why the second half of this script exists: make links for the machine
-# rather than for the tree's host, silently ignores every object of the other arch,
-# and drops a ~104 KB stub that loads but exports nothing. Every compile and link
-# below therefore names its arch explicitly.
+#   ./build.sh            builds the PE halves (i386 and x86_64 .dll) and the unix half (.so)
+#   ./build.sh --pe       PE halves only
+#   ./build.sh --unix     unix half only
+#   ./build.sh --install  also copies them into the bridge and the runner clone
 #
-# A unix half runs inside the wine loader's own process, so UNIX_ARCH is whichever
-# arch that loader is: x86_64 for the rosetta CrossOver build, arm64 for the FEX one.
-# It has to match the tree WINE_BUILD points at, because the ntdll.so it links
-# against comes from there.
+# The PE halves build with make in the Wine tree. make links lsteamclient.so for
+# the wrong arch, so this script compiles and links it itself.
 #
-# SOURCES order is the link order and affects the output bytes, so never sort it.
+# UNIX_ARCH is x86_64 for the Rosetta runtime and arm64 for FEX, and has to match
+# WINE_BUILD. 'make bridge' runs this a second time with UNIX_ARCH=arm64 --unix.
 #
-# An x86_64 unix half must be unsigned, because wine builtins fail to load once
-# codesigned. arm64 is the other way round: the platform will not map an unsigned
-# arm64 image at all, so the linker signs its output as it produces it and that
-# signature has to survive. CrossOver's own arm64 builtins are signed for the same
-# reason. PE files carry no Mach-O signature, so none of this applies to them.
-#
-# Reproducibility differs between the halves. A PE rebuild from unchanged source
-# is byte-identical except for two header fields, TimeDateStamp and the optional
-# header CheckSum, so this script reports a hash with those zeroed and that value
-# can be compared across builds. The unix half has no such property: -g makes the
-# linker stamp every object's mtime into the Mach-O debug map, which also changes
-# LC_UUID, so two builds of identical source never hash the same. Compare code
-# and symbols instead:
-#   otool -s __TEXT __text <so> | tail -n +2 | shasum
-#   nm -U <so> | awk '{print $2, $3}' | sort
-#
-# Usage:
-#   ./build.sh                 build and verify both halves
-#   ./build.sh --pe            PE halves only
-#   ./build.sh --unix          unix half only
-#   ./build.sh --install       also install to the CrossOver tree and bridge
-#
-# Overridable: WINE_BUILD, WINE_SRC_REL, CX_ROOT, BRIDGE_DIR, UNIX_ARCH, MIN_VER
+# Overridable: WINE_BUILD, WINE_SRC_REL, CX_ROOT, BRIDGE_DIR, UNIX_ARCH, MIN_VER, TREE
 
 set -eu
 
@@ -48,8 +21,6 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
 
 WINE_BUILD=${WINE_BUILD:-$repo/scratch/wine-build-dual}
-# Mach-O spells the arm64 arch arm64 and wine spells its directory aarch64-unix, so
-# both names are kept rather than derived from each other at every use.
 UNIX_ARCH=${UNIX_ARCH:-x86_64}
 MIN_VER=${MIN_VER:-15.0}
 case "$UNIX_ARCH" in
@@ -57,14 +28,11 @@ case "$UNIX_ARCH" in
 	arm64) unix_dir=aarch64-unix ;;
 	*) echo "==> UNIX_ARCH is $UNIX_ARCH, expected x86_64 or arm64" >&2; exit 1 ;;
 esac
-# Relative because it lands in the debug info. Keep the default sibling layout so
-# a rebuild stays comparable to the shipped binary.
+# Relative, since it ends up in the debug info.
 WINE_SRC_REL=${WINE_SRC_REL:-../wine}
-# The complete tree, unlike $here, which holds only the authored files.
+# Valve's sources with ours copied over, from fetch.sh.
 TREE=${TREE:-$repo/build/lsteamclient}
-# The cloned runner, not the user's installed CrossOver. --install writes into this
-# tree, and the installed app has to stay stock: it is the only clean copy on the
-# machine and it is what the clone and the ntdll patcher are both taken from.
+# The runner clone, never the installed CrossOver.
 if [ -z "${CX_ROOT:-}" ]; then
 	for clone in "$HOME/Library/Application Support/notproton/runners"/crossover-*/CrossOver; do
 		[ -d "$clone" ] || continue
@@ -97,7 +65,7 @@ out=$dll/lsteamclient.so
 
 if [ ! -d "$WINE_BUILD/$dll" ]; then
 	echo "==> no wine build tree at $WINE_BUILD/$dll"
-	echo "    the tree is a configured CrossOver 11.0 source drop, see ALIGNMENT.md"
+	echo "    run bridge/setup-wine-tree.sh to clone and configure it"
 	exit 1
 fi
 
@@ -107,11 +75,7 @@ src=$WINE_SRC_REL/$dll
 [ -d "$src" ] || { echo "==> no wine source tree at $WINE_BUILD/$src"; exit 1; }
 
 echo "==> syncing the assembled tree into $WINE_SRC_REL/$dll"
-# --delete so the build cannot see anything but the assembled sources. Dropping
-# steamclient.spec and steamclient64.spec is safe: the generated Makefile names only
-# lsteamclient.spec, because MODULE is lsteamclient.dll.
-# Unchanged files keep their mtime so the staleness checks below do not rebuild the
-# world.
+# Unchanged files keep their mtime, so they aren't recompiled.
 rsync -a --delete "$TREE/" "$src/"
 
 pe_info=$here/../bridge/pe-info.py
@@ -136,8 +100,7 @@ if [ "$do_pe" -eq 1 ]; then
 		# shellcheck disable=SC2046
 		set -- $("$pe_info" "$target")
 		[ "$1" = "$want" ] || { echo "==> $target is $1, expected $want"; exit 1; }
-		# A PE half that lost its objects would be orders of magnitude smaller than
-		# the ~30 MB the real thing weighs.
+		# The real PE halves are about 30 MB.
 		[ "$size" -gt 1000000 ] || { echo "==> $target is only $size bytes, the link dropped objects"; exit 1; }
 		echo "==> built $target  $1  $size bytes  $2 (timestamp and checksum zeroed)"
 	done
@@ -151,6 +114,7 @@ if [ "$do_unix" -eq 1 ]; then
 		exit 1
 	fi
 
+	# Keep SOURCES order, it's the link order.
 	objs=$(sed -n 's/^[[:space:]]*\([A-Za-z0-9_]*\.cpp\)[[:space:]]*\\*[[:space:]]*$/\1/p' "$TREE/Makefile.in")
 	count=$(echo "$objs" | wc -l | tr -d ' ')
 	echo "==> unix half: $count sources from Makefile.in SOURCES"
@@ -184,14 +148,12 @@ if [ "$do_unix" -eq 1 ]; then
 		-install_name @rpath/lsteamclient.so -Wl,-rpath,@loader_path/ \
 		$link_objs dlls/ntdll/ntdll.so -lc++ -Wl,-undefined,dynamic_lookup
 
-	# A real unix half is ~3.3 MB, so a size floor catches a link that dropped its
-	# objects and left the stub.
+	# A link that dropped its objects leaves a small stub.
 	size=$(stat -f %z "$out")
 	arch=$(lipo -archs "$out")
 	[ "$arch" = "$UNIX_ARCH" ] || { echo "==> built $arch, expected $UNIX_ARCH"; exit 1; }
 	[ "$size" -gt 1000000 ] || { echo "==> only $size bytes, the link dropped objects"; exit 1; }
-	# codesign exits non-zero for an object that is not signed at all, which is the
-	# state x86_64 has to be in, so the text is what gets checked and not the status.
+	# codesign -dv fails on unsigned files, so check its output instead.
 	signing=$(codesign -dv "$out" 2>&1 || true)
 	if [ "$UNIX_ARCH" = x86_64 ]; then
 		if ! echo "$signing" | grep -q "not signed at all"; then
@@ -213,10 +175,8 @@ fi
 
 [ -d "$CX_ROOT/lib/wine" ] || { echo "==> no CrossOver tree at $CX_ROOT"; exit 1; }
 
-# Refuse to write into an installed CrossOver, whatever CX_ROOT says. That copy is
-# the source the runner clone and the ntdll patcher are both taken from, and
-# CrossOver ships no lsteamclient, so anything added there is a modification of the
-# user's application that nothing would ever clean up.
+# The runner clone and the ntdll patch are made from the installed CrossOver, so it
+# has to stay stock.
 case "$CX_ROOT" in
 	/Applications/*)
 		echo "==> refusing to install into $CX_ROOT" >&2
@@ -226,18 +186,8 @@ case "$CX_ROOT" in
 		;;
 esac
 
-# Each half goes to three places.
-#
-# The bridge arch directories are what RUN_SCRIPT's install_lsteamclient copies
-# into the CrossOver tree on every launch, so they are the real source of truth.
-# Writing the CrossOver tree here as well only makes the current build testable
-# without launching a game first; the next launch overwrites it from the bridge
-# either way, which means skipping the bridge copy silently reverts the install.
-#
-# The flat bridge copies are separate consumers, not duplicates: RUN_SCRIPT
-# stages them into the prefix Steam directory as the load trigger for the 64 bit
-# side, alongside the 32 bit trigger it puts in syswow64. Wrong-arch flat PEs
-# abort builtin lookup outright, so the flat copy is the x86_64 one.
+# Each launch installs from the bridge, so the CX_ROOT copy only saves launching a
+# game to test. The flat lsteamclient.dll is what goes in the prefix's Steam folder.
 install_one() {
 	from=$1
 	shift

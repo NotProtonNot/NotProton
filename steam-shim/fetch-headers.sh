@@ -1,20 +1,14 @@
 #!/bin/sh
-# Assemble the headers the shim compiles against, into proton-headers/ next to the
-# sources so the whole include set sits under srcdir once build.sh syncs it across.
+# Puts the headers the shim needs into proton-headers/.
 #
-# Three of them come from Proton submodules, which a codeload tarball does not carry:
-# it records openvr and wine as empty directories. They are fetched individually at
-# the commits Proton pins on proton_9.0, which is the branch this shim's steam.cpp
-# comes from, and each is checked against its recorded hash. Nothing else in either
-# submodule is used: openvr.h pulls in only stdint.h and string, ivrclientcore.h
-# includes nothing, and heap.h needs winbase.h, which the wine tree supplies.
+# openvr.h and ivrclientcore.h come from Valve's openvr repo, and wine/heap.h from
+# Valve's wine repo. Proton includes both as submodules, but its source tarball
+# has empty openvr/ and wine/ folders. So each header is downloaded from its own
+# repo at the commit Proton 9.0 uses. The Steamworks SDK headers are copied from
+# the tree lsteamclient/fetch.sh puts together.
 #
-# The Steamworks SDK headers are Valve's too but arrive with lsteamclient, so they
-# are copied from the tree its fetch.sh assembles rather than fetched again.
-#
-# Usage:
-#   ./fetch-headers.sh            assemble if needed
-#   ./fetch-headers.sh --refetch  discard the cache first
+#   ./fetch-headers.sh            downloads what's missing and copies everything
+#   ./fetch-headers.sh --refetch  deletes the downloads first
 #
 # Overridable: OPENVR_COMMIT, WINE_COMMIT, CACHE, OUT, LSC_TREE
 
@@ -23,8 +17,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
 
-# Submodule pins as recorded by Proton at proton_9.0. openvr is ValveSoftware/openvr;
-# the wine submodule url is ../wine relative to Proton, so ValveSoftware/wine.
+# Proton 9.0's submodule pins.
 OPENVR_COMMIT=${OPENVR_COMMIT:-f51d87ecf8f7903e859b0aa4d617ff1e5f33db5a}
 WINE_COMMIT=${WINE_COMMIT:-015230dc0f78a543032dea0907f6c97304b25ca3}
 

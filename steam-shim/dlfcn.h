@@ -1,9 +1,8 @@
 #ifndef STEAM_HELPER_DLFCN_SHIM_H
 #define STEAM_HELPER_DLFCN_SHIM_H
 
-/* Minimal dlfcn shim for the PE build. steam.cpp only calls these from the
-   OpenVR and vulkan bridge paths, which do not run on this target; the inline
-   bodies exist so the source compiles and links unchanged without a POSIX libdl. */
+/* mingw has no dlfcn.h. These stubs always fail, so the OpenVR and Vulkan code in
+   steam.cpp that needs them does nothing. */
 
 #ifdef __cplusplus
 extern "C" {

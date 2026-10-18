@@ -1,7 +1,6 @@
 MODULE    = steam.exe
-# CXX_PE_LIBS is Wine's own PE libc++, libc++abi, libunwind, msvcp140 and vcruntime140.
-# mingw's libstdc++ mismatches these and leaves std::basic_string and
-# _Unwind_SjLj_Resume undefined. dlls/dmsynth imports the same way.
+# Wine's own PE libc++. mingw's libstdc++ leaves std::basic_string and
+# _Unwind_SjLj_Resume undefined.
 IMPORTS   = $(CXX_PE_LIBS) user32 advapi32 shlwapi shell32 msi
 
 EXTRADLLFLAGS = -mwindows -mcygwin -static-libgcc

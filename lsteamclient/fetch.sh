@@ -1,14 +1,9 @@
 #!/bin/sh
-# Assemble a complete lsteamclient source tree: Valve's, at the pinned commit, with
-# the files authored here laid over the top.
+# Puts together the lsteamclient source tree: Valve's, from Proton at the pinned
+# commit, with the files in this folder copied over it.
 #
-# Only the authored files are tracked in this repo. Valve's 3,133 are fetched, so
-# their Steamworks SDK licensed sources and the LGPL cxx.h are never redistributed
-# here.
-#
-# Usage:
-#   ./fetch.sh            assemble if needed
-#   ./fetch.sh --refetch  discard the cached tarball and assembled tree first
+#   ./fetch.sh            downloads Proton if needed and rebuilds the tree
+#   ./fetch.sh --refetch  deletes the download and the tree first
 #
 # Overridable: PROTON_COMMIT, BASELINE_DIGEST, WORK, TREE
 
@@ -19,17 +14,14 @@ repo=$(cd "$here/.." && pwd)
 
 PROTON_COMMIT=${PROTON_COMMIT:-164e0ccd2ea2b1ec2e5d08dc97f65b184c2539ca}
 
-# sha256 over the extracted tree: for each path in sorted order, the sha256 of the
-# path then the sha256 of the contents. This pins content, not the archive, because
-# codeload regenerates the tarball and the gzip framing moves. It also means a
-# force-push that orphans the commit is caught as a mismatch instead of silently
-# building against whatever the branch holds now.
+# sha256 of the extracted files, not the tarball, because the tarball's bytes can
+# change between downloads.
 BASELINE_DIGEST=${BASELINE_DIGEST:-b286df1df46a70d9e2cc674676afcc6e08b1a56ce472e5add0932b86940657bf}
 
 WORK=${WORK:-$repo/scratch/proton-lsc}
 TREE=${TREE:-$repo/build/lsteamclient}
 
-# Laid over Valve's tree, in this order, by the loop at the end.
+# Our files that replace Valve's.
 authored="steamclient_main.c
 unix_steam_input_manual.cpp
 unixlib.cpp"
@@ -79,8 +71,7 @@ fi
 count=$(find "$base" -type f | wc -l | tr -d ' ')
 echo "==> baseline verified: Proton $PROTON_COMMIT, $count files"
 
-# Rebuilt from the baseline each time so a removed authored file cannot leave a stale
-# copy behind, and so the overlay below is always the only divergence.
+# Rebuilt every time so a file we've removed doesn't linger.
 rm -rf "$TREE"
 mkdir -p "$(dirname "$TREE")"
 cp -c -R "$base" "$TREE" 2>/dev/null || cp -R "$base" "$TREE"

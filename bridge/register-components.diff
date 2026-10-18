@@ -1,17 +1,5 @@
 Register dlls/lsteamclient and programs/steam.exe with Wine's build system.
 
-Wine's configure enumerates the makefiles it will generate, so a component has to be
-declared before configure runs. Undeclared, it gets no makefile and its build target
-silently does nothing.
-
-WINE_EXTERNAL(programs/steam.exe) is what stops makedep reading the internal includes
-inside jsoncpp's amalgamation. Those sit behind JSON_IS_AMALGAMATION and never compile,
-but the scanner follows them regardless of the #if.
-
-Tracked as a patch rather than regenerated with autoconf. It is +8/-1 mechanical lines
-across the two files, where a local autoconf against stock 11.15 would rewrite the whole
-of configure with whatever version happens to be installed.
-
 diff --git a/configure b/configure
 index aa3c65e..2df611f 100755
 --- a/configure

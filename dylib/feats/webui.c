@@ -1,5 +1,5 @@
 // WebUI route registration for routes the macOS client does not serve.
-// Specific to the Steam beta client, which has a new UI.
+// Needed since the October 13th 2026 Steam client update (1791918634), which has a new UI.
 #include "webui.h"
 #include "../core/macho.h"
 #include "../util/log.h"

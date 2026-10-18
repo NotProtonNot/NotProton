@@ -1,4 +1,4 @@
-//Clever detours, but 32 bit
+// Clever detours, but 32 bit
 
 typedef unsigned long long u64;
 typedef unsigned int u32;
@@ -52,7 +52,7 @@ struct io_status { u32 status; u32 information; };
 #define ARG_FLAGS(fp)     ( (u32 *)((u8 *)(fp) + FLAGS_SLOT))
 #define ARG_LOAD_PATH(fp) (*(void **)((u8 *)(fp) + LOAD_PATH_SLOT))
 
-//WINE_MODREF 32
+// WINE_MODREF 32
 #define WM_DLLBASE(wm)   (*(u8 **)((u8 *)(wm) + 0x18))
 #define WM_FULLNAME(wm)  ( (const struct us *)((u8 *)(wm) + 0x24))
 #define WM_BASENAME(wm)  (*(const u16 **)((u8 *)(wm) + 0x30))

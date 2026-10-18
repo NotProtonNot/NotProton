@@ -1,53 +1,34 @@
 #!/bin/sh
-# Check the bridge holds exactly what a launch consumes, and nothing else.
+# Checks that the bridge holds exactly the files listed in payload.manifest.
 #
-#   ./verify.sh          report what is missing, unexpected, or present
-#   ./verify.sh --prune  also move anything unexpected out to scratch/bridge-attic
+#   ./verify.sh          lists missing and unexpected files
+#   ./verify.sh --prune  also moves unexpected files to scratch/bridge-attic
 #
-# The bridge is the staging area RUN_SCRIPT installs from on every launch, so what
-# sits in it ends up in the CrossOver tree, the wine prefix, and the Steam client
-# directory. Stray files there are not harmless:
+# It also looks for old copies of the bridge next to it, and for bridge files left
+# in Steam Play prefixes.
 #
-# - legacycompat is copied by glob, so anything dropped in it is installed into the
-#   Steam client directory verbatim.
-# - a stale lsteamclient.so or steamclient64.so beside a PE of the same name makes
-#   wine bind that builtin to the old unix half instead of loading the dll.
-# - a wrong-arch PE on WINEDLLPATH aborts builtin lookup outright with c000007b.
-#
-# Backups belong outside the bridge for the same reason, which is why --prune moves
-# rather than deletes: the attic is in scratch, which is disposable.
-#
-# Every file here is reproducible. The built ones come from make lsteamclient,
-# make steam-shim and make ntdll-patch. The Valve ones come from the Steam client
-# packages, fetched by fetch-valve.sh beside this script.
+# The built files come from 'make bridge', the patched ntdlls from the NotProton app,
+# and the Valve files from fetch-valve.sh.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 BRIDGE_DIR="${BRIDGE_DIR:-$HOME/Library/Application Support/notproton/bridge}"
 ATTIC="${ATTIC:-$repo/scratch/bridge-attic}"
-# Stale whole-bridge copies get made next to it rather than inside it, where a
-# check that only walks the bridge cannot see them.
 SUPPORT_DIR="${SUPPORT_DIR:-$(dirname "$BRIDGE_DIR")}"
 BRIDGE_NAME="$(basename "$BRIDGE_DIR")"
 
 prune=0
 [ "${1:-}" = "--prune" ] && prune=1
 
-# What RUN_SCRIPT reads, taken from the manifest the companion app also ships, so
-# this list and the one the installer stages from cannot drift apart. The manifest
-# sits in the app's resource directory because that is the only place Swift Package
-# Manager will package a file from.
+# The same manifest the app installs from.
 MANIFEST="${MANIFEST:-$repo/app/Sources/NotProtonApp/Resources/payload.manifest}"
 if [ ! -f "$MANIFEST" ]; then
     echo "==> no payload manifest at $MANIFEST" >&2
     exit 1
 fi
 
-# Three origins collapse to the two sections this check has always printed. The
-# manifest separates built from patched because the installer treats them
-# differently, the patched ntdlls being made from the user's own CrossOver. That
-# distinction does not matter here.
+# The patched ntdlls are listed with the built files.
 origin() {
     awk -v want="$1" '$1 == want { print $2 }' "$MANIFEST"
 }
@@ -88,11 +69,7 @@ report() {
 report "built here" "$built"
 report "from Valve" "$valve"
 
-# Listed relative to the bridge so the paths stay printable and the directory name
-# containing spaces never has to be stripped by pattern. grep does the comparison
-# because a case statement inside a command substitution does not parse in the sh
-# macOS ships. Every line of $expected is one fixed whole-line pattern, and grep
-# exits nonzero when nothing is left over, which is the ordinary result.
+# grep exits 1 when there are no strays.
 strays="$(cd "$BRIDGE_DIR" && { find . -mindepth 1 -type f | sed 's|^\./||' \
     | grep -Fxv "$expected" || true; })"
 
@@ -120,9 +97,7 @@ if [ "$prune" -eq 1 ] && [ "$unexpected" -gt 0 ]; then
     unexpected=0
 fi
 
-# A whole copy of the bridge parked beside it is the other way this directory
-# accumulates. Each one is a few hundred megabytes of binaries that no launch reads
-# and that no build target maintains, so they only go stale.
+# Old copies like bridge.old next to the bridge. Nothing reads or updates them.
 copies="$(find "$SUPPORT_DIR" -maxdepth 1 -mindepth 1 -type d -name "$BRIDGE_NAME.*" \
     | sed "s|^$SUPPORT_DIR/||" | sort)"
 stale=0
@@ -146,14 +121,9 @@ else
     [ "$prune" -eq 1 ] && stale=0
 fi
 
-
-# RUN_SCRIPT rewrites the flat bridge files in each prefix's Steam directory and the one
-# i386 lsteamclient.dll trigger in syswow64 on every launch, so a stale copy in either
-# place heals itself and is only worth reporting. Anywhere else in a prefix is different:
-# nothing rewrites it and nothing prunes it, so it keeps whatever build put it there.
-# system32 is the case that matters. install_lsteamclient deliberately puts nothing there
-# so that a 64 bit load never finds a trigger it did not stage, and a correct-arch PE
-# appearing there defeats that on its own.
+# Every launch rewrites the bridge files in a prefix's Steam folder and
+# syswow64/lsteamclient.dll, so old copies there are only counted. A copy anywhere
+# else, system32 included, stays until removed, so it's listed as a stray.
 PREFIX_ROOT="${PREFIX_ROOT:-$HOME/Library/Application Support/Steam/steamapps/compatdata}"
 
 prefix_strays=""

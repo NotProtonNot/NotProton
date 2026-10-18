@@ -1,19 +1,8 @@
 #!/bin/sh
-# Fetch the Valve binaries the bridge stages, from Valve's client packages.
+# Fetches the Valve binaries the bridge stages from Valve's client packages.
 #
-#   ./fetch.sh            download, verify every hash, report
-#   ./fetch.sh --install  also copy them into the bridge
-#
-# The ten Valve files in the bridge come from two pinned Steam client packages. The
-# pins, the CDN hosts and every file hash live in the manifest this reads, which the
-# app reads as a bundled resource too, so there is one definition rather than one per
-# consumer. That file also records where the package names come from, and why two of
-# the paths inside the packages look misplaced.
-#
-# The shim once linked steam_api.dll and steam_api64.dll, which are in no client
-# package and could not be fetched. That dependency is gone: steam.cpp loads
-# steamclient64.dll and calls its CreateInterface instead, so every payload file is
-# either built here or fetchable.
+#   ./fetch-valve.sh            download, verify every hash, report
+#   ./fetch-valve.sh --install  also copy them into the bridge
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -23,7 +12,6 @@ WORK="${WORK:-$repo/scratch/valve-fetch}"
 MANIFEST="${MANIFEST:-$repo/app/Sources/NotProtonApp/Resources/valve-packages.manifest}"
 [ -f "$MANIFEST" ] || { echo "==> no package manifest at $MANIFEST" >&2; exit 1; }
 
-# Akamai is listed first and the rest are fallbacks. All three serve identical bytes.
 BASES="${BASES:-$(awk '$1 == "base" { printf "%s ", $2 }' "$MANIFEST")}"
 
 install=0
@@ -37,7 +25,6 @@ FILES="$(awk '$1 == "file" { print $2 "|" $3 "|" $4 "|" $5 }' "$MANIFEST")"
 
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
-# Downloads once and keeps the package, so a second run verifies without refetching.
 get_pkg() {
     name="$1"
     want="$2"
@@ -69,7 +56,6 @@ for spec in $PACKAGES; do
     get_pkg "$(echo "$spec" | cut -d'|' -f2)" "$(echo "$spec" | cut -d'|' -f3)"
 done
 
-# Extracted fresh every run so a stale extract cannot pass the hash check by luck.
 EX="$WORK/extract"
 rm -rf "$EX"
 mkdir -p "$EX"
