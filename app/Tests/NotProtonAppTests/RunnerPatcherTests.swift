@@ -120,6 +120,28 @@ struct RunnerPatcherTests {
 
     // The FEX flavor has only a wine.app in its arm64 directory, and a loader that is not found
     // never gets the dyld entitlement. Silent at install, it shows up as a game with no dylib.
+    @Test("A backup cut short is not left behind as the clean copy")
+    func cutShortBackupIsNotKept() throws {
+        let dir = try scratchDirectory("keep-clean")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appending(path: "ntdll.dll")
+        try Data(repeating: 0x5a, count: 1 << 20).write(to: file)
+        let cp = dir.appending(path: "cp")
+        try Data("#!/bin/sh\nulimit -f 128\nexec /bin/cp \"$@\"\n".utf8).write(to: cp)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: cp.path(percentEncoded: false))
+
+        #expect(throws: StepFailure.self) {
+            try RunnerPatcher.keepClean(file, cp: cp.path(percentEncoded: false))
+        }
+        #expect(Clean.copy(of: file) == file)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)).sorted()
+            == ["cp", "ntdll.dll"])
+
+        try RunnerPatcher.keepClean(file)
+        #expect(try Data(contentsOf: Clean.copy(of: file)) == Data(contentsOf: file))
+    }
+
     @Test("Loader discovery finds both the bare and the bundled layout")
     func loaderDiscoveryCoversBothLayouts() throws {
         let fm = FileManager.default

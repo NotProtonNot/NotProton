@@ -250,15 +250,21 @@ enum RunnerPatcher {
         return result.status == 0
     }
 
-    private static func keepClean(_ file: URL) throws {
+    static func keepClean(_ file: URL, cp: String = "/bin/cp") throws {
         let backup = Clean.copy(of: file)
         guard backup == file else { return }
 
         let destination = file.appendingPathExtension(Clean.backupSuffix)
-        let result = try Shell.run("/bin/cp", [
-            "-p", file.path(percentEncoded: false), destination.path(percentEncoded: false),
+        let staging = file.deletingLastPathComponent()
+            .appending(path: ".\(destination.lastPathComponent).new")
+        try? FileManager.default.removeItem(at: staging)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let result = try Shell.run(cp, [
+            "-p", file.path(percentEncoded: false), staging.path(percentEncoded: false),
         ])
-        guard result.status == 0 else {
+        guard result.status == 0,
+            rename(staging.path(percentEncoded: false), destination.path(percentEncoded: false)) == 0
+        else {
             throw StepFailure(
                 step: step,
                 detail: String(localized: "Keeping the shipped \(file.lastPathComponent) failed. ")
