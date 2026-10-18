@@ -202,6 +202,47 @@ struct RunnerInstallerTests {
         )
     }
 
+    @Test("A rejected replacement keeps the installed runner", arguments: [false, true])
+    func rejectedReplacementKeepsInstalledRunner(missing: Bool) throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let (install, build) = try makeSupportedInstall(in: runners)
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+        let relative = "lib/wine/x86_64-windows/ntdll.dll"
+        let installed = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        let original = try Data(contentsOf: installed.appending(path: relative))
+        let source = install.crossOverRoot.appending(path: relative)
+        if missing {
+            try FileManager.default.removeItem(at: source)
+        } else {
+            try Data("damaged DLL".utf8).write(to: source)
+        }
+
+        #expect(throws: StepFailure.self) {
+            try RunnerInstaller.clone(from: install, replacingExisting: true, runners: runners)
+        }
+        #expect(try Data(contentsOf: installed.appending(path: relative)) == original)
+        try RunnerInstaller.verifyClone(build: build, root: installed)
+        #expect(!FileManager.default.fileExists(atPath:
+            runners.appending(path: ".crossover-\(build.id).new").path(percentEncoded: false)))
+    }
+
+    @Test("A rejected first copy is not left installed")
+    func rejectedFirstCopyIsNotInstalled() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let (install, build) = try makeSupportedInstall(in: runners)
+        try Data("damaged DLL".utf8).write(to:
+            install.crossOverRoot.appending(path: "lib/wine/x86_64-windows/ntdll.dll"))
+
+        #expect(throws: StepFailure.self) {
+            try RunnerInstaller.clone(from: install, runners: runners)
+        }
+        #expect(!RunnerInstaller.hasClone(forBuild: build.id, runners: runners))
+        #expect(!FileManager.default.fileExists(atPath:
+            runners.appending(path: ".crossover-\(build.id).new").path(percentEncoded: false)))
+    }
+
     @Test("The state reader agrees with what was just written")
     func stateAgreesWithInstaller() throws {
         let runners = try makeRunners()

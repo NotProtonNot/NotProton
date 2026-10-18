@@ -29,11 +29,14 @@ enum RunnerInstaller {
             let staging = target.deletingLastPathComponent()
                 .appending(path: ".\(target.lastPathComponent).new")
             try? fm.removeItem(at: staging)
+            defer { try? fm.removeItem(at: staging) }
             try copyPayload(from: install.crossOverRoot, to: staging)
+            try verifyClone(build: build, root: staging.appending(path: "CrossOver"))
             if occupied {
                 try fm.removeItem(at: target)
             }
             try fm.moveItem(at: staging, to: target)
+            return build
         }
 
         let cloned = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
