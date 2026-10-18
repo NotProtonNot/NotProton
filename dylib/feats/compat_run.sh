@@ -593,6 +593,28 @@ plan_hidden_controllers() {
 $controllers_wanted"
 }
 
+# Sets Wine's DisableHidraw for games with "Disable hidraw" checked. When it's
+# unchecked, the value is removed only if NotProton set it.
+plan_disable_hidraw() {
+  hidraw_file="$STEAM_COMPAT_DATA_PATH/notproton-disable-hidraw"
+  hidraw_value=""
+  [ -n "$STEAM_COMPAT_DATA_PATH" ] && [ ! -L "$hidraw_file" ] || return 1
+  hidraw_set=""
+  [ ! -f "$WINEPREFIX/system.reg" ] || hidraw_set=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
+    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\services\\\\winebus]") == 1; next }
+      s && $0 == "\"disablehidraw\"=dword:00000001" { print 1; exit }')
+  if [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ]; then
+    [ -n "$hidraw_set" ] || hidraw_value='"DisableHidraw"=dword:00000001'
+  elif [ -f "$hidraw_file" ] && [ -n "$hidraw_set" ]; then
+    hidraw_value='"DisableHidraw"=-'
+  fi
+}
+
+winebus_lines() {
+  [ -n "$hidraw_value" ] || return 0
+  printf '%s\r\n' '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' "$hidraw_value" ''
+}
+
 import_prefix_settings() {
   if [ "$NOTPROTON_RETINA" = "1" ]; then
     retina_line='"RetinaMode"="y"'
@@ -607,6 +629,16 @@ import_prefix_settings() {
     controllers_remove=""
     echo "=== could not track the hidden controllers, leaving them as they are ===" >> "$log" 2>&1 || true
   fi
+  hidraw_planned=0
+  if plan_disable_hidraw 2>/dev/null; then
+    hidraw_planned=1
+    if [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ] && [ -n "$hidraw_value" ]; then
+      : > "$hidraw_file" 2>/dev/null || hidraw_value=""
+    fi
+  else
+    hidraw_value=""
+    echo "=== could not track DisableHidraw, leaving it as it is ===" >> "$log" 2>&1 || true
+  fi
   settings_file=$(mktemp "$WINEPREFIX/drive_c/notproton-settings.XXXXXX" 2>/dev/null) \
     || settings_file=""
   if [ -z "$settings_file" ] || ! { printf '%s\r\n' \
@@ -618,7 +650,8 @@ import_prefix_settings() {
       '[HKEY_LOCAL_MACHINE\Software\Classes\steam]' '"URL Protocol"=""' '' \
       '[HKEY_LOCAL_MACHINE\Software\Classes\steam\shell\open\command]' \
       '@="\"C:\\Program Files (x86)\\Steam\\steam.exe\" \"%1\""' '' \
-      && hidraw_lines add "$controllers_add" && hidraw_lines remove "$controllers_remove"; } \
+      && hidraw_lines add "$controllers_add" && hidraw_lines remove "$controllers_remove" \
+      && winebus_lines; } \
       > "$settings_file" 2>/dev/null; then
     [ -z "$settings_file" ] || rm -f "$settings_file"
     echo "=== could not write the prefix settings, launching without them ===" >> "$log" 2>&1 || true
@@ -629,13 +662,19 @@ import_prefix_settings() {
   without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
     && import_status=0 || import_status=$?
   rm -f "$settings_file"
+  if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" != "1" ]; then
+    rm -f "$hidraw_file"
+  fi
+  if [ "$import_status" -eq 0 ] && [ -n "$controllers_add$controllers_remove$hidraw_value" ]; then
+    # Wine only reads these keys when it starts, so restart Wine to apply them.
+    without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+    without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
+  fi
+  if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ]; then
+    echo "controllers: hidraw disabled (NOTPROTON_DISABLE_HIDRAW=1)" >> "$log" 2>&1 || true
+  fi
   if [ "$import_status" -eq 0 ] && [ "$controllers_planned" -eq 1 ]; then
     write_owned_controllers "$controllers_wanted" 2>/dev/null || true
-    if [ -n "$controllers_add$controllers_remove" ]; then
-      # Wine only reads these keys when it starts, so restart Wine to apply them.
-      without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
-      without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
-    fi
     if [ "$NOTPROTON_RAW_CONTROLLERS" = "1" ]; then
       echo "controllers: games read them directly (NOTPROTON_RAW_CONTROLLERS=1)" >> "$log" 2>&1 || true
     elif [ -n "$controllers_wanted" ]; then

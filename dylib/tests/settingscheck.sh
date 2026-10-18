@@ -9,7 +9,8 @@ body=$(sed -n '/^import_prefix_settings() {$/,/^}$/p' "$SRC")
 wrapper=$(sed -n '/^without_lock_fds() {$/,/^}$/p' "$SRC")
 [ -n "$wrapper" ] || { echo "FAIL: without_lock_fds not found in $SRC"; exit 1; }
 helpers=""
-for helper in controller_ids ids_without hidraw_lines write_owned_controllers plan_hidden_controllers; do
+for helper in controller_ids ids_without hidraw_lines write_owned_controllers plan_hidden_controllers \
+	plan_disable_hidraw winebus_lines; do
 	part=$(sed -n "/^$helper() {\$/,/^}\$/p" "$SRC")
 	[ -n "$part" ] || { echo "FAIL: $helper not found in $SRC"; exit 1; }
 	helpers="$helpers
@@ -77,7 +78,7 @@ run_in() {
 		WINESERVER="$work/wineserver" STEAM_COMPAT_DATA_PATH="$case_dir" \
 		SDL_GAMECONTROLLER_IGNORE_DEVICES="${IGNORE-}" \
 		SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT="${EXCEPT-}" \
-		NOTPROTON_RAW_CONTROLLERS="${RAW-}" verb="${VERB-waitforexitandrun}" \
+		NOTPROTON_RAW_CONTROLLERS="${RAW-}" NOTPROTON_DISABLE_HIDRAW="${HIDRAW-}" verb="${VERB-waitforexitandrun}" \
 		FAKE_STATUS="$2" FAKE_CALLS="$case_dir/calls" FAKE_IMPORTED="$case_dir/imported" \
 		log="$case_dir/log" body="$body" \
 		sh -ec 'eval "$body"; import_prefix_settings; echo returned' \
@@ -212,6 +213,23 @@ IGNORE='0x054c/0x0ce6' EXCEPT='' RAW=''
 again "" 0
 same_file "a linked tracking file writes no controller keys" "$work/retina-off" "$case_dir/imported"
 is "a linked tracking file is logged" "=== could not track the hidden controllers, leaving them as they are ===" "$(cat "$case_dir/log")"
+
+echo "== Disable hidraw"
+winebus() { printf '%s\r\n' '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' "$1" ''; }
+IGNORE='' EXCEPT='' RAW=''
+new_case
+in_registry 057e/2006 057e/2007 057e/2009
+printf '%s\n' 057e/2006 057e/2007 057e/2009 > "$case_dir/notproton-hidden-controllers"
+HIDRAW=1
+again "" 0
+{ cat "$work/retina-off"; winebus '"DisableHidraw"=dword:00000001'; } > "$work/expected"
+same_file "on" "$work/expected" "$case_dir/imported"
+printf '%s\n' '[System\\ControlSet001\\Services\\winebus] 1791230000' '"DisableHidraw"=dword:00000001' '' >> "$case_dir/pfx/system.reg"
+HIDRAW=''
+again "" 0
+{ cat "$work/retina-off"; winebus '"DisableHidraw"=-'; } > "$work/expected"
+same_file "off" "$work/expected" "$case_dir/imported"
+unset HIDRAW
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> settingscheck: all assertions hold"
