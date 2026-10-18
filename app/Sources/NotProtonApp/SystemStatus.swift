@@ -313,26 +313,24 @@ final class SystemStatus {
             alert.addButton(withTitle: String(localized: "Cancel"))
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
-        let lock: DeploymentContent.InstallationLock
         do {
-            lock = try DeploymentContent.acquireInstallationLock()
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
+            if let refusal = Self.steamChoiceRefusal(picked, current: current) {
+                setFailure(refusal)
+                AppLog.note("steam choice refused: \(picked.path(percentEncoded: false))")
+                return
+            }
+
+            if same(picked, SupportPaths.Steam.defaultApp) {
+                UserDefaults.standard.removeObject(forKey: SupportPaths.Steam.appPathKey)
+            } else {
+                UserDefaults.standard.set(picked.path(percentEncoded: false), forKey: SupportPaths.Steam.appPathKey)
+            }
         } catch {
             setFailure(error)
             return
         }
-        if let refusal = Self.steamChoiceRefusal(picked, current: current) {
-            lock.release()
-            setFailure(refusal)
-            AppLog.note("steam choice refused: \(picked.path(percentEncoded: false))")
-            return
-        }
-
-        if same(picked, SupportPaths.Steam.defaultApp) {
-            UserDefaults.standard.removeObject(forKey: SupportPaths.Steam.appPathKey)
-        } else {
-            UserDefaults.standard.set(picked.path(percentEncoded: false), forKey: SupportPaths.Steam.appPathKey)
-        }
-        lock.release()
         AppLog.note("steam chosen: \(picked.path(percentEncoded: false))")
         await refresh()
     }
