@@ -1496,7 +1496,7 @@ static BOOL steam_command_handler(int argc, char *argv[])
     BOOL restart_self = FALSE;
     const char *sgi;
 
-    /* If there are command line options, only forward steam:// and options start with - */
+    /* Only steam:// links reach the Mac client. Other - options are accepted and dropped. */
     if (argc > 1 && StrStrIA(argv[1], "steam://") != argv[1] && argv[1][0] != '-')
         return FALSE;
 
