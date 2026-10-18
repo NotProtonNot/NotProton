@@ -84,6 +84,27 @@ last run by CrossOver Preview (FEX)
 CrossOver Preview (FEX)
 ")"
 
+echo "== alerts =="
+alert=$(extract show_alert)
+[ -n "$alert" ] || { echo "FAIL: show_alert not found in $SRC"; exit 1; }
+data=$(mktemp -d "$work/compatdata.XXXXXX")
+(
+	verb=waitforexitandrun
+	# shellcheck disable=SC2329 # show_alert runs this in place of the real dialog
+	osascript() {
+		if /usr/bin/lockf -s -t 0 "$data/.notproton-prefix.lock" true; then
+			echo free > "$data/during-alert"
+		else
+			echo held > "$data/during-alert"
+		fi
+	}
+	eval "$alert"
+	exec 8>> "$data/.notproton-prefix.lock"
+	/usr/bin/lockf -s -t 0 8
+	show_alert "title" "message"
+)
+is "an open alert does not keep the prefix locked" "free" "$(cat "$data/during-alert" 2>/dev/null)"
+
 if [ "$fails" -eq 0 ]; then
 	echo "==> buildcheck: all assertions hold"
 else

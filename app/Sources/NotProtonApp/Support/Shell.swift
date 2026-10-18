@@ -151,7 +151,7 @@ enum Shell {
         named name: String, pgrep: String = "/usr/bin/pgrep",
         drainTimeout: DispatchTimeInterval = outputDrainTimeout
     ) -> Bool {
-        guard let result = try? run(pgrep, ["-x", name], drainTimeout: drainTimeout)
+        guard let result = try? run(pgrep, ["-x", "-U", String(getuid()), name], drainTimeout: drainTimeout)
         else { return false }
         return result.succeeded
     }

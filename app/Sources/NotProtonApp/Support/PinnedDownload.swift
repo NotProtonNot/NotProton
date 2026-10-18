@@ -36,33 +36,43 @@ enum PinnedDownload {
         for base in bases {
             let host = base.host() ?? base.absoluteString
             report(.fetching(host: host))
+            let body: URL, response: URLResponse
             do {
-                let (body, response) = try await URLSession.shared.download(from: base.appending(path: file))
-                defer { try? FileManager.default.removeItem(at: body) }
+                (body, response) = try await URLSession.shared.download(from: base.appending(path: file))
+            } catch {
+                refusals.append("\(host): \(error.localizedDescription)")
+                kinds.insert(.unreachable)
+                continue
+            }
+            defer { try? FileManager.default.removeItem(at: body) }
 
-                if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                    refusals.append("\(host) answered \(http.statusCode)")
-                    kinds.insert(.answered)
-                    continue
-                }
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                refusals.append("\(host) answered \(http.statusCode)")
+                kinds.insert(.answered)
+                continue
+            }
 
-                let got = try Digest.sha256(of: body)
-                guard got == sha256 else {
-                    refusals.append("\(host) served \(got.prefix(16)) rather than \(sha256.prefix(16))")
-                    kinds.insert(.mismatch)
-                    continue
-                }
+            let got = try Digest.sha256(of: body)
+            guard got == sha256 else {
+                refusals.append("\(host) served \(got.prefix(16)) rather than \(sha256.prefix(16))")
+                kinds.insert(.mismatch)
+                continue
+            }
 
+            do {
                 try FileManager.default.createDirectory(
                     at: downloads, withIntermediateDirectories: true
                 )
                 try? FileManager.default.removeItem(at: archive)
                 try FileManager.default.moveItem(at: body, to: archive)
-                return archive
             } catch {
-                refusals.append("\(host): \(error.localizedDescription)")
-                kinds.insert(.unreachable)
+                throw StepFailure(
+                    step: step,
+                    detail: String(localized: "\(downloads.path(percentEncoded: false)) could not be written. ")
+                        + error.localizedDescription
+                )
             }
+            return archive
         }
 
         AppLog.note("\(file) refused by all \(bases.count) hosts: \(refusals.joined(separator: ". "))")

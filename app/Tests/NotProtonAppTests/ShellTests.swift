@@ -114,6 +114,11 @@ struct ShellTests {
             named: "anything", pgrep: pgrep, drainTimeout: .milliseconds(200)))
     }
 
+    @Test("A process another account runs does not count")
+    func anotherAccountsProcessDoesNotCount() {
+        #expect(Shell.processIsRunning(named: "WindowServer") == false)
+    }
+
     @Test("Nothing matching reports nothing running")
     func noMatchReportsNothingRunning() throws {
         let (pgrep, dir) = try stubPgrep(body: "exit 1")

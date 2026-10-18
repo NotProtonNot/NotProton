@@ -293,6 +293,7 @@ tool_name() {
 # Steam passes "run" for helpers such as install scripts, which get no dialog.
 show_alert() {
   [ "$verb" != run ] || return 0
+  exec 8>&- 9>&-
   osascript >/dev/null 2>&1 <<APPLESCRIPT || true
 display alert "$1" message "$2" as critical
 APPLESCRIPT

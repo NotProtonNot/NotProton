@@ -88,6 +88,30 @@ struct PinnedDownloadTests {
         #expect(try String(contentsOf: got, encoding: .utf8) == body)
     }
 
+    @Test("A download that cannot be saved is not blamed on the network")
+    func saveFailureIsNotUnreachable() async throws {
+        let work = try scratchDirectory("pinned")
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        let body = "the real package"
+        let first = try host(work, named: "package.tar", serving: body)
+        let second = try host(work, named: "package.tar", serving: body)
+        let downloads = work.appending(path: "downloads")
+        try Data("not a folder".utf8).write(to: downloads)
+        let reported = Reports()
+
+        let failure = try await #require(throws: StepFailure.self) {
+            _ = try await PinnedDownload.obtain(
+                file: "package.tar", sha256: Digest.sha256(of: Data(body.utf8)),
+                bases: [first, second], into: downloads, step: "test",
+                report: { reported.add($0.label) })
+        }
+
+        #expect(!failure.detail.contains("could not reach"))
+        #expect(failure.detail.contains(downloads.path(percentEncoded: false)))
+        #expect(reported.all.count == 1)
+    }
+
     @Test("An archive already on disk that matches is not fetched again")
     func reusesMatchingArchive() async throws {
         let work = try scratchDirectory("pinned")
