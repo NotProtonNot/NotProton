@@ -77,6 +77,29 @@ private final class Asked: @unchecked Sendable {
     }
 }
 
+private final class DelayedToolScan: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private let tools: [InstalledTool]
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+
+    init(_ tools: [InstalledTool]) { self.tools = tools }
+
+    func list() -> [InstalledTool] {
+        let first = lock.withLock {
+            calls += 1
+            return calls == 1
+        }
+        if first {
+            entered.signal()
+            resume.wait()
+            return []
+        }
+        return tools
+    }
+}
+
 @MainActor
 @Suite("Loading prefixes")
 struct PrefixesModelTests {
@@ -200,6 +223,45 @@ struct PrefixesModelTests {
         // Whatever interleaving happened, the sizes must describe the listed prefixes
         // and nothing else, and nothing may still claim to be loading.
         #expect(Set(model.usage.keys) == Set(model.prefixes.map(\.id)))
+        #expect(!model.isLoading)
+    }
+
+    @Test("A superseded tool scan cannot replace the newer prefix records")
+    func supersededToolScanPublishesNothing() async throws {
+        let (oldDir, oldLibrary) = try makeLibrary(appIDs: ["1574480"])
+        defer { try? FileManager.default.removeItem(at: oldDir) }
+        let (newDir, newLibrary) = try makeLibrary(appIDs: ["4401430"])
+        defer { try? FileManager.default.removeItem(at: newDir) }
+        for (library, appID) in [(oldLibrary, "1574480"), (newLibrary, "4401430")] {
+            try write("\(Self.tool.build)\n\(Self.tool.display)\n",
+                      to: library.compatdata.appending(path: "\(appID)/\(PrefixTools.buildRecordName)"))
+        }
+        let libraries = Libraries([oldLibrary])
+        let scan = DelayedToolScan([Self.tool])
+        defer { scan.resume.signal() }
+        let model = PrefixesModel(libraries: { libraries.current }, installedTools: { scan.list() })
+        let first = Task { await model.load() }
+        let entered = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(returning: scan.entered.wait(timeout: .now() + 5) == .success)
+            }
+        }
+        try #require(entered)
+
+        libraries.current = [newLibrary]
+        await model.load()
+        let current = try #require(model.prefixes.first)
+        #expect(model.tools.map(\.build) == [Self.tool.build])
+        #expect(Set(model.currentTools.keys) == [current.id])
+
+        scan.resume.signal()
+        await first.value
+        #expect(model.prefixes.map(\.id) == [current.id])
+        #expect(model.tools.map(\.build) == [Self.tool.build])
+        #expect(Set(model.records.keys) == [current.id])
+        #expect(Set(model.currentTools.keys) == [current.id])
+        #expect(!model.isStale(current))
+        #expect(!model.isStale(WinePrefix(appID: "1574480", name: nil, library: oldLibrary, lastUsed: nil)))
         #expect(!model.isLoading)
     }
 

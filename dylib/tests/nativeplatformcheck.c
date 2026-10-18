@@ -60,6 +60,9 @@ int main(void) {
     expect("a swapped order", "printf 'windows=2\\nmac=1\\n'", NULL);
     expect("an extra line", "printf 'mac=1\\nwindows=2\\nlinux=3\\n'", NULL);
     expect("no newline at the end", "printf 'mac=1\\nwindows=2'", NULL);
+    expect("a helper that stalls after closing stdout",
+           "printf 'mac=1\\nwindows=2\\n'; exec 1>&-; exec /bin/sleep 3", NULL);
+    expect("a helper that stalls without output", "exec /bin/sleep 3", NULL);
 
     helper(NULL);
     rmdir(dir);

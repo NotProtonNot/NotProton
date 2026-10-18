@@ -245,6 +245,34 @@ struct AppInfoToolTests {
         #expect(result.stdout.isEmpty)
     }
 
+    @Test("Deeply nested appinfo sections fail without crashing the helper", arguments: [false, true])
+    func refusesExcessiveNesting(stringTable: Bool) throws {
+        let depth = 32_768
+        var keys = Cache()
+        for _ in 0..<depth {
+            keys.bytes.append(0x00)
+            if stringTable { keys.u32(0) }
+            else { keys.cstring("nested") }
+        }
+        keys.bytes.append(contentsOf: repeatElement(UInt8(0x08), count: depth + 1))
+        let body = Self.entry(appID: 2100, keyData: keys.bytes)
+        var file = Cache()
+        file.u32(stringTable ? 0x0756_4429 : 0x0756_4428)
+        file.u32(1)
+        if stringTable { file.u64(UInt64(16 + body.count + 4)) }
+        file.bytes.append(contentsOf: body)
+        file.u32(0)
+        if stringTable {
+            file.u32(1)
+            file.cstring("nested")
+        }
+
+        let result = try read(Data(file.bytes), "--platforms")
+        #expect(result.status == 1)
+        #expect(result.stdout.isEmpty)
+        #expect(result.stderr.contains("cannot parse"))
+    }
+
     @Test("A cache that is not a cache fails instead of printing garbage")
     func refusesUnparsableFile() throws {
         let result = try read(Data(repeating: 0xab, count: 4096), "2100")

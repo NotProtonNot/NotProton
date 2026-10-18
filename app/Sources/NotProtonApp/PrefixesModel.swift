@@ -97,7 +97,7 @@ final class PrefixesModel {
         prefixes = found
         usage = usage.filter { id, _ in found.contains { $0.id == id } }
         let listTools = installedTools
-        (tools, records, stale, currentTools) = await Task.detached {
+        let resolved = await Task.detached {
             let tools = listTools()
             var records: [String: PrefixBuildRecord] = [:]
             var stale = Set<String>()
@@ -114,6 +114,7 @@ final class PrefixesModel {
             return (tools, records, stale, current)
         }.value
         guard run == loadGeneration else { return }
+        (tools, records, stale, currentTools) = resolved
         selection = selection.filter { id in found.contains { $0.id == id } }
 
         var kept: [PrefixBackup] = []

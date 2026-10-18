@@ -27,6 +27,7 @@ enum VDFError: Error {
     case unknownType(UInt8)
     case unknownMagic(UInt32)
     case badStringIndex(UInt32)
+    case excessiveNesting
 }
 
 indirect enum Value {
@@ -111,7 +112,8 @@ func readStringTable(_ b: [UInt8], at offset: Int) throws -> [String] {
     return out
 }
 
-func readSection(_ c: inout Cursor, _ table: [String]?) throws -> [String: Value] {
+func readSection(_ c: inout Cursor, _ table: [String]?, depth: Int = 0) throws -> [String: Value] {
+    guard depth < 64 else { throw VDFError.excessiveNesting }
     var out: [String: Value] = [:]
     while true {
         let type = try c.u8()
@@ -128,7 +130,7 @@ func readSection(_ c: inout Cursor, _ table: [String]?) throws -> [String: Value
         switch type {
         // Handles every type the format defines. An unused-but-legal type inside
         // an app entry would otherwise drop the whole entry and its name.
-        case 0x00: out[key] = .section(try readSection(&c, table))
+        case 0x00: out[key] = .section(try readSection(&c, table, depth: depth + 1))
         case 0x01: out[key] = .string(try c.cstring())
         case 0x02: out[key] = .number(Int64(Int32(bitPattern: try c.u32())))
         case 0x03: try c.skip(4)

@@ -20,7 +20,9 @@
 #define OUTPUT_MAX (4u << 20)
 
 // sp.js is held up until this returns.
+#ifndef HELPER_TIMEOUT_MS
 #define HELPER_TIMEOUT_MS 10000
+#endif
 
 static long long now_ms(void) {
     struct timespec ts;
@@ -28,10 +30,9 @@ static long long now_ms(void) {
     return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-static char *read_output(int fd, pid_t pid) {
+static char *read_output(int fd, pid_t pid, long long deadline) {
     char *buf = malloc(OUTPUT_MAX + 1);
     size_t len = 0;
-    long long deadline = now_ms() + HELPER_TIMEOUT_MS;
     while (buf) {
         long long left = deadline - now_ms();
         struct pollfd p = { fd, POLLIN, 0 };
@@ -92,6 +93,7 @@ static char *run_helper(void) {
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_CLOEXEC_DEFAULT);
     char *argv[] = { tool, vdf, "--platforms", NULL };
     pid_t pid;
+    long long deadline = now_ms() + HELPER_TIMEOUT_MS;
     int rc = posix_spawn(&pid, tool, &actions, &attr, argv, *_NSGetEnviron());
     posix_spawnattr_destroy(&attr);
     posix_spawn_file_actions_destroy(&actions);
@@ -102,11 +104,25 @@ static char *run_helper(void) {
         return NULL;
     }
 
-    char *out = read_output(fds[0], pid);
+    char *out = read_output(fds[0], pid, deadline);
     close(fds[0]);
+    if (!out) kill(pid, SIGKILL);
     int status = 0;
     pid_t done;
-    while ((done = waitpid(pid, &status, 0)) < 0 && errno == EINTR) {}
+    for (;;) {
+        done = waitpid(pid, &status, WNOHANG);
+        if (done == pid || (done < 0 && errno != EINTR)) break;
+        long long left = deadline - now_ms();
+        if (left <= 0) {
+            if (out) NP_WARN("nativeplatform: appinfo helper timed out before exiting");
+            kill(pid, SIGKILL);
+            free(out);
+            out = NULL;
+            while ((done = waitpid(pid, &status, 0)) < 0 && errno == EINTR) {}
+            break;
+        }
+        poll(NULL, 0, (int)(left < 10 ? left : 10));
+    }
     if (done != pid || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         if (out) NP_WARN("nativeplatform: appinfo helper failed (status %d)", status);
         free(out);

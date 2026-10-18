@@ -299,8 +299,8 @@ private final class Carry {
     private func escapes(_ landing: URL) -> Bool {
         let values = try? landing.resourceValues(forKeys: [.isSymbolicLinkKey])
         guard values?.isSymbolicLink == true else { return false }
-        let inside = fresh.resolvingSymlinksInPath().path(percentEncoded: false)
-        return !landing.resolvingSymlinksInPath().path(percentEncoded: false).hasPrefix(inside)
+        let inside = fresh.resolvingSymlinksInPath().pathComponents
+        return !landing.resolvingSymlinksInPath().pathComponents.starts(with: inside)
     }
 
     private func directoryExists(_ url: URL) -> Bool {

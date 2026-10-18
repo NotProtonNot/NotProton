@@ -268,7 +268,7 @@ NATIVEPLATFORMCHECK := $(OUT_DIR)/nativeplatformcheck
 
 $(NATIVEPLATFORMCHECK): dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/feats/nativeplatform.h dylib/util/file.c
 	@mkdir -p $(dir $@)
-	$(TEST_CC) -O1 -o $@ dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/util/file.c
+	$(TEST_CC) -O1 -DHELPER_TIMEOUT_MS=1000 -o $@ dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/util/file.c
 
 webpatch-fixtures:
 	@if [ ! -d $(WEBPATCH_FIXTURES) ] || [ ! -f dylib/tests/gatecheck.c ]; then \
