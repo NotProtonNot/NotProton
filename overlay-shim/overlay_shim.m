@@ -40,8 +40,6 @@ enum {
 	format_rgba16_float = 115,
 };
 
-// Make room for the overlay to rebuild its pipeline set several times per session.
-#define max_pipelines 32
 #define max_variants 4
 
 struct variant {
@@ -51,7 +49,6 @@ struct variant {
 };
 
 struct pipeline_entry {
-	id state;
 	MTLRenderPipelineDescriptor *descriptor;
 	id<MTLDevice> device;
 	NSUInteger base_format;
@@ -60,13 +57,32 @@ struct pipeline_entry {
 	int unmarked_logged;
 };
 
-static struct pipeline_entry pipelines[max_pipelines];
-static int pipeline_count;
+static const char pipeline_cache_key;
+static const char command_pipelines_key;
+
+// the cache dies with original pipeline
+@interface NPOverlayPipelineCache : NSObject {
+@public
+	struct pipeline_entry entry;
+}
+@end
+
+@implementation NPOverlayPipelineCache
+- (void)dealloc
+{
+	for (int i = 0; i < entry.variant_count; i++)
+		[entry.variants[i].state release];
+	[entry.descriptor release];
+	[entry.device release];
+	[super dealloc];
+}
+@end
 
 #define max_encoders 32
 
 struct encoder_slot {
 	id encoder;
+	id<MTLCommandBuffer> buffer;
 	NSUInteger format;
 };
 
@@ -242,7 +258,7 @@ static int stage_claimed(Class seen, Class *held, const char *stage)
 	return 1;
 }
 
-static void encoder_mark(id encoder, NSUInteger format)
+static void encoder_mark(id encoder, NSUInteger format, id<MTLCommandBuffer> buffer)
 {
 	os_unfair_lock_lock(&encoder_lock);
 	for (int i = 0; i < max_encoders; i++) {
@@ -250,6 +266,7 @@ static void encoder_mark(id encoder, NSUInteger format)
 			continue;
 
 		overlay_encoders[i].encoder = encoder;
+		overlay_encoders[i].buffer = buffer;
 		overlay_encoders[i].format = format;
 		os_unfair_lock_unlock(&encoder_lock);
 		return;
@@ -268,13 +285,14 @@ static void encoder_clear(id encoder)
 	for (int i = 0; i < max_encoders; i++) {
 		if (overlay_encoders[i].encoder == encoder) {
 			overlay_encoders[i].encoder = nil;
+			overlay_encoders[i].buffer = nil;
 			break;
 		}
 	}
 	os_unfair_lock_unlock(&encoder_lock);
 }
 
-static int encoder_format(id encoder, NSUInteger *format)
+static int encoder_format(id encoder, NSUInteger *format, id<MTLCommandBuffer> *buffer)
 {
 	int found = 0;
 
@@ -282,6 +300,7 @@ static int encoder_format(id encoder, NSUInteger *format)
 	for (int i = 0; i < max_encoders; i++) {
 		if (overlay_encoders[i].encoder == encoder) {
 			*format = overlay_encoders[i].format;
+			*buffer = overlay_encoders[i].buffer;
 			found = 1;
 			break;
 		}
@@ -317,7 +336,7 @@ static struct variant *variant_for(struct pipeline_entry *entry, NSUInteger form
 
 	struct variant *slot = &entry->variants[entry->variant_count];
 	slot->format = format;
-	slot->state = [state retain];
+	slot->state = state;
 	slot->logged = 0;
 	entry->variant_count++;
 
@@ -329,28 +348,46 @@ static struct variant *variant_for(struct pipeline_entry *entry, NSUInteger form
 static void record_overlay_pipeline(id<MTLDevice> device, MTLRenderPipelineDescriptor *descriptor,
                                     id state)
 {
-	for (int i = 0; i < pipeline_count; i++) {
-		if (pipelines[i].state == state)
-			return;
-	}
-
-	if (pipeline_count == max_pipelines) {
-		shim_log("overlay_shim record_overlay_pipeline: table full, %s not tracked\n",
-		        format_name(descriptor.colorAttachments[0].pixelFormat));
+	if (objc_getAssociatedObject(state, &pipeline_cache_key) != nil)
 		return;
-	}
 
-	struct pipeline_entry *entry = &pipelines[pipeline_count];
-	entry->state = [state retain];
+	NPOverlayPipelineCache *cache = [[NPOverlayPipelineCache alloc] init];
+	struct pipeline_entry *entry = &cache->entry;
 	entry->descriptor = [descriptor copy];
 	entry->device = [device retain];
 	entry->base_format = descriptor.colorAttachments[0].pixelFormat;
 	entry->variant_count = 0;
 	entry->unmarked_logged = 0;
-	pipeline_count++;
 
-	shim_log("overlay_shim record_overlay_pipeline: overlay pipeline %d format %s\n",
-	        pipeline_count - 1, format_name(entry->base_format));
+	shim_log("overlay_shim record_overlay_pipeline: overlay pipeline %p format %s\n",
+	        (void *)state, format_name(entry->base_format));
+	objc_setAssociatedObject(state, &pipeline_cache_key, cache, OBJC_ASSOCIATION_RETAIN);
+	[cache release];
+}
+
+// Metal won't retain these for an unretained command buffer.
+static void hold_pipeline(id<MTLCommandBuffer> buffer, id state)
+{
+	if (buffer == nil || buffer.retainedReferences)
+		return;
+
+	@synchronized(buffer) {
+		NSMutableSet *states = objc_getAssociatedObject(buffer, &command_pipelines_key);
+		if (states == nil) {
+			states = [[NSMutableSet alloc] init];
+			objc_setAssociatedObject(buffer, &command_pipelines_key, states, OBJC_ASSOCIATION_RETAIN);
+			[buffer addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+				(void)completed;
+				@synchronized(states) {
+					[states removeAllObjects];
+				}
+			}];
+			[states release];
+		}
+		@synchronized(states) {
+			[states addObject:state];
+		}
+	}
 }
 
 static void ensure_encoder_hooks(id encoder);
@@ -446,7 +483,6 @@ static id hook_command_buffer_unretained(id self, SEL selector)
 
 static id hook_render_encoder(id self, SEL selector, MTLRenderPassDescriptor *descriptor)
 {
-	int overlay_pass = from_overlay(__builtin_return_address(0));
 	id<MTLTexture> attachment = descriptor != nil ? descriptor.colorAttachments[0].texture : nil;
 	id encoder = next_render_encoder(self, selector, descriptor);
 
@@ -460,49 +496,41 @@ static id hook_render_encoder(id self, SEL selector, MTLRenderPassDescriptor *de
 
 	NSUInteger format = attachment.pixelFormat;
 
-	encoder_mark(encoder, format);
-
-	if (!overlay_pass)
-		return encoder;
-	for (int i = 0; i < pipeline_count; i++) {
-		if (pipelines[i].base_format != format)
-			variant_for(&pipelines[i], format);
-	}
+	encoder_mark(encoder, format, self);
 
 	return encoder;
 }
 static void hook_set_pipeline_state(id self, SEL selector, id state)
 {
-	for (int i = 0; i < pipeline_count; i++) {
-		if (pipelines[i].state != state)
-			continue;
-
-		NSUInteger format = 0;
-		if (!encoder_format(self, &format)) {
-			if (!pipelines[i].unmarked_logged) {
-				pipelines[i].unmarked_logged = 1;
-				shim_log(
-				        "overlay_shim hook_set_pipeline_state: pipeline %d %s bound on an "
-				        "unmarked pass, left alone\n",
-				        i, format_name(pipelines[i].base_format));
-			}
-			break;
-		}
-
-		if (format != pipelines[i].base_format) {
-			struct variant *slot = variant_for(&pipelines[i], format);
-			if (slot != NULL) {
-				if (!slot->logged) {
-					slot->logged = 1;
+	NPOverlayPipelineCache *cache = objc_getAssociatedObject(state, &pipeline_cache_key);
+	if (cache != nil) {
+		@synchronized(cache) {
+			struct pipeline_entry *entry = &cache->entry;
+			NSUInteger format = 0;
+			id<MTLCommandBuffer> buffer = nil;
+			if (!encoder_format(self, &format, &buffer)) {
+				if (!entry->unmarked_logged) {
+					entry->unmarked_logged = 1;
 					shim_log(
-					        "overlay_shim hook_set_pipeline_state: pipeline %d %s bound to %s "
-					        "attachment, substituted\n",
-					        i, format_name(pipelines[i].base_format), format_name(format));
+					        "overlay_shim hook_set_pipeline_state: pipeline %p %s bound on an "
+					        "unmarked pass, left alone\n",
+					        (void *)state, format_name(entry->base_format));
 				}
-				state = slot->state;
+			} else if (format != entry->base_format) {
+				struct variant *slot = variant_for(entry, format);
+				if (slot != NULL) {
+					if (!slot->logged) {
+						slot->logged = 1;
+						shim_log(
+						        "overlay_shim hook_set_pipeline_state: pipeline %p %s bound to %s "
+						        "attachment, substituted\n",
+						        (void *)state, format_name(entry->base_format), format_name(format));
+					}
+					state = slot->state;
+					hold_pipeline(buffer, state);
+				}
 			}
 		}
-		break;
 	}
 
 	next_set_pipeline_state(self, selector, state);

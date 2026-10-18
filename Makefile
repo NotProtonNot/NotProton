@@ -423,10 +423,10 @@ OVERLAY_SHIM       := $(OUT_DIR)/overlay-shim.dylib
 OVERLAY_SHIM_FLAGS := -mmacosx-version-min=$(MIN_VER) $(AVAIL) -dynamiclib -O2 -Wall -Wextra \
                       -install_name @rpath/overlay-shim.dylib \
                       -framework Metal -framework QuartzCore \
-                      -framework CoreGraphics -framework CoreFoundation
+                      -framework CoreGraphics -framework CoreFoundation -framework Foundation
 OVERLAY_SHIM_TESTS := overlay-shim/tests
 OVERLAY_SHIM_TEST_FLAGS := -mmacosx-version-min=$(MIN_VER) -O2 -Wall -Wextra \
-                      -framework Metal -framework Foundation -framework QuartzCore
+                      -framework Metal -framework Foundation -framework QuartzCore -framework CoreGraphics
 
 overlay-shim: $(OVERLAY_SHIM)
 
@@ -453,7 +453,7 @@ overlay-shim-tests: $(OVERLAY_SHIM)
 		$(call SKIP,overlay-shim-tests,$(OVERLAY_SHIM_TESTS)); exit 0; fi; \
 	mkdir -p $(OUT_DIR); \
 	fail=0; ran=0; skipped=0; \
-	for t in device bridge delivery; do \
+	for t in device bridge delivery ownership; do \
 		for a in arm64 x86_64; do \
 			$(CC) -arch $$a $(OVERLAY_SHIM_TEST_FLAGS) -o $(OUT_DIR)/$$t.$$a \
 				$(OVERLAY_SHIM_TESTS)/$$t.m || exit 1; \
