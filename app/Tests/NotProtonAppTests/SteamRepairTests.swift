@@ -287,6 +287,42 @@ struct SteamRepairTests {
         #expect(throws: Never.self) { try SteamRepair.verifyValveSignature(destination) }
     }
 
+    @Test("A copy onto another volume is checked before it replaces Steam")
+    func crossVolumeCopyIsCheckedFirst() throws {
+        let work = try scratchDirectory("repair")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let image = work.appending(path: "other.dmg").path(percentEncoded: false)
+        let mount = work.appending(path: "other")
+        try #require(Shell.run("/usr/bin/hdiutil", [
+            "create", "-quiet", "-size", "8m", "-fs", "HFS+", "-volname", "np-repair-test", image,
+        ]).succeeded)
+        try #require(Shell.run("/usr/bin/hdiutil", [
+            "attach", "-quiet", "-nobrowse", "-mountpoint", mount.path(percentEncoded: false), image,
+        ]).succeeded)
+        defer { _ = try? Shell.run("/usr/bin/hdiutil", ["detach", "-force", mount.path(percentEncoded: false)]) }
+
+        let staged = work.appending(path: "staging/Steam.app")
+        try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
+        try Data("valve".utf8).write(to: staged.appending(path: "marker"))
+        let app = mount.appending(path: "Steam.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try Data("current".utf8).write(to: app.appending(path: "marker"))
+
+        var checked: [URL] = []
+        #expect(throws: StepFailure.self) {
+            try SteamRepair.replace(app, with: staged) {
+                checked.append($0)
+                throw StepFailure(step: "test", detail: "altered by the copy")
+            }
+        }
+
+        #expect(checked.count == 1)
+        #expect(checked.first?.deletingLastPathComponent().path == mount.path)
+        #expect(try String(contentsOf: app.appending(path: "marker"), encoding: .utf8) == "current")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: mount.path(percentEncoded: false))
+            .filter { $0.hasPrefix(".Steam.app.") }.isEmpty)
+    }
+
     // The wording is defined once on PinnedDownload.Progress so repair and the fetcher
     // cannot drift apart on it. This case is the only thing carrying it out of repair.
     @Test("The download phase shows the download's own wording")

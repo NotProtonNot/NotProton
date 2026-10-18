@@ -183,7 +183,10 @@ enum SteamRepair {
         }
     }
 
-    static func replace(_ app: URL, with staged: URL) throws {
+    static func replace(
+        _ app: URL, with staged: URL,
+        verify: (URL) throws -> Void = verifyValveSignature
+    ) throws {
         let files = FileManager.default
         try WriteRefused.catching(app) {
             var staged = staged
@@ -192,6 +195,7 @@ enum SteamRepair {
                 let copy = folder.appending(path: ".\(app.lastPathComponent).\(UUID().uuidString)")
                 do {
                     try files.copyItem(at: staged, to: copy)
+                    try verify(copy)
                 } catch {
                     try? files.removeItem(at: copy)
                     throw error
