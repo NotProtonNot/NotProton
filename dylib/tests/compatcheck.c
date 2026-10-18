@@ -1,12 +1,26 @@
 // The layout probes read instruction words straight out of the client, and everything else
 // reaches it through a function pointer an installer sets. Including the unit rather than
 // linking points the probes at synthesised instructions and the pointers at stubs. No Steam.
+#include <dlfcn.h>
+#include <stdlib.h>
+
+static void *checked_calloc(size_t count, size_t size);
+static void checked_free(void *ptr);
+static void *checked_dlsym(void *handle, const char *name);
+
+#define calloc checked_calloc
+#define free checked_free
+#define dlsym checked_dlsym
 #include "../feats/compat.c"
+#undef calloc
+#undef free
+#undef dlsym
 #include "../feats/usershortcuts.c"
 
 #include <stdio.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <sys/wait.h>
 
 static atomic_int home_calls;
 static atomic_int home_ready;
@@ -47,6 +61,49 @@ static void check(int ok, const char *what) {
         printf("FAIL %s\n", what);
         failures++;
     }
+}
+
+static int track_registration, fail_calloc, missing_allocator;
+static int buffer_allocations, buffer_successes, buffer_frees, registration_calls, path_frees;
+static void *registration_buffer;
+static void *path_allocations[16];
+static int path_count;
+
+static void *checked_calloc(size_t count, size_t size) {
+    if (!track_registration) return calloc(count, size);
+    buffer_allocations++;
+    if (fail_calloc) return NULL;
+    registration_buffer = calloc(count, size);
+    buffer_successes += registration_buffer != NULL;
+    return registration_buffer;
+}
+
+static void checked_free(void *ptr) {
+    if (track_registration && ptr && ptr == registration_buffer) {
+        buffer_frees++;
+        registration_buffer = NULL;
+    }
+    for (int i = 0; i < path_count; i++)
+        check(!ptr || ptr != path_allocations[i], "Steam strings never reach libc free");
+    free(ptr);
+}
+
+static void stub_plat_free(void *ptr) {
+    for (int i = 0; i < path_count; i++) {
+        if (ptr && path_allocations[i] == ptr) {
+            path_allocations[i] = NULL;
+            path_frees++;
+            free(ptr);
+            return;
+        }
+    }
+    check(0, "Plat_Free receives only an owned path string, once");
+}
+
+static void *checked_dlsym(void *handle, const char *name) {
+    check(handle == RTLD_DEFAULT && !strcmp(name, "Plat_Free"),
+          "registration resolves Steam's exported deallocator");
+    return missing_allocator ? NULL : (void *)stub_plat_free;
 }
 
 static void *first_fallback(void *arg) {
@@ -239,6 +296,102 @@ static void manager_cases(void) {
     check(np_compat_registered_tool(mgr) == entries + 2 * np_compat_tool_stride(),
           "the walk steps by the live stride rather than the baseline");
     g_tool_shift = 0;
+}
+
+#define REGISTRATION_CLIENT_SHIFT 8
+static const uint32_t registration_paths[] = {160, 168, 176, 216, 224, 232, 240, 288};
+static const uint32_t registration_strings[] = {
+    64, 80, 96, 120, 128, 160, 168, 176, 216, 224, 232, 240, 288
+};
+static int partial_paths;
+
+static void stub_register_tool(void *mgr, void *source) {
+    uint8_t *tool = source;
+    uint32_t *count = (uint32_t *)((uint8_t *)mgr + COMPAT_MANAGER_TOOL_COUNT_OFF);
+    uint8_t *copy = entries + (*count)++ * np_compat_tool_stride();
+    registration_calls++;
+    for (size_t i = 0; i < sizeof(registration_paths) / sizeof(*registration_paths); i++) {
+        if (partial_paths && i % 2) continue;
+        char *path = strdup("/pfx/drive_c/users/steamuser");
+        path_allocations[path_count++] = path;
+        *(char **)(tool + registration_paths[i] + g_tool_shift - REGISTRATION_CLIENT_SHIFT) = path;
+    }
+    memcpy(copy, tool, np_compat_tool_stride());
+    for (size_t i = 0; i < sizeof(registration_strings) / sizeof(*registration_strings); i++) {
+        uint32_t field = registration_strings[i];
+        uint32_t off = field + (field >= 96 ? g_tool_shift - REGISTRATION_CLIENT_SHIFT : 0);
+        const char *str = *(const char **)(tool + off);
+        *(char **)(copy + off) = str ? strdup(str) : NULL;
+    }
+}
+
+static void registration_case(int shift, int mode) {
+    tool_entry_t tools[2] = {0};
+    g_tool_shift = shift;
+    g_tools = tools;
+    g_tool_count = mode == 4 ? 0 : 2;
+    int existing = mode == 1 ? 2 : mode == 2 ? 1 : 0;
+    fail_calloc = mode == 3;
+    missing_allocator = mode == 5;
+    partial_paths = mode == 6;
+    build_manager(existing, -1);
+    for (int i = 0; i < g_tool_count; i++) {
+        snprintf(tools[i].name, sizeof(tools[i].name), "notproton-%d", i);
+        snprintf(tools[i].display, sizeof(tools[i].display), "Tool %d", i);
+        snprintf(tools[i].dir, sizeof(tools[i].dir), "/tools/tool%d", i);
+        if (i < existing)
+            *(const char **)(entries + i * np_compat_tool_stride() + COMPAT_TOOL_NAME_OFF) = tools[i].name;
+    }
+    track_registration = 1;
+    np_compat_register_crossover(NULL);
+    np_compat_register_crossover(manager);
+    check(buffer_allocations == 0, "registration waits for a manager and function");
+    np_compat_set_register_fn((uintptr_t)stub_register_tool);
+    np_compat_register_crossover(manager);
+    int expected = fail_calloc ? 0 : g_tool_count - existing;
+    check(registration_calls == expected, "only missing tools are registered");
+    check(registration_buffer == NULL, "the temporary entry buffer is freed");
+    check(buffer_frees == buffer_successes, "each successful allocation is freed once");
+    check(path_frees == (missing_allocator ? 0 : path_count), "every owned path uses Plat_Free");
+    for (int i = existing; i < existing + expected; i++) {
+        uint8_t *copy = entries + i * np_compat_tool_stride();
+        check(!strcmp(*(char **)(copy + COMPAT_TOOL_NAME_OFF), tools[i].name),
+              "the manager's name survives temporary cleanup");
+        for (size_t j = 0; j < sizeof(registration_strings) / sizeof(*registration_strings); j++) {
+            uint32_t field = registration_strings[j];
+            uint32_t off = field + (field >= 96 ? shift - REGISTRATION_CLIENT_SHIFT : 0);
+            char *str = *(char **)(copy + off);
+            if (field >= 160 && str)
+                check(!strcmp(str, "/pfx/drive_c/users/steamuser"), "the manager owns its path copy");
+            free(str);
+        }
+    }
+    int attempts = buffer_allocations;
+    np_compat_register_crossover(manager);
+    check(buffer_allocations == attempts && registration_calls == expected,
+          "repeated queries neither allocate nor register again");
+    for (int i = 0; i < path_count; i++) free(path_allocations[i]);
+    free(registration_buffer);
+}
+
+static void registration_cases(void) {
+    const int shifts[] = {0, 8, 64};
+    for (size_t i = 0; i < sizeof(shifts) / sizeof(*shifts); i++) {
+        for (int mode = 0; mode < 7; mode++) {
+            fflush(NULL);
+            pid_t child = fork();
+            if (child == 0) {
+                failures = 0;
+                registration_case(shifts[i], mode);
+                fflush(NULL);
+                _exit(failures ? 1 : 0);
+            }
+            int status = 0;
+            check(child > 0 && waitpid(child, &status, 0) == child &&
+                  WIFEXITED(status) && WEXITSTATUS(status) == 0,
+                  "registration ownership case passes");
+        }
+    }
 }
 
 static void tool_list_cases(void) {
@@ -665,6 +818,7 @@ int main(void) {
     oslist_cases();
     enabled_cases();
     manager_cases();
+    registration_cases();
     tool_list_cases();
     tool_launch_cases();
     stale_tool_cases();
