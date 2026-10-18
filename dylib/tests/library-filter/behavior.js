@@ -21,7 +21,7 @@ function grab(src, re, what) {
 const english = () => { globalThis.document = { documentElement: { lang: 'en' } }; };
 
 function filter(src) {
-  const head = grab(src, /case"notprotonWindows":return\(0,([\w$]+)\.Pr\)\(\)&&window\.__NOTPROTON_NATIVE_PLATFORM__\.windows\.has\(([\w$]+)\.appid\)/,
+  const head = grab(src, /case"notprotonWindows":return\(0,([\w$]+)\.Pr\)\(\)&&\(window\.__NOTPROTON_NATIVE_PLATFORM__\.windows\.has\(([\w$]+)\.appid\)/,
                     'filter fix');
   const apple = grab(src.slice(head.index), /;case ([\w$]+)\.([\w$]+):return /, 'Apple case');
   const end = src.indexOf('.is_invalid_os_type;', head.index + apple.index + apple[0].length);
@@ -36,7 +36,8 @@ function filter(src) {
 
 function lists(src) {
   const win = {};
-  new Function('window', src.slice(0, src.indexOf('\n') + 1))(win);
+  const header = src.indexOf('\n', src.indexOf('\n') + 1) + 1;
+  new Function('window', 'queueMicrotask', src.slice(0, header))(win, f => f());
   return win;
 }
 
@@ -67,6 +68,35 @@ function check(file, name, t) {
   t(!apple({ ...app(3), is_invalid_os_type: true }, otherPlatform) && apple(app(3), otherPlatform),
     'the fallback on other platforms still uses the original invalid flag');
   t(apple(app(2), windows) && !wonly(app(2), windows), "on Windows the filter is Steam's");
+
+  const registered = [];
+  const entries = new Map();
+  win.appDetailsStore = {
+    m_mapAppData: entries,
+    RegisterForAppData(id) {
+      registered.push(id);
+      const e = entries.get(id) || { cRegistered: 0 };
+      e.cRegistered++;
+      entries.set(id, e);
+    },
+  };
+  const shortcut = appid => ({ ...app(appid), BIsShortcut: () => true });
+  const target = (appid, exe) => { entries.get(appid).details = { strShortcutExe: exe }; };
+  t(apple(app(3)) && !wonly(app(3)) && registered.length === 0,
+    'a Steam game never asks for shortcut details');
+  t(apple(shortcut(10)) && !wonly(shortcut(10)) && apple(shortcut(10)),
+    "a shortcut gets Steam's answer until its details arrive");
+  t(registered.join() === '10', 'a shortcut asks for its details once');
+  target(10, '"/Users/me/Downloads/Setup.EXE"');
+  t(!apple(shortcut(10)) && wonly(shortcut(10)), 'an .exe shortcut is under Windows only');
+  t(apple(shortcut(10), windows) && !wonly(shortcut(10), windows), "on Windows an .exe shortcut is Steam's");
+  apple(shortcut(11));
+  target(11, '"/Applications/Game.app"');
+  t(apple(shortcut(11)) && !wonly(shortcut(11)), 'an .app shortcut stays under Apple');
+  target(10, '"/Users/me/Downloads/game.exe.app"');
+  t(apple(shortcut(10)) && !wonly(shortcut(10)), 'a shortcut retargeted to an app moves back to Apple');
+  t(registered.join() === '10,11', 'each shortcut asked for its details once');
+  delete win.appDetailsStore;
 
   if (!src.includes('SelectCollectionsAppFilterOption("notprotonWindows"')) return;
 

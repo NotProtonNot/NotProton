@@ -484,10 +484,18 @@ static const np_gate_t g_gates_selecttool[] = {
 #define NP_MAC_CHECK(OS, APP) \
     "(0," OS ".Pr)()&&" NP_PLATFORM_LISTS ".mac.has(" APP ".appid)?!" APP \
     ".most_available_per_client_data?.is_invalid_os_type:(0," OS ".Pr)()&&" \
-    NP_PLATFORM_LISTS ".windows.has(" APP ".appid)?!1:(0," OS ".Pr)()?" \
+    NP_WINDOWS(APP) "?!1:(0," OS ".Pr)()?" \
     APP ".is_available_on_current_platform&&!" APP ".most_available_per_client_data?.is_invalid_os_type:"
+// .exe shortcuts = Windows
+#define NP_RUNS_EXE "window.__NOTPROTON_RUNS_EXE__"
+#define NP_RUNS_EXE_JS \
+    NP_RUNS_EXE "=a=>{if(!a.BIsShortcut?.())return!1;const s=window.appDetailsStore,e=s?.m_mapAppData?.get(a.appid);" \
+    "s&&!e?.cRegistered&&queueMicrotask(()=>s.m_mapAppData.get(a.appid)?.cRegistered||s.RegisterForAppData(a.appid));" \
+    "return/\\.exe\"?$/i.test(e?.details?.strShortcutExe??\"\")};\n"
+#define NP_WINDOWS(APP) \
+    "(" NP_PLATFORM_LISTS ".windows.has(" APP ".appid)||" NP_RUNS_EXE "(" APP "))"
 #define NP_WINDOWS_ONLY_CASE(OS, APP) \
-    "case\"notprotonWindows\":return(0," OS ".Pr)()&&" NP_PLATFORM_LISTS ".windows.has(" APP ".appid)&&!" \
+    "case\"notprotonWindows\":return(0," OS ".Pr)()&&" NP_WINDOWS(APP) "&&!" \
     NP_MAC_64(APP) ";"
 
 static const np_gate_t g_fixes[] = {
@@ -731,7 +739,9 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
 
     np_out_t out = {0};
     np_cap_t caps[NP_CAP_MAX];
-    if (native_mac_js && !out_put(&out, native_mac_js, strlen(native_mac_js))) {
+    if (native_mac_js && (!out_put(&out, native_mac_js, strlen(native_mac_js)) ||
+                          !out_put(&out, NP_RUNS_EXE_JS, sizeof(NP_RUNS_EXE_JS) - 1))) {
+        free(out.buf);
         free(native_mac_js);
         return NULL;
     }
