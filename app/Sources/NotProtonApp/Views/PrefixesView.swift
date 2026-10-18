@@ -59,7 +59,7 @@ struct PrefixesView: View {
                 ToolbarItemGroup(placement: .primaryAction) { strip }
             }
         }
-        .task { if model.prefixes.isEmpty { await model.load() } }
+        .task { await model.load() }
         .confirmationDialog(
             PrefixPrompt.deleteTitle(deleting),
             isPresented: asking(.delete),
