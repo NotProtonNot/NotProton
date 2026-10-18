@@ -384,17 +384,50 @@ enum PrefixStore {
         _ prefix: WinePrefix, root: URL = serverRoot, lsof: String = "/usr/sbin/lsof",
         drainTimeout: DispatchTimeInterval = .seconds(2)
     ) -> Bool {
-        let lock = open(prefix.root.appending(path: ".notproton-prefix.lock").path(percentEncoded: false), O_RDWR | O_NOFOLLOW | O_CLOEXEC)
+        let lock = open(lockPath(of: prefix), O_RDWR | O_NOFOLLOW | O_CLOEXEC)
         if lock >= 0 {
             defer { FileLock.release(lock) }
-            var info = stat()
-            guard fstat(lock, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-                flock(lock, LOCK_EX | LOCK_NB) == 0
-            else { return true }
+            guard locked(lock) else { return true }
         } else if errno != ENOENT {
             return true
         }
+        return serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+    }
 
+    // A launch takes this lock while it sets the prefix up. Holding it stops a launch from
+    // starting partway through a rebuild/delete.
+    static func claim(
+        _ prefix: WinePrefix, root: URL = serverRoot, lsof: String = "/usr/sbin/lsof",
+        drainTimeout: DispatchTimeInterval = .seconds(2)
+    ) -> PrefixClaim? {
+        let lock = open(lockPath(of: prefix), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard lock >= 0 else {
+            guard errno == ENOENT,
+                !serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+            else { return nil }
+            return PrefixClaim(fd: -1)
+        }
+        guard locked(lock), !serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+        else {
+            FileLock.release(lock)
+            return nil
+        }
+        return PrefixClaim(fd: lock)
+    }
+
+    private static func lockPath(of prefix: WinePrefix) -> String {
+        prefix.root.appending(path: ".notproton-prefix.lock").path(percentEncoded: false)
+    }
+
+    private static func locked(_ fd: Int32) -> Bool {
+        var info = stat()
+        return fstat(fd, &info) == 0 && info.st_mode & S_IFMT == S_IFREG
+            && flock(fd, LOCK_EX | LOCK_NB) == 0
+    }
+
+    private static func serverIsBusy(
+        _ prefix: WinePrefix, root: URL, lsof: String, drainTimeout: DispatchTimeInterval
+    ) -> Bool {
         guard let dir = serverDirectory(of: prefix, root: root),
             FileManager.default.fileExists(atPath: dir.path(percentEncoded: false))
         else { return false }
@@ -406,5 +439,13 @@ enum PrefixStore {
         if !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
 
         return result.outputLost || !result.stderr.isEmpty
+    }
+}
+
+struct PrefixClaim {
+    fileprivate let fd: Int32
+
+    func release() {
+        if fd >= 0 { FileLock.release(fd) }
     }
 }

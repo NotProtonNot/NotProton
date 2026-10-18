@@ -27,12 +27,13 @@ extension PrefixTools {
         now: Date = .now,
         keepBackup: Bool = true
     ) throws -> URL? {
-        guard !PrefixStore.isInUse(prefix) else {
+        guard let claim = PrefixStore.claim(prefix) else {
             throw StepFailure(
                 step: String(localized: "Recreate prefix"),
                 detail: String(localized: "\(prefix.title) is running. Quit the game first.")
             )
         }
+        defer { claim.release() }
 
         if let held = PrefixStore.backups(of: prefix).last,
             !FileManager.default.fileExists(
@@ -98,12 +99,13 @@ extension PrefixTools {
 
     @discardableResult
     static func backUp(_ prefix: WinePrefix, now: Date = .now) throws -> URL {
-        guard !PrefixStore.isInUse(prefix) else {
+        guard let claim = PrefixStore.claim(prefix) else {
             throw StepFailure(
                 step: String(localized: "Back up prefix"),
                 detail: String(localized: "\(prefix.title) is running. Quit the game first.")
             )
         }
+        defer { claim.release() }
 
         let fm = FileManager.default
         guard fm.fileExists(atPath: prefix.pfx.path(percentEncoded: false)) else {

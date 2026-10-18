@@ -448,6 +448,26 @@ struct PrefixToolsTests {
         return try #require(PrefixStore.all(libraries: [library]).first)
     }
 
+    @Test("A launch cannot start while a rebuild is running")
+    func rebuildHoldsThePrefixLock() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appending(path: "np-rebuild-lock-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: dir) }
+        let home = dir.appending(path: "home")
+        try fm.createDirectory(at: home, withIntermediateDirectories: true)
+        let prefix = try usedPrefix(in: dir, home: home)
+        let lock = prefix.root.appending(path: ".notproton-prefix.lock").path(percentEncoded: false)
+        let launched = dir.appending(path: "launched")
+        let runner = try fakeRunner(
+            in: dir, home: home,
+            extra: "/usr/bin/lockf -s -t 0 '\(lock)' touch '\(launched.path(percentEncoded: false))' || :")
+
+        try PrefixTools.recreate(prefix, runner: runner)
+
+        #expect(!fm.fileExists(atPath: launched.path(percentEncoded: false)))
+        #expect(!PrefixStore.isInUse(prefix, root: dir.appending(path: "sockets")))
+    }
+
     // Why a rebuild is offered instead of a delete: the arch specific half only arrives with
     // the template, while the profile has nothing arch specific and is what a player misses.
     @Test("A rebuild keeps the Windows user profile and replaces everything else")
