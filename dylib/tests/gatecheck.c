@@ -345,7 +345,7 @@ static int extract_library(const char *chunk, const char *out_path) {
 
     const size_t pad = 160;
     np_cap_t caps[NP_CAP_MAX];
-    size_t fixes = 0;
+    size_t fixes = 0, toolbars = 0;
     for (size_t a = 0; a < NP_LIBRARY_ANCHORS; a++) {
         size_t hits = 0;
         for (size_t i = 0; i < len; ) {
@@ -359,6 +359,7 @@ static int extract_library(const char *chunk, const char *out_path) {
             i += used;
         }
         if (a >= NP_LIBRARY_FILTER_COUNT) { fixes += hits; continue; }
+        if (a == NP_LIBRARY_TOOLBAR || a == NP_LOCALIZED_LIBRARY_TOOLBAR) { toolbars += hits; continue; }
         if (hits != (size_t)library_anchor(a)->expect) {
             fprintf(stderr, "library anchor %zu found %zu times in %s\n", a, hits, chunk);
             fclose(o); free(buf);
@@ -368,6 +369,7 @@ static int extract_library(const char *chunk, const char *out_path) {
     fclose(o);
     free(buf);
     if (fixes != 1) { fprintf(stderr, "%zu filter fixes in %s\n", fixes, chunk); return 1; }
+    if (toolbars != 1) { fprintf(stderr, "%zu library toolbars in %s\n", toolbars, chunk); return 1; }
     printf("extracted fixture to %s\n", out_path);
     return 0;
 }
@@ -437,6 +439,12 @@ static void check_library(const char *path, const char *out_path, int literal_ve
         len = (size_t)(version - (char *)buf) + 1 + tail;
     }
 
+    int present[NP_LIBRARY_FILTER_COUNT];
+    for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++)
+        present[g] = count_matches((const char *)buf, len, g_library_filters[g].find) != 0;
+    if (present[NP_LIBRARY_TOOLBAR] == present[NP_LOCALIZED_LIBRARY_TOOLBAR])
+        wrong("%s needs exactly one library toolbar", path);
+
     g_platform_js = g_test_lists;
     size_t out_len = 0;
     char *out = library_transform((const char *)buf, len, &out_len);
@@ -452,6 +460,7 @@ static void check_library(const char *path, const char *out_path, int literal_ve
                 wrong("library anchor %zu survived in %s", a, path);
         }
         for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++) {
+            if (!present[g]) continue;
             if (count_matches(out, out_len, g_library_filters[g].replace) != (size_t)g_library_filters[g].expect)
                 wrong("library replacement %zu is missing from %s", g, path);
         }
@@ -471,6 +480,7 @@ static void check_library(const char *path, const char *out_path, int literal_ve
     g_platform_js = g_test_lists;
     np_cap_t caps[NP_CAP_MAX];
     for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++) {
+        if (!present[g]) continue;
         char *copy = malloc(len + 1);
         if (!copy) { wrong("out of memory"); break; }
         memcpy(copy, buf, len + 1);

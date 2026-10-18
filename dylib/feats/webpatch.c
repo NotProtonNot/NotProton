@@ -535,6 +535,23 @@ static const np_gate_t g_fixes[] = {
 #define NP_NATIVE_MAC_FILTER_FIX (NP_FIX_COUNT - 2)
 #define NP_UPDATED_NATIVE_MAC_FILTER_FIX (NP_FIX_COUNT - 1)
 
+#define NP_PLATFORM_TIP "\"#GameList_View_Platform_Linux\":\"#GameList_View_Platform_Apple\""
+#define NP_LOCALIZED_PLATFORM_TIP "(0," NP_C12 ".we)(\"#GameList_View_Platform_Linux\"):(0," NP_C12 \
+    ".we)(\"#GameList_View_Platform_Apple\")"
+#define NP_PLATFORM_BUTTON(tip) \
+    NP_C1 "&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,toolTipContent:" NP_C4 \
+    "?" tip ",className:(0," NP_C5 ".A)(" NP_C6 "().CheckboxWithImage," NP_C7 "&&" NP_C6 "().Disabled," \
+    NP_C8 "&&" NP_C6 "().Active),onClick:()=>" NP_C7 "||" NP_C9 "(" NP_C10 ".W6," NP_C10 ".Pu,!" NP_C8 \
+    "),children:[" NP_C4 "&&(0," NP_C2 ".jsx)(" NP_C11 ".Wy0,{}),!" NP_C4 "&&(0," NP_C2 ".jsx)(" NP_C11 ".kPc,{})]})"
+#define NP_WINDOWS_BUTTON \
+    NP_C1 "&&!" NP_C4 "&&" NP_C11 ".Xz0&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240," \
+    "toolTipContent:" NP_LIBRARY_WINDOWS_HINT ",className:(0," NP_C5 ".A)(" NP_C6 "().CheckboxWithImage," \
+    NP_C7 "&&" NP_C6 "().Disabled,npWindows&&" NP_C6 "().Active),onClick:()=>" NP_C7 \
+    "||npStore.SelectCollectionsAppFilterOption(\"notprotonWindows\",null,!npWindows)," \
+    "children:[(0," NP_C2 ".jsx)(\"style\",{children:\".\"+" NP_C6 "().CheckboxWithImage+" \
+    "\" .SVGIcon_WindowsLogo{width:13px;height:13px}.\"+" NP_C6 "().CheckboxWithImage+" \
+    "\" .SVGIcon_WindowsLogo rect{fill:inherit}\"}),(0," NP_C2 ".jsx)(" NP_C11 ".Xz0,{})]})"
+
 static const np_gate_t g_library_filters[] = {
     // Library list and search
     { "if(!" NP_C1 "(" NP_C2 "[" NP_C3 ".W6]," NP_C4 "(" NP_C5 "))||!" NP_C1 "(" NP_C2 "[" NP_C3 ".sc],",
@@ -566,26 +583,16 @@ static const np_gate_t g_library_filters[] = {
       "," NP_C1 "=" NP_C2 ".n6.currentAppFilter.BIsSelected(" NP_C3 ".W6," NP_C3 ".Pu),npStore=" NP_C2 ".n6,"
       "npWindows=!!" NP_C2 ".n6.currentAppFilter.m_filterSpec.notprotonWindows;return(0,"
       NP_C4 ".jsxs)(\"div\",{className:" NP_C5 "().Bar,", 1, 0 },
-    { "children:[" NP_C1 "&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,toolTipContent:" NP_C4
-      "?\"#GameList_View_Platform_Linux\":\"#GameList_View_Platform_Apple\",className:(0," NP_C5 ".A)("
-      NP_C6 "().CheckboxWithImage," NP_C7 "&&" NP_C6 "().Disabled," NP_C8 "&&" NP_C6 "().Active),onClick:()=>"
-      NP_C7 "||" NP_C9 "(" NP_C10 ".W6," NP_C10 ".Pu,!" NP_C8 "),children:[" NP_C4 "&&(0," NP_C2 ".jsx)("
-      NP_C11 ".Wy0,{}),!" NP_C4 "&&(0," NP_C2 ".jsx)(" NP_C11 ".kPc,{})]})",
-      "children:["
-      NP_C1 "&&!" NP_C4 "&&" NP_C11 ".Xz0&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,"
-      "toolTipContent:" NP_LIBRARY_WINDOWS_HINT ",className:(0," NP_C5 ".A)(" NP_C6 "().CheckboxWithImage,"
-      NP_C7 "&&" NP_C6 "().Disabled,npWindows&&" NP_C6 "().Active),onClick:()=>" NP_C7
-      "||npStore.SelectCollectionsAppFilterOption(\"notprotonWindows\",null,!npWindows),"
-      "children:[(0," NP_C2 ".jsx)(\"style\",{children:\".\"+" NP_C6 "().CheckboxWithImage+"
-      "\" .SVGIcon_WindowsLogo{width:13px;height:13px}.\"+" NP_C6 "().CheckboxWithImage+"
-      "\" .SVGIcon_WindowsLogo rect{fill:inherit}\"}),(0," NP_C2 ".jsx)(" NP_C11 ".Xz0,{})]}),"
-      NP_C1 "&&(0," NP_C2 ".jsxs)(" NP_C3 ".he,{direction:\"top\",nDelayShowMS:240,toolTipContent:" NP_C4
-      "?\"#GameList_View_Platform_Linux\":\"#GameList_View_Platform_Apple\",className:(0," NP_C5 ".A)("
-      NP_C6 "().CheckboxWithImage," NP_C7 "&&" NP_C6 "().Disabled," NP_C8 "&&" NP_C6 "().Active),onClick:()=>"
-      NP_C7 "||" NP_C9 "(" NP_C10 ".W6," NP_C10 ".Pu,!" NP_C8 "),children:[" NP_C4 "&&(0," NP_C2 ".jsx)("
-      NP_C11 ".Wy0,{}),!" NP_C4 "&&(0," NP_C2 ".jsx)(" NP_C11 ".kPc,{})]})", 1, 0 },
+    { "children:[" NP_PLATFORM_BUTTON(NP_PLATFORM_TIP), "children:[" NP_WINDOWS_BUTTON "," NP_PLATFORM_BUTTON(NP_PLATFORM_TIP), 1, 0 },
+    // 1792192922 passes the tooltip through Steam's localize call.
+    { "children:[" NP_PLATFORM_BUTTON(NP_LOCALIZED_PLATFORM_TIP),
+      "children:[" NP_WINDOWS_BUTTON "," NP_PLATFORM_BUTTON(NP_LOCALIZED_PLATFORM_TIP), 1, 0 },
 };
 #define NP_LIBRARY_FILTER_COUNT (sizeof(g_library_filters) / sizeof(g_library_filters[0]))
+
+// Exactly one of the two toolbar anchors has to match.
+#define NP_LIBRARY_TOOLBAR (NP_LIBRARY_FILTER_COUNT - 2)
+#define NP_LOCALIZED_LIBRARY_TOOLBAR (NP_LIBRARY_FILTER_COUNT - 1)
 
 typedef struct {
     const char     *name;
@@ -671,9 +678,21 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         fix_on[NP_NATIVE_MAC_FILTER_FIX] = fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX] = 0;
     }
     int library_filter = fix_on[NP_NATIVE_MAC_FILTER_FIX] || fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX];
-    for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++)
-        library_filter = count_matches(s, src_len, g_library_filters[g].find) ==
-                         (size_t)g_library_filters[g].expect;
+    int library_on[NP_LIBRARY_FILTER_COUNT] = {0};
+    for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++) {
+        size_t n = count_matches(s, src_len, g_library_filters[g].find);
+        library_on[g] = n == (size_t)g_library_filters[g].expect;
+        if (library_on[g] || g == NP_LIBRARY_TOOLBAR || g == NP_LOCALIZED_LIBRARY_TOOLBAR) continue;
+        NP_WARN("webpatch: library anchor %zu expected %d occurrence(s), found %zu; "
+                "no Windows filter button", g, g_library_filters[g].expect, n);
+        library_filter = 0;
+    }
+    if (library_filter && library_on[NP_LIBRARY_TOOLBAR] == library_on[NP_LOCALIZED_LIBRARY_TOOLBAR]) {
+        NP_WARN("webpatch: %s; no Windows filter button",
+                library_on[NP_LIBRARY_TOOLBAR] ? "both library toolbar anchors matched"
+                                               : "no library toolbar anchor matched");
+        library_filter = 0;
+    }
 
     if (!shape && !fix_live) {
         free(native_mac_js);
@@ -721,7 +740,7 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
     for (size_t f = 0; f < NP_FIX_COUNT; f++)
         if (fix_on[f]) mark_start(can_start, g_fixes[f].find);
     for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++)
-        mark_start(can_start, g_library_filters[g].find);
+        if (library_on[g]) mark_start(can_start, g_library_filters[g].find);
     for (size_t i = 0; i < src_len; ) {
         size_t plain = i;
         while (plain < src_len && !can_start[(unsigned char)s[plain]]) plain++;
@@ -743,6 +762,7 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
             if (used) { hit = &g_fixes[f]; break; }
         }
         for (size_t g = 0; !hit && library_filter && g < NP_LIBRARY_FILTER_COUNT; g++) {
+            if (!library_on[g]) continue;
             used = match_at(s, src_len, i, g_library_filters[g].find, caps);
             if (used) { hit = &g_library_filters[g]; break; }
         }

@@ -124,7 +124,7 @@ function check(file, name, t) {
   t(new Function(`return ${summary[2]}`)() === 'Runs on Windows, no Mac OS version',
     'the filter summary names the Windows filter');
 
-  const button = grab(src, /children:\[(([\w$]+)&&!([\w$]+)&&([\w$]+)\.Xz0&&\(0,([\w$]+)\.jsxs\)\(([\w$]+)\.he,\{.*?\(0,\5\.jsx\)\(\4\.Xz0,\{\}\)\]\}\)),\2&&\(0,\5\.jsxs\)\(\6\.he,\{direction:"top",nDelayShowMS:240,toolTipContent:\3\?"#GameList_View_Platform_Linux"/,
+  const button = grab(src, /children:\[(([\w$]+)&&!([\w$]+)&&([\w$]+)\.Xz0&&\(0,([\w$]+)\.jsxs\)\(([\w$]+)\.he,\{.*?\(0,\5\.jsx\)\(\4\.Xz0,\{\}\)\]\}\)),\2&&\(0,\5\.jsxs\)\(\6\.he,\{direction:"top",nDelayShowMS:240,toolTipContent:\3\?(?:\(0,[\w$]+\.we\)\()?"#GameList_View_Platform_Linux"/,
                       'Windows button before Apple');
   const [, expr, shown, linux, icons, rt, tip] = button;
   const cls = /className:\(0,([\w$]+)\.A\)\(([\w$]+)\(\)\.CheckboxWithImage,([\w$]+)&&/.exec(expr);
