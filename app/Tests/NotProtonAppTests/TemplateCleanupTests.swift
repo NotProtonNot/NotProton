@@ -293,6 +293,61 @@ struct TemplateCleanupTests {
         #expect(try #require(sizes[.rosetta]) < 2 << 20)
     }
 
+    @MainActor
+    @Test("Refresh keeps a reinstalling build's templates while the installation lock is held")
+    func refreshDuringRunnerReplacement() async throws {
+        let layout = try Layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        let fm = FileManager.default
+        let replacing = "27.0.0.41069-fex"
+        let other = "27.0.0.41073-fex"
+        for build in [replacing, other] {
+            try fm.createDirectory(
+                at: SupportPaths.clonedRoot(forBuild: build, runners: layout.runners).appending(path: "lib/wine"),
+                withIntermediateDirectories: true)
+            for template in SupportPaths.prefixTemplates(forBuild: build, in: layout.library) {
+                try fm.createDirectory(at: template, withIntermediateDirectories: true)
+                try Data(repeating: 7, count: 65536).write(to: template.appending(path: "system.reg"))
+            }
+        }
+        let target = SupportPaths.runnerRoot(forBuild: replacing, runners: layout.runners)
+        let staging = layout.runners.appending(path: ".crossover-\(replacing).new")
+        let lock = try DeploymentContent.acquireInstallationLock(in: layout.root, steamFolder: nil)
+        var held = true
+        defer { if held { lock.release() } }
+        try fm.moveItem(at: target, to: staging)
+        let status = SystemStatus()
+
+        await status.refreshRunnerStorage(runners: layout.runners, libraries: [layout.library],
+            acquireInstallationLock: {
+                try DeploymentContent.acquireInstallationLock(in: layout.root, steamFolder: nil)
+            })
+
+        #expect(status.templateCleanupFailure == nil)
+        #expect(status.runnerSizes[other] != nil)
+        for flavor in CompatTool.Flavor.allCases {
+            #expect(fm.fileExists(atPath: SupportPaths.prefixTemplate(
+                forBuild: replacing, flavor: flavor, in: layout.library).path))
+            #expect(try #require(status.templateSizes[other]?[flavor]) >= 65536)
+        }
+
+        try fm.moveItem(at: staging, to: target)
+        lock.release()
+        held = false
+        await status.refreshRunnerStorage(runners: layout.runners, libraries: [layout.library],
+            acquireInstallationLock: {
+                try DeploymentContent.acquireInstallationLock(in: layout.root, steamFolder: nil)
+            })
+
+        #expect(status.templateCleanupFailure == nil)
+        #expect(!fm.fileExists(atPath: layout.template.path))
+        for build in [replacing, other] {
+            for flavor in CompatTool.Flavor.allCases {
+                #expect(try #require(status.templateSizes[build]?[flavor]) >= 65536)
+            }
+        }
+    }
+
     @Test("The size line names each tool's templates only when a build has more than one tool")
     func sizeTextNamesTools() {
         func labels(_ templates: [CompatTool.Flavor: Int64], _ flavors: [CompatTool.Flavor]) -> [String] {

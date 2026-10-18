@@ -588,16 +588,22 @@ final class SystemStatus {
 
     func refreshRunnerStorage(
         runners: URL = SupportPaths.runners, libraries: [SteamLibrary] = PrefixStore.libraries(),
-        cleanTemplates: Bool = true
+        cleanTemplates: Bool = true,
+        acquireInstallationLock: @escaping @Sendable () throws -> DeploymentContent.InstallationLock = {
+            try DeploymentContent.acquireInstallationLock()
+        }
     ) async {
         let known = runnerSizes
         let measured = await Task.detached(priority: .utility) {
-            if cleanTemplates, let lock = try? DeploymentContent.acquireInstallationLock() {
+            let failures: [StepFailure]
+            if cleanTemplates, let lock = try? acquireInstallationLock() {
+                defer { lock.release() }
                 RunnerInstaller.removeLeftoverRemovals(runners: runners)
-                lock.release()
+                failures = RunnerInstaller.removeStalePrefixTemplates(
+                    runners: runners, libraries: libraries, reportBusy: false)
+            } else {
+                failures = []
             }
-            let failures = cleanTemplates
-                ? RunnerInstaller.removeStalePrefixTemplates(runners: runners, libraries: libraries, reportBusy: false) : []
             var sizes: [String: Int64] = [:]
             var templates: [String: [CompatTool.Flavor: Int64]] = [:]
             let bridgeCopies = libraries.reduce(Int64(0)) { total, library in
