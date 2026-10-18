@@ -615,12 +615,48 @@ winebus_lines() {
   printf '%s\r\n' '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' "$hidraw_value" ''
 }
 
+# High Resolution doubles LogPixels and turning it off halves it
+plan_logpixels() {
+  dpi_value=""
+  new_dpi=""
+  read -r retina_was dpi <<EOF
+$({ [ ! -f "$WINEPREFIX/user.reg" ] || tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/user.reg"; } | awk '
+  /^\[/ { s = 0
+    if (index($0, "[software\\\\wine\\\\mac driver]") == 1) s = 1
+    else if (index($0, "[control panel\\\\desktop]") == 1) s = 2
+    next }
+  s == 1 && $0 ~ /^"retinamode"="[yt1]/ { r = 1 }
+  s == 2 && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { d = substr($0, 19) }
+  END { print r + 0, d }')
+EOF
+  [ -n "$dpi" ] || [ ! -f "$WINEPREFIX/system.reg" ] || dpi=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
+    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\hardware profiles\\\\current\\\\software\\\\fonts]") == 1; next }
+      s && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { print substr($0, 19); exit }')
+  dpi=$((0x${dpi:-0}))
+  [ "$dpi" -gt 0 ] || dpi=96
+  if [ "$NOTPROTON_RETINA" = "1" ]; then
+    [ "$retina_was" = 1 ] && [ "$dpi" -ge 110 ] || [ "$dpi" -gt 2147483647 ] || new_dpi=$((dpi * 2))
+  elif [ "$retina_was" = 1 ]; then
+    new_dpi=$((dpi / 2))
+    [ "$new_dpi" -ge 96 ] || new_dpi=96
+  fi
+  [ -z "$new_dpi" ] || [ "$new_dpi" -eq "$dpi" ] || dpi_value=$(printf '"LogPixels"=dword:%08x' "$new_dpi")
+}
+
+video_lines() {
+  [ "$verb" = waitforexitandrun ] || return 0
+  printf '%s\r\n' '[HKEY_CURRENT_USER\Software\Wine\Mac Driver]' "$retina_line" ''
+  [ -n "$dpi_value" ] || return 0
+  printf '%s\r\n' '[HKEY_CURRENT_USER\Control Panel\Desktop]' "$dpi_value" ''
+}
+
 import_prefix_settings() {
   if [ "$NOTPROTON_RETINA" = "1" ]; then
     retina_line='"RetinaMode"="y"'
   else
     retina_line='"RetinaMode"=-'
   fi
+  dpi_value=""
   controllers_planned=0
   if plan_hidden_controllers 2>/dev/null; then
     controllers_planned=1
@@ -639,6 +675,10 @@ import_prefix_settings() {
     hidraw_value=""
     echo "=== could not track DisableHidraw, leaving it as it is ===" >> "$log" 2>&1 || true
   fi
+  # Steam sends install scripts no launch options, so they keep the game's video settings.
+  if [ "$verb" = waitforexitandrun ]; then
+    plan_logpixels 2>/dev/null || dpi_value=""
+  fi
   settings_file=$(mktemp "$WINEPREFIX/drive_c/notproton-settings.XXXXXX" 2>/dev/null) \
     || settings_file=""
   if [ -z "$settings_file" ] || ! { printf '%s\r\n' \
@@ -646,7 +686,7 @@ import_prefix_settings() {
       '[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\AeDebug]' '"Auto"="0"' '' \
       '[HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug]' '"Auto"="0"' '' \
       '[HKEY_CURRENT_USER\Software\Wine\WineDbg]' '"ShowCrashDialog"=dword:00000000' '' \
-      '[HKEY_CURRENT_USER\Software\Wine\Mac Driver]' "$retina_line" '' \
+      && video_lines && printf '%s\r\n' \
       '[HKEY_LOCAL_MACHINE\Software\Classes\steam]' '"URL Protocol"=""' '' \
       '[HKEY_LOCAL_MACHINE\Software\Classes\steam\shell\open\command]' \
       '@="\"C:\\Program Files (x86)\\Steam\\steam.exe\" \"%1\""' '' \
@@ -665,13 +705,16 @@ import_prefix_settings() {
   if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" != "1" ]; then
     rm -f "$hidraw_file"
   fi
-  if [ "$import_status" -eq 0 ] && [ -n "$controllers_add$controllers_remove$hidraw_value" ]; then
+  if [ "$import_status" -eq 0 ] && [ -n "$controllers_add$controllers_remove$hidraw_value$dpi_value" ]; then
     # Wine only reads these keys when it starts, so restart Wine to apply them.
     without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
     without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
   fi
   if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ]; then
     echo "controllers: hidraw disabled (NOTPROTON_DISABLE_HIDRAW=1)" >> "$log" 2>&1 || true
+  fi
+  if [ "$import_status" -eq 0 ] && [ -n "$dpi_value" ]; then
+    echo "video: LogPixels=$new_dpi" >> "$log" 2>&1 || true
   fi
   if [ "$import_status" -eq 0 ] && [ "$controllers_planned" -eq 1 ]; then
     write_owned_controllers "$controllers_wanted" 2>/dev/null || true
@@ -1137,7 +1180,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
     show_alert "Saved-game folders need attention" "NotProton left the conflicting files in place. Open this prefix's notproton-run.log for details before trying again."
     exit 1
   fi
-  echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
+  [ "$verb" != waitforexitandrun ] || echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
   stage_step="game drive"
   map_game_drive
   stage_step="prefix settings"
