@@ -16,6 +16,15 @@ enum PinnedDownload {
         }
     }
 
+    static let session = session(deadline: 30 * 60)
+
+    static func session(deadline: TimeInterval, protocols: [AnyClass] = []) -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForResource = deadline
+        config.protocolClasses = protocols + (config.protocolClasses ?? [])
+        return URLSession(configuration: config)
+    }
+
     static func obtain(
         file: String,
         sha256: String,
@@ -23,6 +32,7 @@ enum PinnedDownload {
         into downloads: URL,
         step: String,
         from source: String = "Valve",
+        session: URLSession = PinnedDownload.session,
         report: @Sendable (Progress) -> Void = { _ in }
     ) async throws -> URL {
         let archive = downloads.appending(path: file)
@@ -38,7 +48,7 @@ enum PinnedDownload {
             report(.fetching(host: host))
             let body: URL, response: URLResponse
             do {
-                (body, response) = try await URLSession.shared.download(from: base.appending(path: file))
+                (body, response) = try await session.download(from: base.appending(path: file))
             } catch {
                 refusals.append("\(host): \(error.localizedDescription)")
                 kinds.insert(.unreachable)

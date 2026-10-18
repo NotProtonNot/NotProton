@@ -112,6 +112,50 @@ struct PinnedDownloadTests {
         #expect(reported.all.count == 1)
     }
 
+    @Test("A download has an overall deadline, not only an idle one")
+    func downloadsHaveADeadline() {
+        #expect(PinnedDownload.session.configuration.timeoutIntervalForResource <= 60 * 60)
+    }
+
+    private final class Trickle: URLProtocol, @unchecked Sendable {
+        private var timer: DispatchSourceTimer?
+
+        override class func canInit(with request: URLRequest) -> Bool { request.url?.host() == "trickle.invalid" }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            let timer = DispatchSource.makeTimerSource()
+            timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                self.client?.urlProtocol(self, didLoad: Data("x".utf8))
+            }
+            timer.resume()
+            self.timer = timer
+        }
+
+        override func stopLoading() { timer?.cancel() }
+    }
+
+    @Test("A host that never finishes is given up on for the next one")
+    func stalledHostIsPassedOver() async throws {
+        let work = try scratchDirectory("pinned")
+        defer { try? FileManager.default.removeItem(at: work) }
+
+        let body = "the real package"
+        let honest = try host(work, named: "package.tar", serving: body)
+        let got = try await PinnedDownload.obtain(
+            file: "package.tar", sha256: Digest.sha256(of: Data(body.utf8)),
+            bases: [URL(string: "https://trickle.invalid/")!, honest],
+            into: work.appending(path: "downloads"), step: "test",
+            session: PinnedDownload.session(deadline: 1, protocols: [Trickle.self]))
+
+        #expect(try String(contentsOf: got, encoding: .utf8) == body)
+    }
+
     @Test("An archive already on disk that matches is not fetched again")
     func reusesMatchingArchive() async throws {
         let work = try scratchDirectory("pinned")
