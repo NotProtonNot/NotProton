@@ -351,7 +351,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),\"1\",\"\")," \
     "T([\"NOTPROTON_DISABLE_HIDRAW\"],npL(\"Disable hidraw\",\"停用 hidraw\",\"Disable hidraw\"),\"1\",\"\")" \
-    "]},\"ctl\")" \
+    "]},\"ctl\")," \
+    "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
+    "children:(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\"," \
+    "label:\"Reduced x87 precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\"," \
+    "checked:\"0\"!==g(\"FEX_X87REDUCEDPRECISION\")," \
+    "onChange:v=>s([[\"FEX_X87REDUCEDPRECISION\",v?\"\":\"0\"]])},\"FEX_X87REDUCEDPRECISION\")},\"fex\")" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \

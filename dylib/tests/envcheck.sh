@@ -132,10 +132,12 @@ is "x86_64 Wine leaves it unset" "unset" "${FEX_X87REDUCEDPRECISION-unset}"
 wine_unix="/R R/lib/wine/aarch64-unix"
 eval "$drop"
 is "arm64 Wine turns it on" "1" "$FEX_X87REDUCEDPRECISION"
+is "the default is logged as the default" "default" "$fex_from"
 is "helpers inherit it" "1" "$(sh -c 'printf %s "$FEX_X87REDUCEDPRECISION"')"
 FEX_X87REDUCEDPRECISION=0
 eval "$drop"
 is "a launch option of 0 is kept" "0" "$FEX_X87REDUCEDPRECISION"
+is "a launch option is logged as one" "environment" "$fex_from"
 FEX_X87REDUCEDPRECISION=
 eval "$drop"
 is "an empty launch option is kept" "" "$FEX_X87REDUCEDPRECISION"

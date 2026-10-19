@@ -182,6 +182,8 @@ if [ "${wine_unix##*/}" = aarch64-unix ]; then
     unset -v "$name"
     np_dropped="$np_dropped${np_dropped:+ }$name"
   done
+  fex_from=environment
+  [ -n "${FEX_X87REDUCEDPRECISION+x}" ] || fex_from=default
   export FEX_X87REDUCEDPRECISION="${FEX_X87REDUCEDPRECISION-1}"
 fi
 
@@ -1173,6 +1175,8 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   refuse_foreign_prefix
   claim_prefix
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
+  [ "${wine_unix##*/}" != aarch64-unix ] \
+    || echo "fex: FEX_X87REDUCEDPRECISION=$FEX_X87REDUCEDPRECISION from $fex_from" >> "$log" 2>&1 || true
   without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
   stage_step="prefix seed"
   seed_prefix_from_template
