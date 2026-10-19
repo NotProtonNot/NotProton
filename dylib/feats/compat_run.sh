@@ -182,6 +182,7 @@ if [ "${wine_unix##*/}" = aarch64-unix ]; then
     unset -v "$name"
     np_dropped="$np_dropped${np_dropped:+ }$name"
   done
+  export FEX_X87REDUCEDPRECISION="${FEX_X87REDUCEDPRECISION-1}"
 fi
 
 # Keeps Wine from inheriting the prefix and template locks (fd 8 and 9).
@@ -1605,7 +1606,7 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"

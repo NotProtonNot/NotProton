@@ -124,6 +124,32 @@ is "other backends stay" "CX_GRAPHICS_BACKEND DXMT_CONFIG " "$(seen)"
 is "nothing to ignore logs nothing" "" "$np_dropped"
 unset -v CX_GRAPHICS_BACKEND DXMT_CONFIG
 
+echo "== FEX reduced x87 precision =="
+unset -v FEX_X87REDUCEDPRECISION
+wine_unix="/R R/lib/wine/x86_64-unix"
+eval "$drop"
+is "x86_64 Wine leaves it unset" "unset" "${FEX_X87REDUCEDPRECISION-unset}"
+wine_unix="/R R/lib/wine/aarch64-unix"
+eval "$drop"
+is "arm64 Wine turns it on" "1" "$FEX_X87REDUCEDPRECISION"
+is "helpers inherit it" "1" "$(sh -c 'printf %s "$FEX_X87REDUCEDPRECISION"')"
+FEX_X87REDUCEDPRECISION=0
+eval "$drop"
+is "a launch option of 0 is kept" "0" "$FEX_X87REDUCEDPRECISION"
+FEX_X87REDUCEDPRECISION=
+eval "$drop"
+is "an empty launch option is kept" "" "$FEX_X87REDUCEDPRECISION"
+export FEX_X87REDUCEDPRECISION=0 FEX_MULTIBLOCK=0
+set --
+eval "$forward"
+fex_args=""
+for arg in "$@"; do
+  case "$arg" in FEX_*) fex_args="$fex_args$arg
+" ;; esac
+done
+is "FEX settings reach the game" "FEX_MULTIBLOCK=0 FEX_X87REDUCEDPRECISION=0 " "$(printf %s "$fex_args" | sort | tr '\n' ' ')"
+unset -v FEX_X87REDUCEDPRECISION FEX_MULTIBLOCK
+
 if [ "$fails" -eq 0 ]; then
 	echo "==> envcheck: all assertions hold"
 else
