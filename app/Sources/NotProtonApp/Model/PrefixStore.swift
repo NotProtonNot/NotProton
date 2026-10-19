@@ -225,8 +225,18 @@ enum PrefixStore {
         let manifest = library.steamapps.appending(path: "appmanifest_\(appID).acf")
         guard let text = try? String(contentsOf: manifest, encoding: .utf8) else { return nil }
         for line in text.split(separator: "\n") {
-            let fields = line.split(separator: "\"").map(String.init)
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            // Steam escapes \" \\ \n and \t inside quoted values.
+            let fields = line.matches(of: #/"((?:[^"\\]|\\.)*)"/#)
+                .map {
+                    String($0.1).replacing(#/\\(.)/#) { escape -> String in
+                        switch escape.1 {
+                        case "n": "\n"
+                        case "t": "\t"
+                        case "\\", "\"": String(escape.1)
+                        default: String(escape.0)
+                        }
+                    }
+                }
             if fields.count >= 2, fields[0] == key { return fields[1] }
         }
         return nil
