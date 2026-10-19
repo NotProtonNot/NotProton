@@ -126,6 +126,8 @@ jobs:
           make -s shortcutcheck
           make -s launch-shell
           make -s envcheck
+          make -s featcheck
+          make -s featstagecheck
           make -s buildcheck
           make -s settingscheck
           make -s routecheck

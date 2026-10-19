@@ -1773,6 +1773,9 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
 fi
+if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
+  export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
+fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 "$WINELOADER" "\$@"
 exit \$?
@@ -1865,80 +1868,144 @@ terminate() {
   echo "=== termination signal received, killing wine prefix ===" >> "$log" 2>&1 || true
   kill_wine_prefix
   [ -n "$open_pid" ] && kill "$open_pid" 2>/dev/null || true
+  [ -n "$open_pid" ] || exit 143
 }
+open_pid=""
 trap terminate TERM INT HUP
 
-np_env_names=""
-# Outside the support directory on purpose: a hard reinstall removes everything there
-# that the app does not know about, which would take a user's descriptors with it.
-np_feat_dir="$HOME/.config/notproton/features.d"
-np_feat_requires() {
-  np_feat_hit=""
-  for np_feat_file in "$np_feat_dir"/*.conf; do
-    [ -r "$np_feat_file" ] || continue
-    sed -n 's/^[[:space:]]*key[[:space:]]*=[[:space:]]*\(.*\)$/\1/p' "$np_feat_file" \
-      | grep -qx "$1" || continue
-    np_feat_hit=$(sed -n \
-      's/^[[:space:]]*requires[[:space:]]*=[[:space:]]*\(.*\)$/\1/p' "$np_feat_file" \
-      | while IFS= read -r np_feat_req; do
-          # Leading parens: a case pattern's ) can otherwise close the $( ) around this.
-          case "$np_feat_req" in
-            (/*) [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; } ;;
-            (*)  [ -f "$HOME/$np_feat_req" ] \
-                   && { printf '%s' "$HOME/$np_feat_req"; break; } ;;
-          esac
-        done)
-    [ -n "$np_feat_hit" ] && break
-  done
-  printf '%s' "$np_feat_hit"
+np_feat_dir="$np_support/plugins"
+np_feat_log() {
+  echo "=== $* ===" >> "$log" 2>&1 || true
 }
-np_dev_add() {
-  if [ ! -f "$2" ]; then
-    echo "=== $1 requested but no dylib at $2 ===" >> "$log" 2>&1 || true
-    return 0
-  fi
-  case ":$STEAM_DYLD_INSERT_LIBRARIES:" in
-    *":$2:"*) return 0 ;;
-  esac
-  if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
-    STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES:$2"
-  else
-    STEAM_DYLD_INSERT_LIBRARIES="$2"
-  fi
-  export STEAM_DYLD_INSERT_LIBRARIES
-  echo "=== $1 will be loaded from $2 ===" >> "$log" 2>&1 || true
-}
-
-# Each descriptor whose key is switched on gets what it asks for: "inject = 1" loads the
-# dylib its "requires" resolved to, each "env = NAME=VALUE" is exported and carried into
-# the bundle, "stage" clones a directory of DLLs into the prefix, and "overrides" adds to
-# WINEDLLOVERRIDES so those DLLs win over the builtins. Nothing here knows which features
-# exist.
 np_feat_field() {
-  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*\)$/\1/p" "$1"
+  LC_ALL=C sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p" "$1"
 }
-for np_feat_file in "$np_feat_dir"/*.conf; do
-  [ -r "$np_feat_file" ] || continue
-  np_feat_key=$(np_feat_field "$np_feat_file" key | head -1)
-  [ -n "$np_feat_key" ] || continue
-  case "$np_feat_key" in
-    NOTPROTON_[A-Z0-9_]*) ;;
-    *) echo "=== features: $np_feat_file key $np_feat_key is not a NOTPROTON_ name ===" \
-         >> "$log" 2>&1 || true; continue ;;
-  esac
-  eval "np_feat_val=\${$np_feat_key:-}"
-  np_feat_on=$(np_feat_field "$np_feat_file" on | head -1)
-  [ -n "$np_feat_on" ] || np_feat_on=1
-  # shellcheck disable=SC2154 # eval assigns np_feat_val above
-  [ "$np_feat_val" = "$np_feat_on" ] || continue
+np_feat_first() {
+  np_feat_field "$1" "$2" | head -1
+}
+np_feat_requires() {
+  np_feat_field "$1" requires | head -n 4 | while IFS= read -r np_feat_req; do
+    case "$np_feat_req" in
+      (/*) ;;
+      (*) np_feat_req="$HOME/$np_feat_req" ;;
+    esac
+    [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; }
+  done
+  return 0
+}
+np_feat_installed() {
+  [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]
+}
+np_feat_file_of() {
+  printf '%s\n' "$np_feat_list" | while IFS= read -r np_feat_entry; do
+    [ "${np_feat_entry%% *}" = "$1" ] && { printf '%s' "${np_feat_entry#* }"; break; }
+  done
+  return 0
+}
+# webpatch.c skips files with overlong lines or values, so they're skipped here too.
+np_feat_too_long() {
+  LC_ALL=C awk 'length($0) >= 2047 { f = 1 } END { exit !f }' "$1" && return 0
+  for np_feat_spec in key:192:1 label:192:1 description:512:1 section:32:1 on:32:1 \
+                      off:32:1 depends:192:1 requires:192:4; do
+    np_feat_max=${np_feat_spec#*:}
+    np_feat_field "$1" "${np_feat_spec%%:*}" | head -n "${np_feat_spec##*:}" |
+      LC_ALL=C awk -v m="${np_feat_max%:*}" 'length($0) >= m { f = 1 } END { exit !f }' &&
+      return 0
+  done
+  return 1
+}
+np_feat_switched() {
+  eval "np_feat_sv=\${$1-}"
+  np_feat_son=$(np_feat_first "$2" on)
+  # shellcheck disable=SC2154 # eval assigns np_feat_sv above
+  [ "$np_feat_sv" = "${np_feat_son:-1}" ]
+}
+# Same rules as the panel.
+np_feat_active() {
+  [ "$2" -le 32 ] || return 1
+  np_feat_af=$(np_feat_file_of "$1")
+  [ -n "$np_feat_af" ] || return 1
+  np_feat_switched "$1" "$np_feat_af" || return 1
+  np_feat_installed "$np_feat_af" || return 1
+  np_feat_adep=$(np_feat_first "$np_feat_af" depends)
+  [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
+}
 
-  if [ "$(np_feat_field "$np_feat_file" inject | head -1)" = 1 ]; then
-    np_dev_add "$np_feat_key" "$(np_feat_requires "$np_feat_key")"
+np_feat_list=""
+np_feat_count=0
+# Same order as webpatch.c.
+np_feat_files=$(printf '%s\n' "$np_feat_dir"/*.conf | LC_ALL=C sort)
+while IFS= read -r np_feat_file; do
+  case "$np_feat_file" in
+    ("$np_feat_dir"/*.conf) ;;
+    (*) continue ;;
+  esac
+  [ -f "$np_feat_file" ] && [ -r "$np_feat_file" ] || continue
+  if np_feat_too_long "$np_feat_file"; then
+    np_feat_log "plugins: $np_feat_file has a line or value that's too long, ignored"
+    continue
+  fi
+  np_feat_key=$(np_feat_first "$np_feat_file" key)
+  if [ -z "$np_feat_key" ]; then
+    np_feat_log "plugins: $np_feat_file has no key, ignored"
+    continue
+  fi
+  if ! printf '%s\n' "$np_feat_key" | LC_ALL=C grep -qx 'NOTPROTON_[A-Z0-9_]\{1,\}'; then
+    np_feat_log "plugins: $np_feat_file has an invalid key $np_feat_key, ignored"
+    continue
+  fi
+  if [ -z "$(np_feat_first "$np_feat_file" label)" ]; then
+    np_feat_log "plugins: $np_feat_file has no label, ignored"
+    continue
+  fi
+  case "$(np_feat_first "$np_feat_file" section)" in
+    ("" | dev) ;;
+    (*) np_feat_log "plugins: $np_feat_file is not in the dev section, ignored"; continue ;;
+  esac
+  if [ -n "$(np_feat_file_of "$np_feat_key")" ]; then
+    np_feat_log "plugins: $np_feat_file repeats key $np_feat_key, ignored"
+    continue
+  fi
+  if [ "$np_feat_count" -ge 32 ]; then
+    np_feat_log "plugins: $np_feat_file is over the 32 plugin limit, ignored"
+    continue
+  fi
+  np_feat_count=$((np_feat_count + 1))
+  np_feat_list="$np_feat_list
+$np_feat_key $np_feat_file"
+done <<NP_FEAT_FILES
+$np_feat_files
+NP_FEAT_FILES
+
+np_feat_dylibs=""
+np_feat_envs=""
+while IFS= read -r np_feat_entry; do
+  [ -n "$np_feat_entry" ] || continue
+  np_feat_key=${np_feat_entry%% *}
+  np_feat_file=${np_feat_entry#* }
+  if ! np_feat_installed "$np_feat_file"; then
+    np_feat_switched "$np_feat_key" "$np_feat_file" &&
+      np_feat_log "$np_feat_key is on but is skipped as $np_feat_key's required files are missing"
+    continue
+  fi
+  np_feat_active "$np_feat_key" 0 || continue
+
+  if [ "$(np_feat_first "$np_feat_file" inject)" = 1 ]; then
+    np_feat_lib=$(np_feat_requires "$np_feat_file")
+    if [ ! -f "$np_feat_lib" ]; then
+      np_feat_log "$np_feat_key is skipped as it asks to load a dylib but doesn't name one"
+    elif [ "${np_feat_lib#*:}" != "$np_feat_lib" ]; then
+      np_feat_log "$np_feat_key is skipped as $np_feat_lib has a colon in it"
+    else
+      case ":$np_feat_dylibs:" in
+        (*":$np_feat_lib:"*) ;;
+        (*) np_feat_dylibs="${np_feat_dylibs:+$np_feat_dylibs:}$np_feat_lib"
+            np_feat_log "$np_feat_key will be loaded from $np_feat_lib" ;;
+      esac
+    fi
   fi
 
-  # Re-staged every launch, so it survives a prefix the user rebuilt and repairs itself
-  # if a game overwrote one of the files. Cloned where the filesystem allows it.
-  np_feat_stage=$(np_feat_field "$np_feat_file" stage | head -1)
+  np_feat_stage=$(np_feat_first "$np_feat_file" stage)
   if [ -n "$np_feat_stage" ]; then
     case "$np_feat_stage" in
       (/*) ;;
@@ -1946,55 +2013,63 @@ for np_feat_file in "$np_feat_dir"/*.conf; do
     esac
     np_feat_sys32="$WINEPREFIX/drive_c/windows/system32"
     if [ ! -d "$np_feat_stage" ]; then
-      echo "=== $np_feat_key stages from $np_feat_stage, which is not there ===" \
-        >> "$log" 2>&1 || true
+      np_feat_log "$np_feat_key copies no DLLs as $np_feat_stage doesn't exist"
     elif [ ! -d "$np_feat_sys32" ]; then
-      echo "=== $np_feat_key cannot stage, no $np_feat_sys32 ===" >> "$log" 2>&1 || true
+      np_feat_log "$np_feat_key copies no DLLs as the prefix has no system32"
     else
       for np_feat_src in "$np_feat_stage"/*; do
         [ -f "$np_feat_src" ] || continue
         np_feat_dst="$np_feat_sys32/$(basename "$np_feat_src")"
-        if cp -c -f "$np_feat_src" "$np_feat_dst" 2>/dev/null \
-           || cp -f "$np_feat_src" "$np_feat_dst"; then
-          echo "=== $np_feat_key staged $(basename "$np_feat_src") ===" >> "$log" 2>&1 || true
+        if [ -d "$np_feat_dst" ]; then
+          np_feat_log "$np_feat_key skips $(basename "$np_feat_src") as system32 has a folder by that name"
+          continue
+        fi
+        cmp -s "$np_feat_src" "$np_feat_dst" && continue
+        np_feat_tmp="$np_feat_dst.np-stage.$$"
+        rm -f "$np_feat_tmp"
+        if { cp -c "$np_feat_src" "$np_feat_tmp" 2>/dev/null \
+             || cp "$np_feat_src" "$np_feat_tmp"; } && mv -f "$np_feat_tmp" "$np_feat_dst"; then
+          np_feat_log "$np_feat_key copied $(basename "$np_feat_src") into system32"
         else
-          echo "=== $np_feat_key failed to stage $np_feat_src ===" >> "$log" 2>&1 || true
+          rm -f "$np_feat_tmp"
+          np_feat_log "$np_feat_key failed to copy $(basename "$np_feat_src") into system32"
         fi
       done
     fi
   fi
 
-  # Appended, never assigned: the bridge's own overrides are already in there.
-  np_feat_over=$(np_feat_field "$np_feat_file" overrides | head -1)
+  np_feat_over=$(np_feat_first "$np_feat_file" overrides)
   if [ -n "$np_feat_over" ]; then
     export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$np_feat_over"
-    echo "=== $np_feat_key adds overrides $np_feat_over ===" >> "$log" 2>&1 || true
+    np_feat_log "$np_feat_key adds overrides $np_feat_over"
   fi
 
-  # Fed by here-document, not a pipe: a piped loop runs in a subshell and its exports
-  # would not survive it.
   while IFS= read -r np_feat_env; do
-    # A descriptor with no env still yields one empty line through the here-document.
     [ -n "$np_feat_env" ] || continue
-    np_feat_name=${np_feat_env%%=*}
-    case "$np_feat_name" in
-      [A-Z_][A-Z0-9_]*) ;;
-      *) echo "=== features: $np_feat_file env $np_feat_env is not NAME=VALUE ===" \
-           >> "$log" 2>&1 || true; continue ;;
+    case "$np_feat_env" in
+      (*=*) ;;
+      (*) np_feat_log "$np_feat_key skips env line $np_feat_env as it has no ="; continue ;;
     esac
-    [ "$np_feat_name" = "$np_feat_env" ] && continue
-    # The name is checked above, so it is safe to build an assignment around it; the
-    # value goes through a variable so spaces and quotes in it survive.
-    # shellcheck disable=SC2034 # the eval below reads it
-    np_feat_value=${np_feat_env#*=}
-    eval "export $np_feat_name=\"\$np_feat_value\""
-    np_env_names="$np_env_names $np_feat_name"
-    echo "=== $np_feat_key sets $np_feat_env ===" >> "$log" 2>&1 || true
+    if ! printf '%s\n' "${np_feat_env%%=*}" | LC_ALL=C grep -qx '[A-Z_][A-Z0-9_]*'; then
+      np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as it isn't a valid variable name"
+      continue
+    fi
+    case "${np_feat_env%%=*}" in
+      (DYLD_* | PATH | CX_ROOT | CX_HOME | WINE* | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+       NOTPROTON_FEATURE_DYLIBS | NOTPROTON_GAME_CWD | NOTPROTON_OVERLAY_SHIM)
+        np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as the compat_run script sets it"
+        continue ;;
+    esac
+    # Kept in reverse since they get prepended to open args (which flips the order)
+    np_feat_envs="$np_feat_env
+$np_feat_envs"
+    np_feat_log "$np_feat_key sets $np_feat_env"
   done <<NP_FEAT_ENV
 $(np_feat_field "$np_feat_file" env)
 NP_FEAT_ENV
-done
-
+done <<NP_FEAT_LIST
+$np_feat_list
+NP_FEAT_LIST
 
 game_cwd="$(pwd)"
 if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
@@ -2003,8 +2078,13 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-# shellcheck disable=SC2086 # np_env_names is a list of names and has to split
-for name in $np_env_names $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+# Prepended first so they end up last among the --env args since open keeps the last of a repeated name.
+while IFS= read -r np_feat_env; do
+  [ -n "$np_feat_env" ] && set -- --env "$np_feat_env" "$@"
+done <<NP_FEAT_ENVS
+$np_feat_envs
+NP_FEAT_ENVS
+for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
@@ -2024,6 +2104,7 @@ set -- \
   --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
   --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
   --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
+  --env NOTPROTON_FEATURE_DYLIBS="$np_feat_dylibs" \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"

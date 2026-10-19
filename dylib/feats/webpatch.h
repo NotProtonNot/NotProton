@@ -32,8 +32,7 @@ typedef struct {
 
 void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count);
 
-// Supplies the readiness object and Developer rows, for checks that must not read
-// whatever features.d an install happens to carry.
+// For tests, so they don't depend on the plugins installed on the machine.
 void np_webpatch_set_features(const char *ready, const char *rows);
 
 // The compat UIs, named so a caller can compare against the table rather than a literal

@@ -674,6 +674,8 @@ static void check_older_filter(const char *out_path) {
 }
 
 int main(int argc, char **argv) {
+    // Tests should not read a user's plugins
+    unsetenv("HOME");
     if (argc == 4 && strcmp(argv[1], "--extract") == 0)
         return extract(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--extract-library") == 0)
