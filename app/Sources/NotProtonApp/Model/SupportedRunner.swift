@@ -1,4 +1,4 @@
-// Allow list of CrossOver builds the runner clones from. The ntdll hook sites
+// Allow list of runtime builds the runner clones from. The ntdll hook sites
 // are hardcoded RVAs, so a build not pinned here would be patched at the wrong
 // offsets. New builds go in after running ntdll-patch/resolve.py and pinning
 // the hashes.
@@ -9,6 +9,11 @@ enum WineArch: String, Sendable, CaseIterable {
     case x86_64Windows = "x86_64-windows"
     case i386Windows = "i386-windows"
     case aarch64Windows = "aarch64-windows"
+}
+
+enum RuntimeProvider: Sendable {
+    case crossOver
+    case whisky
 }
 
 struct RunnerBuild: Sendable, Equatable, Identifiable {
@@ -32,6 +37,28 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
 
     var rebuilds: [RunnerRebuild] = []
 
+    var runtimeName: String? = nil
+
+    var provider: RuntimeProvider { runtimeName == nil ? .crossOver : .whisky }
+    var name: String { runtimeName ?? "CrossOver" }
+    var version: String { releaseVersion }
+    var patchesNtdll: Bool { !patchedNtdll.isEmpty }
+
+    static func whisky(name: String, version: String,
+                       cleanNtdll: [WineArch: String] = [:],
+                       patchedNtdll: [WineArch: String] = [:]) -> RunnerBuild {
+        let id = "\(name)-\(version)"
+        return RunnerBuild(
+            bundleVersion: id, releaseVersion: version, flavor: nil, loaderSHA256: "",
+            cleanNtdll: cleanNtdll, patchedNtdll: patchedNtdll,
+            tools: [CompatTool(name: "notproton-whisky-\(id)", flavor: .rosetta,
+                               display: "\(name) \(version) (Whisky)")], runtimeName: name)
+    }
+
+    static func native(name: String, version: String) -> RunnerBuild {
+        whisky(name: name, version: version)
+    }
+
     var id: String { flavor.map { "\(bundleVersion)-\($0)" } ?? bundleVersion }
 
     func matching(loaderSHA256 hash: String) -> RunnerBuild? {
@@ -46,7 +73,7 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
 
     var flavorName: String { flavor?.uppercased() ?? "Rosetta" }
 
-    var displayVersion: String { "\(releaseVersion) \(flavorName)" }
+    var displayVersion: String { provider == .whisky ? "\(name) \(version)" : "\(releaseVersion) \(flavorName)" }
 }
 
 // The version of CrossOver offered in China has different hashes but is identical in the ways that matter
@@ -116,7 +143,9 @@ enum SupportedRunners {
         case .build(let id): id
         case .nobody: nil
         }
-        let served = all.filter { installed.contains($0.id) }.flatMap { build in
+        let catalog = all.filter { installed.contains($0.id) }
+            + builds.filter { candidate in !all.contains(where: { $0.id == candidate.id }) }
+        let served = catalog.flatMap { build in
             build.tools.enumerated().map { index, tool in
                 let name = build.id == holder && index == 0 ? legacyToolName : tool.name
                 return InstalledTool(
@@ -125,14 +154,43 @@ enum SupportedRunners {
             }
         }.filter { $0.tool.flavor != .fex || fexAvailable || kept.contains($0.name) }
         func rank(_ tool: InstalledTool) -> Int {
-            toolPreference.firstIndex(of: tool.name) ?? toolPreference.count
+            if builds.first(where: { $0.id == tool.build })?.provider == .whisky { return -1 }
+            return toolPreference.firstIndex(of: tool.name) ?? toolPreference.count
         }
         return served.enumerated()
-            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+            .sorted {
+                let a = rank($0.element), b = rank($1.element)
+                if a != b { return a < b }
+                if a == -1 {
+                    let aid = $0.element.build, bid = $1.element.build
+                    let av = builds.first { $0.id == aid }?.version ?? ""
+                    let bv = builds.first { $0.id == bid }?.version ?? ""
+                    if av != bv { return av.compare(bv, options: .numeric) == .orderedDescending }
+                    return $0.element.build < $1.element.build
+                }
+                return $0.offset < $1.offset
+            }
             .map(\.element)
     }
 
-    static let all: [RunnerBuild] = [
+    static let all: [RunnerBuild] = crossOver + whisky
+
+    static let whisky: [RunnerBuild] = [
+        RunnerBuild.whisky(
+            name: "winecx-gptk",
+            version: "4.7.54",
+            cleanNtdll: [
+                .x86_64Windows: "5e4a782ef6c5e79f70cda10083b786fda89f1364c1e4c1de00654ff61d4ea762",
+                .i386Windows: "0540c0e79b0316a4ecbe884fa88b438ae63a2dcf0b246081a0e9fc0a9a09eb26",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "db7f5204da7490afa0bbf3cdcf0f9f988b903a542219abbe3d310a6d3d8c70bb",
+                .i386Windows: "c2e13f7a9bacf0ead8579fa02dd3481094be29308847f6a4c762a700b4e0e1f2",
+            ]
+        ),
+    ]
+
+    static let crossOver: [RunnerBuild] = [
         RunnerBuild(
             bundleVersion: "26.3.0.39832",
             releaseVersion: "26.3",
@@ -277,8 +335,12 @@ enum SupportedRunners {
         ),
     ]
 
+    static func build(cleanNtdllSHA256 hash: String) -> RunnerBuild? {
+        whisky.first { $0.cleanNtdll[.x86_64Windows] == hash }
+    }
+
     static func build(loaderSHA256 hash: String) -> RunnerBuild? {
-        all.lazy.compactMap { $0.matching(loaderSHA256: hash) }.first
+        crossOver.lazy.compactMap { $0.matching(loaderSHA256: hash) }.first
     }
 
     static func build(id: String) -> RunnerBuild? {
@@ -291,7 +353,7 @@ enum SupportedRunners {
 
     static var versionList: String {
         var seen = Set<String>()
-        return all.map(\.releaseVersion)
+        return crossOver.map(\.releaseVersion)
             .filter { seen.insert($0).inserted }
             .joined(separator: ", ")
     }

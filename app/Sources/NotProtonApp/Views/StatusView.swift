@@ -220,7 +220,7 @@ struct StatusView: View {
             }
             Button("Cancel", role: .cancel) { status.cancelBuildRemoval() }
         } message: {
-            Text("CrossOver itself is not removed.")
+            Text("The source runtime is not removed.")
         }
         .confirmationDialog(
             String(localized: "Remove everything NotProton has created?"),
@@ -354,11 +354,68 @@ struct StatusView: View {
                 }
             }
 
+            Section {
+                whiskySection(snapshot)
+            } header: {
+                Text("Whisky")
+            } footer: {
+                HStack {
+                    Spacer()
+                    Button("Choose Whisky Runtime…") { Task { await status.addWhisky() } }
+                        .disabled(!status.isIdle)
+                }
+            }
+
             componentsSection(snapshot.payload)
 
             dangerSection
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func whiskySection(_ snapshot: StatusSnapshot) -> some View {
+        let copied = snapshot.installedRunners.filter { $0.provider == .whisky }
+        let unpatched: [String] = if case .unpatched(let ids, _) = snapshot.runner { ids } else { [] }
+        if snapshot.whisky.isEmpty && copied.isEmpty {
+            StatusRow(title: String(localized: "Whisky runtime not found"),
+                      detail: String(localized: "Install a runtime in Whisky or choose its folder."))
+        }
+        ForEach(snapshot.whisky) { install in
+            let installed = copied.contains { $0.id == install.build?.id }
+            let needsRepair = install.build.map { unpatched.contains($0.id) } ?? false
+            StatusRow(
+                title: install.name,
+                value: install.isUsable
+                    ? (installed ? (needsRepair ? String(localized: "Needs repair") : String(localized: "Ready"))
+                                 : String(localized: "Not set up"))
+                    : String(localized: "Unsupported Whisky runtime."),
+                tone: install.isUsable ? (installed && !needsRepair ? .ok : .info) : .warning,
+                detail: install.root.path(percentEncoded: false),
+                action: install.isUsable ? StatusAction(
+                    label: installed ? String(localized: "Repair") : String(localized: "Set Up"),
+                    isEnabled: status.canInstall
+                ) { Task { await status.setUpWhisky(from: install) } } : nil,
+                menu: installed ? [StatusAction(label: String(localized: "Remove Copy"), role: .destructive,
+                    isEnabled: status.canInstall) {
+                        if let build = install.build { status.requestBuildRemoval(build.id) }
+                    }] : []
+            )
+        }
+        ForEach(copied.filter { build in !snapshot.whisky.contains { $0.build?.id == build.id } }) { build in
+            StatusRow(title: build.displayVersion,
+                value: unpatched.contains(build.id) ? String(localized: "Needs repair") : String(localized: "Ready"),
+                tone: unpatched.contains(build.id) ? .warning : .ok,
+                action: StatusAction(label: String(localized: "Repair"), isEnabled: status.canInstall) {
+                    Task { await status.repairWhisky(build) }
+                }, menu: [StatusAction(label: String(localized: "Remove Copy"), role: .destructive,
+                    isEnabled: status.canInstall) { status.requestBuildRemoval(build.id) }])
+        }
+        ForEach((snapshot.damagedRunners + snapshot.orphanedRunners).filter(SupportPaths.isWhiskyBuild), id: \.self) { id in
+            StatusRow(title: id, value: String(localized: "Needs repair"), tone: .warning,
+                action: StatusAction(label: String(localized: "Remove Copy"), role: .destructive,
+                    isEnabled: status.canInstall) { status.requestBuildRemoval(id) })
+        }
     }
 
     private var dangerSection: some View {

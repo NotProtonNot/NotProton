@@ -65,13 +65,13 @@ is "a prefix this build last updated is claimed" "status=0
 is "a prefix another clone updated is refused and named" "status=1
 last run by CrossOver Preview (FEX)" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921-fex)" "")"
 is "a prefix no clone updated is refused" "status=1
-last run by another version of CrossOver" "$(launch 26.3.0.39832 1 "")"
+last run by another Wine runtime" "$(launch 26.3.0.39832 1 "")"
 is "updates the user disabled say nothing, so the prefix is claimed" "status=0
 26.3.0.39832" "$(launch 26.3.0.39832 disable "")"
 
 clone 27.0.0.40921 202608211200
 is "a prefix either of two clones updated names neither" "status=1
-last run by another version of CrossOver" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921)" "")"
+last run by another Wine runtime" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921)" "")"
 
 echo "== prefixes with a record =="
 is "the record wins over the Wine that updated the prefix" "status=0

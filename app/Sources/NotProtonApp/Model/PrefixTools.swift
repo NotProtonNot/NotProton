@@ -128,6 +128,12 @@ enum PrefixTools {
         environment["CX_ROOT"] = root
         environment["CX_HOME"] = SupportPaths.applicationSupport
             .appending(path: "CrossOver").path(percentEncoded: false)
+        if FileManager.default.fileExists(atPath: runner.deletingLastPathComponent()
+            .appending(path: "WhiskyWineVersion.plist").path(percentEncoded: false)) {
+            environment.removeValue(forKey: "CX_ROOT")
+            environment.removeValue(forKey: "CX_HOME")
+            environment["WINEUSERNAME"] = "steamuser"
+        }
         let wine = layout(runner: runner, flavor: flavor)
         environment["WINELOADER"] = wine.loader.path(percentEncoded: false)
         environment["WINESERVER"] = wine.server.path(percentEncoded: false)
@@ -166,7 +172,7 @@ enum PrefixTools {
         let unix = runner.appending(path: "lib/wine/x86_64-unix")
         let server = bin.appending(path: "wineserver")
         return WineLayout(
-            loader: unix.appending(path: "wine"),
+            loader: executable(unix.appending(path: "wine")) ? unix.appending(path: "wine") : bin.appending(path: "wine64"),
             server: executable(server) ? server : bin.appending(path: "wineserver-x86"),
             unixDir: unix
         )

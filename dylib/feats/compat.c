@@ -540,7 +540,9 @@ static int written_here(const char *tool_dir) {
     size_t got = fread(head, 1, sizeof(head) - 1, f);
     fclose(f);
     head[got] = '\0';
-    return strstr(head, RUN_SCRIPT_MARK) != NULL;
+    return strstr(head, RUN_SCRIPT_MARK) != NULL
+        || strstr(head, "\n# notproton Wine compatibility tool shim\n") != NULL
+        || strstr(head, "\n# notproton WhiskyWine (winecx-gptk) compatibility tool shim\n") != NULL;
 }
 
 static void remove_tool(const char *tools_dir, const char *name) {

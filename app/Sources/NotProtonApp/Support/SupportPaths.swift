@@ -47,8 +47,31 @@ enum SupportPaths {
     // Read by the dylib at Steam launch, in np_compat_load_tool_list.
     static var toolList: URL { support.appending(path: "tools") }
 
+    // Where Whisky and WhiskyPreview keep the runtimes they download. Each entry
+    // under Runtimes is a runtime root, and Libraries is one itself.
+    static var whiskyRuntimeFolders: [URL] {
+        [
+            "com.dappermint.WhiskyPreview",
+            "com.isaacmarovitz.Whisky",
+            "com.franke.Whisky",
+        ].map { applicationSupport.appending(path: "\($0)/Runtimes") }
+    }
+
+    static var whiskyLibraries: [URL] {
+        [
+            "com.dappermint.WhiskyPreview",
+            "com.isaacmarovitz.Whisky",
+            "com.franke.Whisky",
+        ].map { applicationSupport.appending(path: "\($0)/Libraries") }
+    }
+
+    static func isWhiskyBuild(_ id: String) -> Bool {
+        id.wholeMatch(of: #/[A-Za-z][A-Za-z0-9.-]*-[0-9]+\.[0-9]+\.[0-9]+/#) != nil
+            && !id.hasPrefix("crossover-")
+    }
+
     static func runnerRoot(forBuild build: String, runners: URL = SupportPaths.runners) -> URL {
-        runners.appending(path: "crossover-\(build)")
+        runners.appending(path: isWhiskyBuild(build) ? build : "crossover-\(build)")
     }
 
     static func crossOverRoot(inBundle bundle: URL) -> URL {
@@ -56,7 +79,7 @@ enum SupportPaths {
     }
 
     static func clonedRoot(forBuild build: String, runners: URL = SupportPaths.runners) -> URL {
-        runnerRoot(forBuild: build, runners: runners).appending(path: "CrossOver")
+        runnerRoot(forBuild: build, runners: runners).appending(path: isWhiskyBuild(build) ? "Wine" : "CrossOver")
     }
 
     static func prefixTemplates(forBuild build: String, in library: SteamLibrary) -> [URL] {
@@ -116,5 +139,44 @@ enum SupportPaths {
         }
 
         static var libraryFoldersVDF: URL { userData.appending(path: "steamapps/libraryfolders.vdf") }
+    }
+}
+
+// The WhiskyWine layout inside a runtime root
+enum RuntimeLayout {
+
+    static func wine(in root: URL) -> URL { root.appending(path: "Wine") }
+
+    static func libWine(in root: URL) -> URL { wine(in: root).appending(path: "lib/wine") }
+
+    static func unixDir(in root: URL) -> URL { libWine(in: root).appending(path: "x86_64-unix") }
+
+    // lib/wine's loader is the one the launcher bundle stages beside its unix
+    // libraries, and bin/wine64 is the same binary.
+    static func loader(in root: URL) -> URL {
+        let unixLoader = unixDir(in: root).appending(path: "wine")
+        if FileManager.default.isExecutableFile(atPath: unixLoader.path(percentEncoded: false)) {
+            return unixLoader
+        }
+        return wine(in: root).appending(path: "bin/wine64")
+    }
+
+    static func server(in root: URL) -> URL { wine(in: root).appending(path: "bin/wineserver") }
+
+    static func ntdll(in root: URL, arch: WineArch) -> URL {
+        libWine(in: root).appending(path: "\(arch.rawValue)/ntdll.dll")
+    }
+
+    static func versionPlist(in root: URL) -> URL { root.appending(path: "WhiskyWineVersion.plist") }
+
+    static func manifest(in root: URL) -> URL { root.appending(path: "RuntimeManifest.json") }
+
+    static func gptkDeployment(in root: URL) -> URL { root.appending(path: "GPTKDeployment.plist") }
+
+    static func hasWine(in root: URL) -> Bool {
+        let fm = FileManager.default
+        return fm.fileExists(atPath: libWine(in: root).path(percentEncoded: false))
+            && fm.isExecutableFile(atPath: server(in: root).path(percentEncoded: false))
+            && fm.isExecutableFile(atPath: wine(in: root).appending(path: "bin/wine64").path(percentEncoded: false))
     }
 }

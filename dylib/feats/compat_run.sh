@@ -1,5 +1,5 @@
 #!/bin/sh
-# notproton CrossOver compatibility tool shim
+# notproton Wine compatibility tool shim
 set -e
 
 verb="$1"
@@ -153,9 +153,23 @@ fi
 case "$np_build" in *[!A-Za-z0-9.-]*) np_build="" ;; esac
 np_display=$(sed -n 's/.*"display_name"[[:space:]]*"\(.*\)".*/\1/p' \
   "$np_tool_dir/compatibilitytool.vdf" 2>/dev/null | head -1) || np_display=""
-[ -n "$np_display" ] || np_display="CrossOver build ${np_build:-unknown}"
-CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
-export CX_ROOT
+[ -n "$np_display" ] || np_display="Runtime build ${np_build:-unknown}"
+np_provider=crossover
+RUNNER_ROOT="$np_support/runners/crossover-$np_build"
+case "$np_build" in
+  [A-Za-z]*)
+    np_provider=whisky
+    RUNNER_ROOT="$np_support/runners/$np_build"
+    unset CX_ROOT CX_HOME CX_APPLEGPTK_LIBD3DSHARED_PATH
+    CX_ROOT="$RUNNER_ROOT/Wine"
+    export WINEUSERNAME=steamuser
+    ;;
+  *)
+    CX_ROOT="$RUNNER_ROOT/CrossOver"
+    export CX_ROOT
+    ;;
+esac
+wine_root="$CX_ROOT"
 # CrossOver initializes Rosetta's Windows thread-state support even without D3DMetal.
 if [ -f "$CX_ROOT/lib64/apple_gptk/external/libd3dshared.dylib" ]; then
   export CX_APPLEGPTK_LIBD3DSHARED_PATH="$CX_ROOT/lib64/apple_gptk/external/libd3dshared.dylib"
@@ -169,6 +183,9 @@ if [ "$np_flavor" = rosetta ] || [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" 
   WINELOADER="$wine_unix/wine"
   WINESERVER="$CX_ROOT/bin/wineserver"
   [ -x "$WINESERVER" ] || WINESERVER="$CX_ROOT/bin/wineserver-x86"
+  if [ "${np_provider:-crossover}" = whisky ] && [ ! -x "$WINELOADER" ]; then
+    WINELOADER="$CX_ROOT/bin/wine64"
+  fi
 fi
 export WINELOADER WINESERVER
 
@@ -284,8 +301,8 @@ prefix_machine() {
 
 tool_name() {
   case "$1" in
-    aa64) printf 'the FEX build of CrossOver' ;;
-    8664) printf 'the Rosetta build of CrossOver' ;;
+    aa64) printf 'the FEX Wine runtime' ;;
+    8664) printf 'the Rosetta Wine runtime' ;;
     *) printf 'an older 32-bit setup' ;;
   esac
 }
@@ -326,15 +343,17 @@ last_wine_build() {
   case "$updated" in '' | *[!0-9]*) return 0 ;; esac
   [ "$updated" = "$(stat -f %m "$CX_ROOT/share/wine/wine.inf" 2>/dev/null)" ] && return 0
   had_build=other
-  had_display="another version of CrossOver"
-  for inf in "$np_support"/runners/crossover-*/CrossOver/share/wine/wine.inf; do
+  had_display="another Wine runtime"
+  for inf in "$np_support"/runners/crossover-*/CrossOver/share/wine/wine.inf \
+    "$np_support"/runners/*/Wine/share/wine/wine.inf; do
     [ "$(stat -f %m "$inf" 2>/dev/null)" = "$updated" ] || continue
     if [ "$had_build" != other ]; then
       had_build=other
-      had_display="another version of CrossOver"
+      had_display="another Wine runtime"
       break
     fi
     had_build=${inf#"$np_support/runners/crossover-"}
+    if [ "$had_build" = "$inf" ]; then had_build=${inf#"$np_support/runners/"}; fi
     had_build=${had_build%%/*}
     had_display=$(awk -F '\t' -v b="$had_build" '$2 == b { print $4; exit }' \
       "$np_support/tools" 2>/dev/null) || had_display=""
@@ -355,7 +374,7 @@ refuse_other_build() {
   fi
   if [ -n "$had_build" ] && [ "$had_build" != "$np_build" ]; then
     echo "=== prefix was last run by build $had_build and this compatibility tool runs $np_build, rebuild the prefix in NotProton ===" >> "$log" 2>&1 || true
-    had_display=$(alert_safe "${had_display:-CrossOver build $had_build}")
+    had_display=$(alert_safe "${had_display:-Runtime build $had_build}")
     show_alert "This game needs its prefix rebuilt" "This game's prefix was last run by $had_display, and this compatibility tool runs $(alert_safe "$np_display"). Rebuild the prefix in NotProton to run it here, or pick $had_display again in the game's Compatibility settings. You will not lose game saves by rebuilding the prefix."
     exit 1
   fi
@@ -732,7 +751,7 @@ import_prefix_settings() {
 stage_step="runner check"
 if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
   echo "=== build ${np_build:-(none recorded)} behind this compatibility tool is not set up, set it up in NotProton ===" >> "$log" 2>&1 || true
-  show_alert "CrossOver is not set up" "The CrossOver build behind $(alert_safe "$np_display") is not set up. Set it up in NotProton, or pick another compatibility tool for this game."
+  show_alert "Runtime is not set up" "The runtime behind $(alert_safe "$np_display") is not set up. Set it up in NotProton, or pick another compatibility tool for this game."
   exit 1
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
@@ -745,6 +764,9 @@ runner_id=""
 in_template_env() {
   prefix="$1"
   shift
+  if [ "${np_provider:-crossover}" = whisky ]; then
+    set -- /usr/bin/env -u CX_ROOT -u CX_HOME WINEUSERNAME=steamuser "$@"
+  fi
   without_lock_fds \
     env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" TMPDIR="${TMPDIR:-/tmp}" \
     LANG="${LANG:-}" LC_ALL="${LC_ALL:-}" \
@@ -1194,6 +1216,136 @@ fi
 
 bridge_src="$np_support/bridge"
 prefix_steam="$WINEPREFIX/drive_c/Program Files (x86)/Steam"
+# The Compatibility page stores the backend as CX_GRAPHICS_BACKEND. D3DMetal
+# and WineD3D are the runtime's builtins. DXVK and DXMT ship beside Wine in the
+# runtime and load as native DLLs out of the prefix. Save the original files
+# before staging them and restore only the entries in notproton-graphics.
+select_graphics_backend() {
+  backend="${CX_GRAPHICS_BACKEND:-d3dmetal}"
+  case "$backend" in
+    d3dmetal|wined3d) payload="" ;;
+    dxvk) payload="$RUNNER_ROOT/DXVK" ;;
+    dxmt) payload="$RUNNER_ROOT/DXMT" ;;
+    *)
+      echo "=== unknown graphics backend $backend, using d3dmetal ===" >> "$log" 2>&1 || true
+      backend=d3dmetal
+      payload=""
+      ;;
+  esac
+  if [ -n "$payload" ] && [ ! -d "$payload/x64" ]; then
+    echo "=== the runtime ships no $backend, using d3dmetal ===" >> "$log" 2>&1 || true
+    backend=d3dmetal
+    payload=""
+  fi
+  case "$backend" in
+    dxmt) export CX_ACTIVE_GRAPHICS_BACKEND=d3dmetal ;;
+    *) export CX_ACTIVE_GRAPHICS_BACKEND="$backend" ;;
+  esac
+  if [ "$backend" = dxvk ] && [ -z "${DXVK_CONFIG_FILE:-}" ] && [ -f "$payload/dxvk.conf" ]; then
+    export DXVK_CONFIG_FILE="$payload/dxvk.conf"
+  fi
+
+  # A payload DLL carrying Wine's builtin marker (DXMT's winemetal, nvapi64 and
+  # nvngx) pairs with the runtime's unix side and is served from lib/wine, so
+  # only the plain native ones are copied in.
+  native_dlls="d3d8 d3d9 d3d10core d3d11 dxgi"
+
+  # Prefix DLLs can link back to the runner. Replace the entry, never its target.
+  copy_graphics_dll() (
+    graphics_tmp="${2}.notproton-new"
+    trap 'rm -f "$graphics_tmp"' EXIT
+    rm -f "$graphics_tmp" || exit 1
+    cp -p "$1" "$graphics_tmp" && mv -f "$graphics_tmp" "$2"
+  )
+
+  marker="$STEAM_COMPAT_DATA_PATH/notproton-graphics"
+  backup="$STEAM_COMPAT_DATA_PATH/notproton-graphics-backup"
+  installed=""
+  overrides=""
+  for lane in system32:x64:x86_64-windows syswow64:x32:i386-windows; do
+    dir=${lane%%:*}
+    rest=${lane#*:}
+    flavor=${rest%%:*}
+    dest="$WINEPREFIX/drive_c/windows/$dir"
+    [ -d "$dest" ] || continue
+    for dll in $native_dlls; do
+      src="$payload/$flavor/$dll.dll"
+      [ -n "$payload" ] && [ -f "$src" ] || continue
+      if LC_ALL=C grep -aq 'Wine builtin DLL' "$src"; then
+        echo "=== $backend $flavor/$dll.dll is a builtin, left to the runtime ===" >> "$log" 2>&1 || true
+        continue
+      fi
+      saved="$backup/$dir/$dll.dll"
+      if [ ! -f "$saved" ] && [ ! -f "$saved.absent" ]; then
+        mkdir -p "$backup/$dir"
+        if [ -e "$dest/$dll.dll" ]; then
+          cp -p "$dest/$dll.dll" "$saved" || return 1
+        else
+          : > "$saved.absent"
+        fi
+      fi
+      # Record before copying so an interrupted launch can restore every file.
+      if ! grep -Fqx "$dir/$dll.dll" "$marker" 2>/dev/null; then
+        printf '%s\n' "$dir/$dll.dll" >> "$marker" || return 1
+      fi
+      if cmp -s "$src" "$dest/$dll.dll" || copy_graphics_dll "$src" "$dest/$dll.dll"; then
+        installed="$installed $dir/$dll.dll"
+        case ";$overrides;" in
+          *";$dll=n,b;"*) ;;
+          *) overrides="${overrides:+$overrides;}$dll=n,b" ;;
+        esac
+      else
+        echo "=== could not install $backend $dir/$dll.dll ===" >> "$log" 2>&1 || true
+        return 1
+      fi
+    done
+  done
+
+  if [ -r "$marker" ]; then
+    while read -r entry; do
+      case "$entry" in
+        system32/*.dll|syswow64/*.dll) ;;
+        *) continue ;;
+      esac
+      dll_name=${entry#*/}
+      dll_name=${dll_name%.dll}
+      case " $native_dlls " in *" $dll_name "*) ;; *) continue ;; esac
+      case " $installed " in *" $entry "*) continue ;; esac
+      case "$entry" in
+        system32/*) builtin="$wine_root/lib/wine/x86_64-windows/${entry#*/}" ;;
+        syswow64/*) builtin="$wine_root/lib/wine/i386-windows/${entry#*/}" ;;
+        *) continue ;;
+      esac
+      saved="$backup/$entry"
+      if [ -f "$saved" ]; then
+        copy_graphics_dll "$saved" "$WINEPREFIX/drive_c/windows/$entry" || return 1
+        rm -f "$saved"
+      elif [ -f "$saved.absent" ]; then
+        rm -f "$WINEPREFIX/drive_c/windows/$entry" "$saved.absent" || return 1
+      elif [ -f "$builtin" ]; then
+        copy_graphics_dll "$builtin" "$WINEPREFIX/drive_c/windows/$entry" || return 1
+        echo "=== restored builtin $entry ===" >> "$log" 2>&1 || true
+      else
+        rm -f "$WINEPREFIX/drive_c/windows/$entry" || return 1
+        echo "=== removed $entry, the runtime has no builtin ===" >> "$log" 2>&1 || true
+      fi
+    done < "$marker"
+  fi
+  if [ -n "$installed" ]; then
+    # shellcheck disable=SC2086 # installed is a list of entries and has to split
+    printf '%s\n' $installed > "$marker.new" || return 1
+    mv -f "$marker.new" "$marker" || return 1
+  else
+    rm -f "$marker"
+  fi
+
+  if [ -n "$overrides" ]; then
+    export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$overrides"
+  fi
+  echo "graphics: $backend${overrides:+ (native $overrides)}" >> "$log" 2>&1 || true
+}
+
+
 verify_runner() {
   if [ ! -d "$bridge_src/wine/$np_build" ]; then
     echo "=== no patched ntdll for build $np_build in the bridge, set it up in NotProton ===" >> "$log" 2>&1 || true
@@ -1303,6 +1455,11 @@ place_bridge_file() {
   bridge_origin "$1"
   cp -c -fp "$origin" "$2" 2>/dev/null || cp -fp "$bridge_src/$1" "$2" 2>> "$log"
 }
+if [ "${np_provider:-crossover}" = whisky ] && [ -n "$WINEPREFIX" ]; then
+  stage_step="graphics backend"
+  select_graphics_backend
+fi
+
 if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   stage_step="bridge staging"
   mkdir -p "$prefix_steam"
@@ -1605,14 +1762,17 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|CX_ACTIVE_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
 done
+if [ "${np_provider:-crossover}" = whisky ]; then
+  set -- --env WINEUSERNAME="$WINEUSERNAME" "$@"
+else
+  set -- --env CX_ROOT="$CX_ROOT" --env CX_HOME="$CX_HOME" "$@"
+fi
 set -- \
-  --env CX_ROOT="$CX_ROOT" \
-  --env CX_HOME="$CX_HOME" \
   --env WINESERVER="$WINESERVER" \
   --env WINEDLLPATH="$WINEDLLPATH" \
   --env WINEDLLOVERRIDES="$WINEDLLOVERRIDES" \

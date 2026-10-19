@@ -11,6 +11,20 @@ PAYLOAD = {0x8664: 864, 0x14c: 1376, 0xaa64: 868}  # detour2.bin, detour32.bin, 
 # Keyed by input sha256 so the comparison only runs against the build the tree pins, so a
 # new build will report derived values rather than a wall of expected mismatches
 PINNED = {
+    # winecx-gptk 4.7.54 (WhiskyWine)
+    '5e4a782ef6c5e79f70cda10083b786fda89f1364c1e4c1de00654ff61d4ea762':
+        {'hookRVA': 0x34c93, 'stolen': '488b842410010000', 'caveRVA': 0x73424, 'caveSize': 3036,
+         'wm': 'rdi', 'resume': 0x34c9b, 'load_path': 0xa0,
+         'payload': 'b373698ac98d4be57186fced040cc558e8a53699bd0e22af1726a6a5f5bbc07b',
+         'exports': {'LdrGetDllHandle': 0x17002f7c0, 'LdrLoadDll': 0x17002d2e0,
+                     'NtProtectVirtualMemory': 0x170055648}},
+    '0540c0e79b0316a4ecbe884fa88b438ae63a2dcf0b246081a0e9fc0a9a09eb26':
+        {'hookRVA': 0x2ed9d, 'stolen': '8b4514a802', 'caveRVA': 0x666cd, 'caveSize': 2355,
+         'resume': 0x2eda2, 'wm': 'edi', 'load_path': -0x40,
+         'payload': 'f4a39f4bc9c8e777e9f6f7c875965692275ac7ecd08f22a235353ec77b477cfe',
+         'exports': {'LdrGetDllHandle': 0x7bc2a8f0, 'LdrLoadDll': 0x7bc28a70,
+                     'NtProtectVirtualMemory': 0x7bc4c838, 'NtOpenFile': 0x7bc4c668,
+                     'NtReadFile': 0x7bc4c398, 'NtClose': 0x7bc4c428}},
     '04c7200b6645decb7c2d1ba6b0195abc9af83257072558d11aa72cc067ac3377':
         {'hookRVA': 0x51f15, 'stolen': '4883bc24f000000000', 'caveRVA': 0x80be0, 'wm': 'rsi',
          'resume': 0x51f1e, 'load_path': 0xd0,
@@ -738,7 +752,7 @@ def ntdlls(arg):
     p = pathlib.Path(arg)
     if p.is_file():
         return [str(p)]
-    for root in (p / 'Contents/SharedSupport/CrossOver/lib/wine', p / 'lib/wine', p):
+    for root in (p / 'Contents/SharedSupport/CrossOver/lib/wine', p / 'Wine/lib/wine', p / 'lib/wine', p):
         archs = sorted(d for d in root.glob('*-windows') if d.is_dir())
         if not archs:
             continue

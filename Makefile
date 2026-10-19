@@ -97,7 +97,10 @@ runcheck:
 	shellcheck dylib/feats/compat_run.sh && sh -n dylib/feats/compat_run.sh && \
 	echo "==> runcheck: the run script lints and parses clean"
 
-.PHONY: seedcheck
+.PHONY: whiskycheck seedcheck
+whiskycheck:
+	sh dylib/tests/whiskycheck.sh dylib/feats/compat_run.sh
+
 seedcheck:
 	@if [ ! -f dylib/tests/seedcheck.sh ]; then $(call SKIP,seedcheck,dylib/tests/seedcheck.sh); exit 0; fi; \
 	sh dylib/tests/seedcheck.sh dylib/feats/compat_run.sh

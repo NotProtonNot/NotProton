@@ -253,7 +253,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const n=v||d.default_tool_identifier||\"" NP_FALLBACK_TOOL "\",a=(d.aliases||[]).find(x=>x.alias===n)," \
     "t=globalThis.appDetailsStore?.GetAppDetails(id);t&&MSCXPick(t,a?a.current_tool_name:n)}]"
 
-// CrossOver options panel. Not in great shape, but it'll do
+// Compatibility options panel. Not in great shape, but it'll do
 #define NP_WEB_IS_ZH \
     "(()=>{const l=(globalThis.document?.documentElement?.lang||" \
     "globalThis.navigator?.language||\"\").toLowerCase().replace(/_/g,\"-\");" \
@@ -268,9 +268,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "(" NP_WEB_IS_ZH "?\"" ZH "\":" NP_WEB_IS_IT "?\"" IT "\":\"" EN "\")"
 
 #define NP_COMPAT_HINT NP_WEB_TEXT( \
-    "Enable CrossOver under Properties > Compatibility to install and run the Windows version.", \
-    "请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。", \
-    "Abilita CrossOver in Propriet\\u00e0 > Compatibilit\\u00e0 per installare e avviare la versione Windows.")
+    "Choose a compatibility tool under Properties > Compatibility to install and run the Windows version.", \
+    "请在“属性 > 兼容性”中选择兼容性工具，以安装并运行 Windows 版本。", \
+    "Seleziona uno strumento di compatibilit\\u00e0 in Propriet\\u00e0 > Compatibilit\\u00e0 per installare e avviare la versione Windows.")
 
 #define NP_IMAGE_FILES_LABEL NP_WEB_TEXT( \
     "Image Files (*.tga,*.png,*.exe)", "图像文件 (*.tga,*.png,*.exe)", "File immagine (*.tga,*.png,*.exe)")

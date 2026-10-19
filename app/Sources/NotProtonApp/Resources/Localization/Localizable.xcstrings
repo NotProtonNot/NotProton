@@ -1724,6 +1724,22 @@
         }
       }
     },
+    "Choose Whisky Runtime…" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose Whisky Runtime…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose Whisky Runtime…"
+          }
+        }
+      }
+    },
     "Choose a Windows program to run in %@." : {
       "localizations" : {
         "it" : {
@@ -1784,22 +1800,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除 Steam 的控制器权限，让 macOS 重新询问授权。"
-          }
-        }
-      }
-    },
-    "Clone CrossOver" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia di CrossOver"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制 CrossOver"
           }
         }
       }
@@ -2044,6 +2044,22 @@
         }
       }
     },
+    "Copy runtime" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy runtime"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy runtime"
+          }
+        }
+      }
+    },
     "Copy the built bridge files" : {
       "localizations" : {
         "it" : {
@@ -2076,18 +2092,34 @@
         }
       }
     },
-    "Copying CrossOver" : {
+    "Copying Whisky runtime" : {
       "localizations" : {
         "it" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copia di CrossOver"
+            "state" : "new",
+            "value" : "Copying Whisky runtime"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在复制 CrossOver"
+            "state" : "new",
+            "value" : "Copying Whisky runtime"
+          }
+        }
+      }
+    },
+    "Copying runtime" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copying runtime"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copying runtime"
           }
         }
       }
@@ -2219,22 +2251,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "CrossOver 已激活。"
-          }
-        }
-      }
-    },
-    "CrossOver itself is not removed." : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CrossOver non viene rimosso."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不会移除 CrossOver 原应用。"
           }
         }
       }
@@ -2879,6 +2895,22 @@
         }
       }
     },
+    "Install a runtime in Whisky or choose its folder." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Install a runtime in Whisky or choose its folder."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Install a runtime in Whisky or choose its folder."
+          }
+        }
+      }
+    },
     "Installation is blocked. Refresh Status and use the NotProton app that installed this build." : {
       "localizations" : {
         "it" : {
@@ -3007,18 +3039,18 @@
         }
       }
     },
-    "It will replace the DLLs used by CrossOver with ones that match your compatibility tool." : {
+    "It will replace the Wine DLLs with ones that match your compatibility tool." : {
       "localizations" : {
         "it" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sostituisce le DLL usate da CrossOver con quelle adatte al tuo strumento di compatibilità."
+            "state" : "new",
+            "value" : "It will replace the Wine DLLs with ones that match your compatibility tool."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "它会将 CrossOver 使用的 DLL 替换为与当前兼容工具匹配的版本。"
+            "state" : "new",
+            "value" : "It will replace the Wine DLLs with ones that match your compatibility tool."
           }
         }
       }
@@ -3359,6 +3391,22 @@
         }
       }
     },
+    "Needs repair" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs repair"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs repair"
+          }
+        }
+      }
+    },
     "Never" : {
       "localizations" : {
         "it" : {
@@ -3531,6 +3579,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未安装。"
+          }
+        }
+      }
+    },
+    "Not set up" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not set up"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not set up"
           }
         }
       }
@@ -4062,6 +4126,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "读取组件列表"
+          }
+        }
+      }
+    },
+    "Ready" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ready"
           }
         }
       }
@@ -4878,6 +4958,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行环境 %@"
+          }
+        }
+      }
+    },
+    "Select a Whisky runtime folder containing Wine and WhiskyWineVersion.plist." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Select a Whisky runtime folder containing Wine and WhiskyWineVersion.plist."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Select a Whisky runtime folder containing Wine and WhiskyWineVersion.plist."
           }
         }
       }
@@ -5765,6 +5861,22 @@
         }
       }
     },
+    "The Whisky runtime copy does not match the selected build." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Whisky runtime copy does not match the selected build."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Whisky runtime copy does not match the selected build."
+          }
+        }
+      }
+    },
     "The bundled NotProton dylib is invalid." : {
       "localizations" : {
         "it" : {
@@ -5989,6 +6101,22 @@
         }
       }
     },
+    "The source runtime is not removed." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The source runtime is not removed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The source runtime is not removed."
+          }
+        }
+      }
+    },
     "The trial version is not supported." : {
       "localizations" : {
         "it" : {
@@ -6101,18 +6229,18 @@
         }
       }
     },
-    "This can also fix issues where a game previously started/worked and does not work now, even if you did not switch CrossOver types." : {
+    "This can also fix a game that previously worked, even if you did not switch compatibility tools." : {
       "localizations" : {
         "it" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Può anche risolvere i casi in cui un gioco prima si avviava o funzionava e ora no, anche se non hai cambiato tipo di CrossOver."
+            "state" : "new",
+            "value" : "This can also fix a game that previously worked, even if you did not switch compatibility tools."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "即使没有切换 CrossOver 类型，也可能修复游戏之前能运行、现在却无法运行的问题。"
+            "state" : "new",
+            "value" : "This can also fix a game that previously worked, even if you did not switch compatibility tools."
           }
         }
       }
@@ -6133,18 +6261,34 @@
         }
       }
     },
-    "This tool is intended to repair a prefix after switching between Rosetta/FEX CrossOver." : {
+    "This folder is not a Whisky runtime." : {
       "localizations" : {
         "it" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Questo strumento serve a riparare un prefisso dopo il passaggio tra CrossOver Rosetta e FEX."
+            "state" : "new",
+            "value" : "This folder is not a Whisky runtime."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "此工具用于修复在 Rosetta 与 FEX 版 CrossOver 之间切换后的游戏容器。"
+            "state" : "new",
+            "value" : "This folder is not a Whisky runtime."
+          }
+        }
+      }
+    },
+    "This tool repairs a prefix after switching between Whisky or CrossOver compatibility tools." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This tool repairs a prefix after switching between Whisky or CrossOver compatibility tools."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This tool repairs a prefix after switching between Whisky or CrossOver compatibility tools."
           }
         }
       }
@@ -6257,6 +6401,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在解包"
+          }
+        }
+      }
+    },
+    "Unsupported Whisky runtime." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unsupported Whisky runtime."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unsupported Whisky runtime."
           }
         }
       }
@@ -6389,6 +6549,22 @@
         }
       }
     },
+    "Verify runtime" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Verify runtime"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Verify runtime"
+          }
+        }
+      }
+    },
     "Verifying" : {
       "localizations" : {
         "it" : {
@@ -6417,6 +6593,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支持版本 %@（支持：%@）"
+          }
+        }
+      }
+    },
+    "Whisky" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Whisky"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Whisky"
+          }
+        }
+      }
+    },
+    "Whisky runtime not found" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Whisky runtime not found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Whisky runtime not found"
           }
         }
       }

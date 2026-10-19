@@ -11,6 +11,8 @@ from resolve import PE, SECTION_FLAGS, SECTION_NAME, SECTION_SIZE, resolve, shel
 
 # A new build needs its ntdll hash added here and in build-ntdll.sh.
 PAYLOAD_BY_CLEAN_SHA = {
+    "5e4a782ef6c5e79f70cda10083b786fda89f1364c1e4c1de00654ff61d4ea762": "detour2-winecx.bin",
+    "0540c0e79b0316a4ecbe884fa88b438ae63a2dcf0b246081a0e9fc0a9a09eb26": "detour32-winecx.bin",
     "04c7200b6645decb7c2d1ba6b0195abc9af83257072558d11aa72cc067ac3377": "detour2.bin",
     "94cc7c14c1e9dcf58ef501015c115f8405c73b2a65cefe31faa5d9e47f36e58b": "detour32.bin",
     "f4fa556a3dc20f6e966a803f5de554359227a61a24cd5b5a2ad88a427ceeec58": "detour2-fex.bin",

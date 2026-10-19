@@ -28,6 +28,8 @@ let package = Package(
                 .process("Resources/Localization"),
                 .copy("Resources/payload.manifest"),
                 .copy("Resources/valve-packages.manifest"),
+                .copy("Resources/detour2-winecx.bin"),
+                .copy("Resources/detour32-winecx.bin"),
                 .copy("Resources/detour2.bin"),
                 .copy("Resources/detour2-fex.bin"),
                 .copy("Resources/detour32.bin"),

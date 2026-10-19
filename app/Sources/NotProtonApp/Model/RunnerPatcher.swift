@@ -144,7 +144,12 @@ enum RunnerPatcher {
         var signed: [String] = []
 
         for loader in unixLoaders(in: root) {
-            let existing = entitlements(of: loader)
+            var existing = entitlements(of: loader)
+            if existing?.isEmpty != false,
+               FileManager.default.fileExists(atPath: root.deletingLastPathComponent()
+                   .appending(path: "WhiskyWineVersion.plist").path(percentEncoded: false)) {
+                existing = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict/></plist>"
+            }
             if existing?.contains(restrictedEntitlement) == true { continue }
             if existing?.contains(dyldEntitlement) == true,
                signatureIsValid(signingTarget(for: loader)) { continue }
@@ -173,11 +178,17 @@ enum RunnerPatcher {
         let wine = root.appending(path: "lib/wine")
         let entries = (try? fm.contentsOfDirectory(at: wine, includingPropertiesForKeys: nil)) ?? []
 
-        return entries
+        let loaders = entries
             .filter { $0.lastPathComponent.hasSuffix("-unix") }
             .flatMap { [$0.appending(path: "wine"), $0.appending(path: "wine.app/Contents/MacOS/wine")] }
             .filter { fm.fileExists(atPath: $0.path(percentEncoded: false)) }
             .sorted { $0.path < $1.path }
+        if loaders.isEmpty,
+           fm.fileExists(atPath: root.deletingLastPathComponent().appending(path: "WhiskyWineVersion.plist").path(percentEncoded: false)) {
+            let loader = root.appending(path: "bin/wine64")
+            return fm.isExecutableFile(atPath: loader.path(percentEncoded: false)) ? [loader] : []
+        }
+        return loaders
     }
 
     static func name(of loader: URL) -> String {

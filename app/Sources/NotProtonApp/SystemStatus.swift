@@ -25,6 +25,7 @@ struct StatusSnapshot: Sendable {
     var orphanedRunners: [String] = []
     var damagedRunners: [String] = []
     var installContent: DeploymentContent.Status = .unchecked
+    var whisky: [RuntimeInstall] = []
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
         let installs = CrossOverSource.discover()
@@ -47,7 +48,8 @@ struct StatusSnapshot: Sendable {
             installedRunners: installed,
             orphanedRunners: RunnerStore.orphanedClones(),
             damagedRunners: RunnerStore.damagedClones(),
-            installContent: DeploymentContent.current(version: bundledVersion)
+            installContent: DeploymentContent.current(version: bundledVersion),
+            whisky: RuntimeSource.discover()
         )
     }
 }
@@ -147,9 +149,9 @@ final class SystemStatus {
         return CrossOverRow.rows(
             installs: snapshot.crossOver,
             licenses: snapshot.crossOverLicense,
-            installed: snapshot.installedRunners,
-            damaged: snapshot.damagedRunners,
-            orphaned: snapshot.orphanedRunners,
+            installed: snapshot.installedRunners.filter { $0.provider == .crossOver },
+            damaged: snapshot.damagedRunners.filter { !SupportPaths.isWhiskyBuild($0) },
+            orphaned: snapshot.orphanedRunners.filter { !SupportPaths.isWhiskyBuild($0) },
             unpatched: unpatched
         )
     }
@@ -198,7 +200,7 @@ final class SystemStatus {
         defer { checkingLicense = false }
         if let question = Self.activationQuestion(
             .install,
-            licensed: await checkLicense()?.licensed,
+            licensed: snapshot?.whisky.contains(where: \.isUsable) == true ? true : await checkLicense()?.licensed,
             runner: snapshot?.runner ?? RunnerState.none
         ) {
             pendingConfirmation = question
@@ -428,6 +430,48 @@ final class SystemStatus {
         }
     }
 
+    func addWhisky() async {
+        guard isIdle else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = String(localized: "Select a Whisky runtime folder containing Wine and WhiskyWineVersion.plist.")
+        guard await panel.begin() == .OK, let root = panel.url else { return }
+        guard RuntimeSource.looksLikeRuntime(root) else {
+            setFailure(String(localized: "This folder is not a Whisky runtime."))
+            return
+        }
+        RuntimeSource.manualRoot = root
+        await refresh()
+    }
+
+    func setUpWhisky(from install: RuntimeInstall) async {
+        guard canInstall else { return }
+        await perform(from: String(localized: "Copying Whisky runtime")) { progress in
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
+            try await requireInstallableContent()
+            let result = try await Task.detached(priority: .userInitiated) {
+                try RunnerSetup.run(from: install, replacingExisting: true) { progress($0.label) }
+            }.value
+            return runnerOutcome(result)
+        }
+    }
+
+    func repairWhisky(_ build: RunnerBuild) async {
+        guard canInstall else { return }
+        await perform(from: RunnerSetup.prepareStep) { progress in
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
+            try await requireInstallableContent()
+            let result = try await Task.detached(priority: .userInitiated) {
+                try RunnerSetup.prepare(build, report: { progress($0.label) })
+            }.value
+            return runnerOutcome(result)
+        }
+    }
+
     func fetchValveBinaries() async {
         guard canInstall else { return }
         await perform(from: ValveFetcher.Phase.verifying.label) { progress in
@@ -479,13 +523,19 @@ final class SystemStatus {
             var parts = [String(localized: "NotProton successfully installed.")]
             if result.stoppedClient { parts.append(Self.restartHint) }
             let install = usableCrossOver
+            let whisky = snapshot?.whisky.first(where: \.isUsable)
             let state = await Task.detached(priority: .userInitiated) {
                 (runner: RunnerStore.state(),
                  payload: PayloadInspector.inspect(),
                  license: install.map { CrossOverLicense.check(crossOverRoot: $0.crossOverRoot) })
             }.value
 
-            if let install, state.license?.licensed == true, state.runner == .none {
+            if let whisky, state.runner == .none {
+                progress(String(localized: "Setting up compatibility tool"))
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try RunnerSetup.run(from: whisky) { progress($0.label) }
+                }.value
+            } else if let install, state.license?.licensed == true, state.runner == .none {
                 progress(String(localized: "Setting up compatibility tool"))
                 // A tool that came up is the expected case and goes unsaid. Failure
                 // throws, and an unactivated CrossOver is reported below.

@@ -44,6 +44,10 @@ enum AppLog {
             )
         }
 
+        for install in snapshot.whisky {
+            lines.append("state whisky \(install.name) support=\(describe(install.support)) at=\(install.id)")
+        }
+
         let payload = snapshot.payload
         lines.append(
             "state payload staged=\(payload.present)/\(payload.expected) "
@@ -79,6 +83,14 @@ enum AppLog {
         case .ready(let builds): "ready \(builds.joined(separator: ", "))"
         case .unpatched(_, let problems):
             "unpatched: \(problems.joined(separator: ", "))"
+        }
+    }
+
+    private static func describe(_ support: RuntimeSupport) -> String {
+        switch support {
+        case .supported(let build): "supported(\(build.id))"
+        case .unsupportedBuild(let version): "unsupported(\(version))"
+        case .unreadable: "unreadable"
         }
     }
 

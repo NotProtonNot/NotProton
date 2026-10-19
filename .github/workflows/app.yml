@@ -129,6 +129,7 @@ jobs:
           make -s gamedrivecheck
           make -s launchercheck
           make -s seedcheck
+          make -s whiskycheck
 
       - name: Run the Swift tests
         run: make -s app-tests

@@ -16,7 +16,9 @@ struct SupportedRunnerTests {
             build.rebuilds.compactMap { build.matching(loaderSHA256: $0.loaderSHA256) }
         }
         for build in SupportedRunners.all + rebuilt {
-            expectSHA256(build.loaderSHA256, "loader for \(build.id)")
+            if build.provider == .crossOver {
+                expectSHA256(build.loaderSHA256, "loader for \(build.id)")
+            }
             #expect(!build.cleanNtdll.isEmpty, "\(build.id) patches nothing")
             #expect(Set(build.cleanNtdll.keys) == Set(build.patchedNtdll.keys), "\(build.id) is lopsided")
 
@@ -39,7 +41,7 @@ struct SupportedRunnerTests {
         let ids = SupportedRunners.all.map(\.id)
         #expect(Set(ids).count == ids.count)
 
-        let loaders = SupportedRunners.all.flatMap { [$0.loaderSHA256] + $0.rebuilds.map(\.loaderSHA256) }
+        let loaders = SupportedRunners.crossOver.flatMap { [$0.loaderSHA256] + $0.rebuilds.map(\.loaderSHA256) }
         #expect(Set(loaders).count == loaders.count)
     }
 

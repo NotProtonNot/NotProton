@@ -65,9 +65,9 @@ echo "== Apple GPTK initialization and launcher environment =="
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 np_support="$work/Application Support/notproton"
-np_build="test"
+np_build="27.0.0.40921"
 library="$np_support/runners/crossover-$np_build/CrossOver/lib64/apple_gptk/external/libd3dshared.dylib"
-init=$(sed -n '/^CX_ROOT=/,/^wine_unix=/p' "$SRC")
+init=$(sed -n '/^np_provider=crossover$/,/^wine_unix=/p' "$SRC")
 # shellcheck disable=SC2016 # Match the literal launcher loop.
 forward=$(sed -n '/^for name in $(env /,/^done$/p' "$SRC")
 [ -n "$init" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }

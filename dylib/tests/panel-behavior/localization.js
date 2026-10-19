@@ -39,9 +39,9 @@ for (const form of Object.keys(FORMS)) {
       hud.props.onChange(true);
       assert.equal(written.at(-1).opts, 'MTL_HUD_ENABLED=1 CX_GRAPHICS_BACKEND=dxmt %command%');
       for (const [mode, ...labels] of [
-        ['compat-hint', 'Enable CrossOver under Properties > Compatibility to install and run the Windows version.',
-          '请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。',
-          'Abilita CrossOver in Proprietà > Compatibilità per installare e avviare la versione Windows.'],
+        ['compat-hint', 'Choose a compatibility tool under Properties > Compatibility to install and run the Windows version.',
+          '请在“属性 > 兼容性”中选择兼容性工具，以安装并运行 Windows 版本。',
+          'Seleziona uno strumento di compatibilità in Proprietà > Compatibilità per installare e avviare la versione Windows.'],
         ['image-files-label', 'Image Files (*.tga,*.png,*.exe)', '图像文件 (*.tga,*.png,*.exe)',
           'File immagine (*.tga,*.png,*.exe)'],
       ]) {

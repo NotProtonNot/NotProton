@@ -1,4 +1,4 @@
-// Patches CrossOver's ntdll.dll so that lsteamclient is loaded.
+// Patches the runner's ntdll.dll so that lsteamclient is loaded.
 
 import Foundation
 
@@ -52,6 +52,39 @@ enum NtdllPatcher {
 
 
     static let byBuild: [String: [NtdllPatch]] = [
+        "winecx-gptk-4.7.54": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-winecx",
+                payloadSHA256: "b373698ac98d4be57186fced040cc558e8a53699bd0e22af1726a6a5f5bbc07b",
+                caveRVA: 0x73424,
+                payloadRVA: 0x73430,
+                hooks: [
+                    NtdllHook(rva: 0x34c93,
+                              stolen: [0x48, 0x8b, 0x84, 0x24, 0x10, 0x01, 0x00, 0x00]),
+                ],
+                caveSize: 3036,
+                cavePad: 0xcc,
+                machine: 0x8664,
+                magic: 0x20b,
+                imageBase: 0x1_7000_0000
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-winecx",
+                payloadSHA256: "f4a39f4bc9c8e777e9f6f7c875965692275ac7ecd08f22a235353ec77b477cfe",
+                caveRVA: 0x666cd,
+                payloadRVA: 0x666d0,
+                hooks: [
+                    NtdllHook(rva: 0x2ed9d, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02]),
+                ],
+                caveSize: 2355,
+                cavePad: 0xcc,
+                machine: 0x14c,
+                magic: 0x10b,
+                imageBase: 0x7bc0_0000
+            ),
+        ],
         "27.0.0.40921": [
             NtdllPatch(
                 arch: .x86_64Windows,
@@ -337,7 +370,8 @@ enum NtdllPatcher {
     ]
 
     static func patches(for build: RunnerBuild) -> [NtdllPatch] {
-        byBuild[build.id] ?? []
+        if build.provider == .whisky && !build.patchesNtdll { return [] }
+        return byBuild[build.id] ?? []
     }
 
     static func patch(for arch: WineArch, in build: RunnerBuild) -> NtdllPatch? {

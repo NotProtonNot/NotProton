@@ -1,4 +1,4 @@
-// Checks CrossOver state for status display
+// Checks runner state for status display
 
 import Foundation
 
@@ -44,18 +44,18 @@ enum RunnerStore {
         let entries = (try? fm.contentsOfDirectory(at: runners, includingPropertiesForKeys: nil)) ?? []
         return entries
             .map(\.lastPathComponent)
-            .filter { $0.hasPrefix("crossover-") }
-            .map { String($0.dropFirst("crossover-".count)) }
+            .filter { $0.hasPrefix("crossover-") || SupportPaths.isWhiskyBuild($0) }
+            .map { $0.hasPrefix("crossover-") ? String($0.dropFirst("crossover-".count)) : $0 }
             .sorted()
     }
 
     static func orphanedClones(in runners: URL = SupportPaths.runners) -> [String] {
-        clonedBuilds(in: runners).filter { SupportedRunners.build(id: $0) == nil }
+        clonedBuilds(in: runners).filter { build(forID: $0, runners: runners) == nil }
     }
 
     static func damagedClones(in runners: URL = SupportPaths.runners) -> [String] {
         clonedBuilds(in: runners).filter {
-            SupportedRunners.build(id: $0) != nil
+            build(forID: $0, runners: runners) != nil
                 && !RunnerInstaller.hasClone(forBuild: $0, runners: runners)
         }
     }
@@ -85,8 +85,16 @@ enum RunnerStore {
             .filter { RunnerInstaller.hasClone(forBuild: $0.id, runners: runners) }
     }
 
+    static func build(forID id: String, runners: URL = SupportPaths.runners) -> RunnerBuild? {
+        guard SupportPaths.isWhiskyBuild(id) else { return SupportedRunners.build(id: id) }
+        guard let metadata = RuntimeMetadata.read(root: SupportPaths.runnerRoot(forBuild: id, runners: runners)),
+              metadata.loadsSteamClient else { return SupportedRunners.build(id: id) }
+        let build = RunnerBuild.native(name: metadata.name, version: metadata.version)
+        return build.id == id ? build : nil
+    }
+
     private static func build(cloned id: String, runners: URL) -> RunnerBuild? {
-        guard let build = SupportedRunners.build(id: id) else { return nil }
+        guard let build = build(forID: id, runners: runners) else { return nil }
         guard !build.rebuilds.isEmpty else { return build }
         let root = SupportPaths.clonedRoot(forBuild: id, runners: runners)
         let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
@@ -129,17 +137,18 @@ enum CompatToolList {
     ) -> SupportedRunners.LegacyHolder {
         let ids = Set(builds.map(\.id))
         let rows = (listed ?? "").split(separator: "\n").map { $0.split(separator: "\t").map(String.init) }
-            .filter { $0.count > 1 && ids.contains($0[1]) && SupportedRunners.legacyHolders.contains($0[1]) }
+            .filter { $0.count > 1 && ids.contains($0[1]) && (SupportedRunners.legacyHolders.contains($0[1]) || SupportPaths.isWhiskyBuild($0[1])) }
         if let held = rows.first(where: { $0[0] == SupportedRunners.legacyToolName }) {
             return .build(held[1])
         }
         if !rows.isEmpty { return .nobody }
         let link = runners.appending(path: "current").path(percentEncoded: false)
         if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: link),
-           let id = target.split(separator: "/").first(where: { $0.hasPrefix("crossover-") })
-               .map({ String($0.dropFirst("crossover-".count)) }),
-           ids.contains(id), SupportedRunners.legacyHolders.contains(id) {
-            return .build(id)
+           let part = target.split(separator: "/").first(where: { $0.hasPrefix("crossover-") || SupportPaths.isWhiskyBuild(String($0)) }) {
+            let id = part.hasPrefix("crossover-") ? String(part.dropFirst("crossover-".count)) : String(part)
+            if ids.contains(id), SupportedRunners.legacyHolders.contains(id) || SupportPaths.isWhiskyBuild(id) {
+                return .build(id)
+            }
         }
         return .nobody
     }
