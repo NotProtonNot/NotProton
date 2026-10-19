@@ -543,7 +543,7 @@ fonts-install:
 	@rsync -a --delete $(FONT_FILES) build/fonts/ "$(SUPPORT_DIR)/fonts/"
 	@echo "==> Installed: $(SUPPORT_DIR)/fonts"
 
-deploy: $(TARGET) dylib-install sigdb-install fonts-install helpers-install
+deploy: $(TARGET) dylib-install sigdb-install fonts-install helpers-install prefix-command-install
 	@if [ ! -d "$(STEAM_APP)" ]; then \
 		echo "==> deploy: $(STEAM_APP) not found"; exit 1; fi
 	$(call install_atomically,$(TARGET),$(DEPLOY_DST))
@@ -608,6 +608,12 @@ APP_ZIP     := $(OUT_DIR)/NotProton.zip
 APP_VERSION := $(shell sed -n 's/^\#define NOTPROTON_VERSION "\(.*\)"/\1/p' dylib/version.h)
 
 APP_SIGN_ID ?= -
+
+.PHONY: prefix-command-install
+prefix-command-install: app
+	@mkdir -p "$(SUPPORT_DIR)"
+	@printf '%s' "$(CURDIR)/$(APP_BUNDLE)/Contents/MacOS/NotProtonApp" > "$(SUPPORT_DIR)/app-executable.new"
+	@mv -f "$(SUPPORT_DIR)/app-executable.new" "$(SUPPORT_DIR)/app-executable"
 
 ICONGEN  := $(OUT_DIR)/icongen
 ICON_DOC := $(OUT_DIR)/NotProton.icon
