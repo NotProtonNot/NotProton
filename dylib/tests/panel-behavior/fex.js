@@ -30,6 +30,21 @@ for (const form of Object.keys(FORMS)) {
     t.ok(toggles(r).includes(X87) === fex, `the x87 row is ${fex ? 'shown' : 'hidden'}`);
     t.ok(r.some(x => x.type === 'Section' && x.props.label === 'FEX') === fex,
          `the FEX section is ${fex ? 'shown' : 'hidden'}`);
+    if (!fex) {
+      const avx = ns => ns.find(x => x.type === 'Toggle' && x.props.label === AVX);
+      t.ok(avx(r).props.checked === true, 'the AVX2 row is on by default');
+      written.length = 0;
+      avx(r).props.onChange(false);
+      t.ok(written[written.length - 1].opts.includes('ROSETTA_ADVERTISE_AVX=0'),
+           `turning the AVX2 row off writes 0 (${written[written.length - 1].opts})`);
+      const off = nodes('ROSETTA_ADVERTISE_AVX=0');
+      t.ok(avx(off).props.checked === false, 'a game set to 0 shows the AVX2 row off');
+      written.length = 0;
+      avx(off).props.onChange(true);
+      t.ok(!written[written.length - 1].opts.includes('ROSETTA_ADVERTISE_AVX'),
+           `turning the AVX2 row on removes the entry (${written[written.length - 1].opts})`);
+      t.ok(avx(nodes('ROSETTA_ADVERTISE_AVX=1')).props.checked === true, 'a game set to 1 shows the AVX2 row on');
+    }
     if (fex) {
       const x87 = ns => ns.find(x => x.type === 'Toggle' && x.props.label === X87);
       t.ok(x87(r).props.checked === true, 'the x87 row is on by default');

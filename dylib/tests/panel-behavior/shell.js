@@ -16,6 +16,7 @@ const TOGGLES = {
   'Let games read controllers directly (May break Steam Input. Not recommended)': 'NOTPROTON_RAW_CONTROLLERS',
   'Disable hidraw': 'NOTPROTON_DISABLE_HIDRAW',
 };
+const ON_UNLESS_0 = { ROSETTA_ADVERTISE_AVX: true };
 const PANEL_KEYS = ['CX_GRAPHICS_BACKEND', 'MTL_HUD_ENABLED', 'D3DM_ENABLE_METALFX', 'DXMT_ENABLE_NVEXT',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'WINEMSYNC', 'NOTPROTON_RETINA',
   'NOTPROTON_RAW_CONTROLLERS', 'NOTPROTON_DISABLE_HIDRAW'];
@@ -92,8 +93,10 @@ function agrees(t, v, env, what) {
     t.ok(got === '' ? want === '' : parseFloat(got) === want,
          `${what}: upscale shows "${got}", DXMT uses ${want}`);
   }
-  for (const [key, node] of Object.entries(v.toggles))
-    t.ok(node.props.checked === (env[key] === '1'), `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
+  for (const [key, node] of Object.entries(v.toggles)) {
+    const on = key in ON_UNLESS_0 ? env[key] !== '0' : env[key] === '1';
+    t.ok(node.props.checked === on, `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
+  }
   t.ok(v.backend.props.selectedOption === (env.CX_GRAPHICS_BACKEND || ''),
        `${what}: backend shows "${v.backend.props.selectedOption}", game gets ${env.CX_GRAPHICS_BACKEND}`);
 }
@@ -103,6 +106,8 @@ const ACTIONS = [
     want: (v0, v1) => v1.toggles.MTL_HUD_ENABLED.props.checked === !v0.toggles.MTL_HUD_ENABLED.props.checked },
   { name: 'MSync', run: v => v.toggles.WINEMSYNC.props.onChange(!v.toggles.WINEMSYNC.props.checked),
     want: (v0, v1) => v1.toggles.WINEMSYNC.props.checked === !v0.toggles.WINEMSYNC.props.checked },
+  { name: 'AVX2', run: v => v.toggles.ROSETTA_ADVERTISE_AVX.props.onChange(!v.toggles.ROSETTA_ADVERTISE_AVX.props.checked),
+    want: (v0, v1) => v1.toggles.ROSETTA_ADVERTISE_AVX.props.checked === !v0.toggles.ROSETTA_ADVERTISE_AVX.props.checked },
   { name: 'raw controllers', run: v => v.toggles.NOTPROTON_RAW_CONTROLLERS.props.onChange(!v.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked),
     want: (v0, v1) => v1.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked === !v0.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked },
   { name: 'backend dxvk', run: v => v.backend.props.onChange({ data: 'dxvk' }),

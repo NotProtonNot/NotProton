@@ -124,6 +124,23 @@ is "other backends stay" "CX_GRAPHICS_BACKEND DXMT_CONFIG " "$(seen)"
 is "nothing to ignore logs nothing" "" "$np_dropped"
 unset -v CX_GRAPHICS_BACKEND DXMT_CONFIG
 
+echo "== Rosetta AVX =="
+wine_unix="/R R/lib/wine/x86_64-unix"
+eval "$drop"
+is "x86_64 Wine turns it on" "1" "$ROSETTA_ADVERTISE_AVX"
+is "the default is logged as the default" "default" "$avx_from"
+is "helpers inherit it" "1" "$(sh -c 'printf %s "$ROSETTA_ADVERTISE_AVX"')"
+ROSETTA_ADVERTISE_AVX=0
+eval "$drop"
+is "a launch option of 0 is kept" "0" "$ROSETTA_ADVERTISE_AVX"
+is "a launch option is logged as one" "environment" "$avx_from"
+ROSETTA_ADVERTISE_AVX=
+eval "$drop"
+is "an empty launch option turns it on" "1" "$ROSETTA_ADVERTISE_AVX"
+wine_unix="/R R/lib/wine/aarch64-unix"
+eval "$drop"
+is "arm64 Wine leaves it unset" "unset" "${ROSETTA_ADVERTISE_AVX-unset}"
+
 echo "== FEX reduced x87 precision =="
 unset -v FEX_X87REDUCEDPRECISION
 wine_unix="/R R/lib/wine/x86_64-unix"
