@@ -707,7 +707,6 @@ struct PrefixStoreTests {
             appID: "42", name: "Game", installdir: "Game", sourceLabel: "CX",
             commonURL: common, manifestURL: manifest
         )
-        // Bottle cache first: people importing already played these in CrossOver/Steam.
         let artDir = bottleSteam.appending(path: "appcache/librarycache/42")
         try fm.createDirectory(at: artDir, withIntermediateDirectories: true)
         try write("hdr", to: artDir.appending(path: "header.jpg"))
@@ -715,14 +714,26 @@ struct PrefixStoreTests {
         try write("cap", to: capsule)
         let emptyNative = dir.appending(path: "empty-native")
         try fm.createDirectory(at: emptyNative, withIntermediateDirectories: true)
-        #expect(PrefixStore.libraryArtwork(for: game, nativeRoot: emptyNative) == capsule)
+        #expect(
+            PrefixStore.libraryArtwork(for: game, nativeRoot: emptyNative)?
+                .resolvingSymlinksInPath() == capsule.resolvingSymlinksInPath())
 
-        // Older clients wrote flat files under librarycache; still worth showing a thumb.
+        try fm.removeItem(at: capsule)
+        let nested = artDir.appending(path: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+        let nestedCapsule = nested.appending(path: "library_capsule.jpg")
+        try write("nest", to: nestedCapsule)
+        #expect(
+            PrefixStore.libraryArtwork(for: game, nativeRoot: emptyNative)?
+                .resolvingSymlinksInPath() == nestedCapsule.resolvingSymlinksInPath())
+
         try fm.removeItem(at: bottleSteam.appending(path: "appcache"))
         let native = dir.appending(path: "native-steam")
         let legacy = native.appending(path: "appcache/librarycache/42_library_600x900.jpg")
         try write("legacy", to: legacy)
-        #expect(PrefixStore.libraryArtwork(for: game, nativeRoot: native) == legacy)
+        #expect(
+            PrefixStore.libraryArtwork(for: game, nativeRoot: native)?
+                .resolvingSymlinksInPath() == legacy.resolvingSymlinksInPath())
     }
 
     @Test("Move merges into an existing native steamapps")

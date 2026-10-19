@@ -399,11 +399,15 @@ enum PrefixStore {
         nativeRoot: URL = SupportPaths.Steam.userData
     ) -> URL? {
         var caches: [URL] = []
-        if let steam = steamRoot(near: game.manifestURL) {
-            caches.append(steam.appending(path: "appcache/librarycache"))
+        var seen: Set<String> = []
+        for anchor in [game.manifestURL, game.commonURL] {
+            guard let steam = steamRoot(near: anchor) else { continue }
+            let cache = steam.appending(path: "appcache/librarycache")
+            guard seen.insert(cache.path(percentEncoded: false)).inserted else { continue }
+            caches.append(cache)
         }
         let nativeCache = nativeRoot.appending(path: "appcache/librarycache")
-        if caches.first?.path(percentEncoded: false) != nativeCache.path(percentEncoded: false) {
+        if seen.insert(nativeCache.path(percentEncoded: false)).inserted {
             caches.append(nativeCache)
         }
         for cache in caches {
@@ -432,10 +436,31 @@ enum PrefixStore {
 
     private static func artwork(inLibraryCache librarycache: URL, appID: String) -> URL? {
         let fm = FileManager.default
+        let preferred = ["library_600x900.jpg", "library_capsule.jpg", "header.jpg", "library_header.jpg"]
         let artDir = librarycache.appending(path: appID)
-        for name in ["library_600x900.jpg", "library_capsule.jpg", "header.jpg"] {
+        let children = (try? fm.contentsOfDirectory(
+            at: artDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        )) ?? []
+        let subdirs = children.filter { child in
+            var isDirectory: ObjCBool = false
+            return fm.fileExists(atPath: child.path(percentEncoded: false), isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
+        for name in preferred {
             let flat = artDir.appending(path: name)
             if fm.fileExists(atPath: flat.path(percentEncoded: false)) { return flat }
+            for subdir in subdirs {
+                let nested = subdir.appending(path: name)
+                if fm.fileExists(atPath: nested.path(percentEncoded: false)) { return nested }
+            }
+        }
+        let hex = CharacterSet(charactersIn: "0123456789abcdef")
+        for child in children {
+            let name = child.lastPathComponent
+            guard name.hasSuffix(".jpg") else { continue }
+            let stem = String(name.dropLast(4))
+            guard stem.count == 40, stem.unicodeScalars.allSatisfy({ hex.contains($0) }) else { continue }
+            return child
         }
         for suffix in ["_library_600x900.jpg", "_header.jpg"] {
             let url = librarycache.appending(path: appID + suffix)
