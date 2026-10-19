@@ -606,4 +606,165 @@ struct PrefixStoreTests {
 
         #expect(PrefixStore.isInUse(prefix, root: root) == false)
     }
+
+    private func plantBottleGame(
+        bottles: URL, bottle: String, under: String, appID: String, installdir: String, name: String
+    ) throws {
+        let steamapps = bottles
+            .appending(path: "\(bottle)/drive_c/\(under)/steamapps")
+        let common = steamapps.appending(path: "common/\(installdir)")
+        try FileManager.default.createDirectory(at: common, withIntermediateDirectories: true)
+        try write("marker", to: common.appending(path: "game.bin"))
+        try write(
+            """
+            "AppState"
+            {
+            \t"appid"\t\t"\(appID)"
+            \t"name"\t\t"\(name)"
+            \t"installdir"\t\t"\(installdir)"
+            }
+            """, to: steamapps.appending(path: "appmanifest_\(appID).acf"))
+    }
+
+    @Test("CrossOver bottles under Program Files layouts yield their games")
+    func scansBottleSteamapps() throws {
+        let dir = try scratchDirectory("pfx-bottle-scan")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bottles = dir.appending(path: "Bottles")
+
+        // The two Steam installs CrossOver actually uses. Anything else is Select Custom Folder.
+        try plantBottleGame(
+            bottles: bottles, bottle: "Steam", under: "Program Files (x86)/Steam",
+            appID: "10", installdir: "GameTen", name: "Game Ten")
+        try plantBottleGame(
+            bottles: bottles, bottle: "Other", under: "Program Files/Steam",
+            appID: "20", installdir: "GameTwenty", name: "Game Twenty")
+        // A bottle with no Steam install must not show up as an empty row.
+        try FileManager.default.createDirectory(
+            at: bottles.appending(path: "Empty/drive_c"), withIntermediateDirectories: true)
+
+        let games = PrefixStore.scanCrossOverBottles(bottlesRoot: bottles)
+        #expect(games.map(\.appID).sorted() == ["10", "20"])
+        #expect(games.first { $0.appID == "10" }?.sourceLabel == "Steam")
+    }
+
+    @Test("A steamapps path or its parent both resolve, junk does not")
+    func resolvesSteamappsFolder() throws {
+        let dir = try scratchDirectory("pfx-resolve-steamapps")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let steamapps = dir.appending(path: "Steam/steamapps")
+        try FileManager.default.createDirectory(at: steamapps, withIntermediateDirectories: true)
+
+        #expect(PrefixStore.resolveSteamapps(steamapps) == steamapps)
+        #expect(PrefixStore.resolveSteamapps(steamapps.deletingLastPathComponent()) == steamapps)
+        #expect(PrefixStore.resolveSteamapps(dir) == nil)
+    }
+
+    @Test("The first bottle wins when the same appid is installed twice")
+    func dedupesGamesByAppID() throws {
+        let dir = try scratchDirectory("pfx-dedupe")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bottles = dir.appending(path: "Bottles")
+        // Moving both would race over the same dest folder; keep the earlier bottle's copy.
+        try plantBottleGame(
+            bottles: bottles, bottle: "A", under: "Program Files (x86)/Steam",
+            appID: "10", installdir: "Same", name: "First")
+        try plantBottleGame(
+            bottles: bottles, bottle: "B", under: "Program Files (x86)/Steam",
+            appID: "10", installdir: "Same", name: "Second")
+
+        let games = PrefixStore.scanCrossOverBottles(bottlesRoot: bottles)
+        #expect(games.count == 1)
+        #expect(games.first?.sourceLabel == "A")
+    }
+
+    @Test("A custom folder scan finds nested steamapps games")
+    func scansCustomFolder() throws {
+        let dir = try scratchDirectory("pfx-custom-scan")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bottles = dir.appending(path: "somewhere/Bottles")
+        try plantBottleGame(
+            bottles: bottles, bottle: "CX", under: "Program Files (x86)/Steam",
+            appID: "10", installdir: "Nested", name: "Nested Game")
+
+        let games = PrefixStore.scanCustomFolder(dir.appending(path: "somewhere"))
+        #expect(games.map(\.appID) == ["10"])
+    }
+
+    @Test("Library artwork prefers capsule art, then native legacy cache")
+    func resolvesLibraryArtwork() throws {
+        let dir = try scratchDirectory("pfx-art")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let fm = FileManager.default
+
+        let bottleSteam = dir.appending(path: "bottle/Steam")
+        let common = bottleSteam.appending(path: "steamapps/common/Game")
+        let manifest = bottleSteam.appending(path: "steamapps/appmanifest_42.acf")
+        try fm.createDirectory(at: common, withIntermediateDirectories: true)
+        try write("", to: manifest)
+
+        let game = BottleGame(
+            appID: "42", name: "Game", installdir: "Game", sourceLabel: "CX",
+            commonURL: common, manifestURL: manifest
+        )
+        // Bottle cache first: people importing already played these in CrossOver/Steam.
+        let artDir = bottleSteam.appending(path: "appcache/librarycache/42")
+        try fm.createDirectory(at: artDir, withIntermediateDirectories: true)
+        try write("hdr", to: artDir.appending(path: "header.jpg"))
+        let capsule = artDir.appending(path: "library_600x900.jpg")
+        try write("cap", to: capsule)
+        let emptyNative = dir.appending(path: "empty-native")
+        try fm.createDirectory(at: emptyNative, withIntermediateDirectories: true)
+        #expect(PrefixStore.libraryArtwork(for: game, nativeRoot: emptyNative) == capsule)
+
+        // Older clients wrote flat files under librarycache; still worth showing a thumb.
+        try fm.removeItem(at: bottleSteam.appending(path: "appcache"))
+        let native = dir.appending(path: "native-steam")
+        let legacy = native.appending(path: "appcache/librarycache/42_library_600x900.jpg")
+        try write("legacy", to: legacy)
+        #expect(PrefixStore.libraryArtwork(for: game, nativeRoot: native) == legacy)
+    }
+
+    @Test("Move merges into an existing native steamapps")
+    func transfersAndMerges() throws {
+        let dir = try scratchDirectory("pfx-transfer")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bottles = dir.appending(path: "Bottles")
+        let dest = dir.appending(path: "Native/steamapps")
+        try FileManager.default.createDirectory(
+            at: dest.appending(path: "common/Already"), withIntermediateDirectories: true)
+        try write("old", to: dest.appending(path: "common/Already/keep.bin"))
+
+        try plantBottleGame(
+            bottles: bottles, bottle: "CX", under: "Program Files (x86)/Steam",
+            appID: "30", installdir: "Already", name: "Already There")
+        try plantBottleGame(
+            bottles: bottles, bottle: "CX", under: "Program Files (x86)/Steam",
+            appID: "40", installdir: "Fresh", name: "Fresh Game")
+
+        let source = bottles.appending(path: "CX/drive_c/Program Files (x86)/Steam/steamapps")
+        let listed = PrefixStore.games(inSteamapps: source, sourceLabel: "CX")
+        #expect(listed.count == 2)
+
+        // Same installdir: keep dest-only files, replace same-named files from the bottle.
+        try PrefixStore.transfer(listed.filter { $0.appID == "30" }, into: dest)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: dest.appending(path: "common/Already/game.bin").path(percentEncoded: false)))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: dest.appending(path: "common/Already/keep.bin").path(percentEncoded: false)))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: source.appending(path: "common/Already").path(percentEncoded: false)))
+
+        let remaining = PrefixStore.games(inSteamapps: source, sourceLabel: "CX")
+        try PrefixStore.transfer(remaining.filter { $0.appID == "40" }, into: dest)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: dest.appending(path: "common/Fresh/game.bin").path(percentEncoded: false)))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: source.appending(path: "common/Fresh").path(percentEncoded: false)))
+    }
 }
