@@ -16,16 +16,22 @@ struct RunnerPatcherTests {
 
         let scratch = URL(filePath: NSTemporaryDirectory())
             .appending(path: "notproton-runner-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let root = scratch.appending(path: "Wine")
+        let metadata = live.deletingLastPathComponent().appending(path: "WhiskyWineVersion.plist")
+        if FileManager.default.fileExists(atPath: metadata.path) {
+            try FileManager.default.copyItem(at: metadata, to: scratch.appending(path: "WhiskyWineVersion.plist"))
+        }
         let copied = try Shell.run("/bin/cp", [
-            "-c", "-R", live.path(percentEncoded: false), scratch.path(percentEncoded: false),
+            "-c", "-R", live.path(percentEncoded: false), root.path(percentEncoded: false),
         ])
 
         // Past the healthy check, a clone that cannot be read is this test breaking and
         // not a machine that cannot answer, so it fails rather than skipping.
         try #require(copied.status == 0)
-        try #require(RunnerPatcher.verify(build: build, root: scratch).isEmpty)
+        try #require(RunnerPatcher.verify(build: build, root: root).isEmpty)
 
-        return (scratch, build)
+        return (root, build)
     }
 
     // The launch path used to copy this on every run, so the button is now the only thing
@@ -33,7 +39,7 @@ struct RunnerPatcherTests {
     @Test("A builtin the bridge has replaced is reported, then repaired by the install")
     func repairsStaleBuiltin() throws {
         guard let (root, build) = try Self.healthyClone() else { return }
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
 
         let arch = RunnerPatcher.unixArch(in: root)
         let builtin = root.appending(path: "lib/wine/\(arch)/lsteamclient.so")
@@ -50,7 +56,7 @@ struct RunnerPatcherTests {
     @Test("A builtin that was never installed is reported, then repaired by the install")
     func repairsMissingBuiltin() throws {
         guard let (root, build) = try Self.healthyClone() else { return }
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
 
         let builtin = root.appending(path: "lib/wine/i386-windows/lsteamclient.dll")
         try FileManager.default.removeItem(at: builtin)
@@ -67,7 +73,7 @@ struct RunnerPatcherTests {
     @Test("A runner back on stock ntdll is reported, then repaired by the install")
     func repairsStockNtdll() throws {
         guard let (root, build) = try Self.healthyClone() else { return }
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
 
         let arch = WineArch.x86_64Windows
         let live = root.appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll")
@@ -89,7 +95,7 @@ struct RunnerPatcherTests {
     @Test("A loader signed without the dyld entitlement is reported, then repaired")
     func repairsStrippedEntitlement() throws {
         guard let (root, build) = try Self.healthyClone() else { return }
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
 
         let loader = root.appending(path: "lib/wine/x86_64-unix/wine")
         let clean = Clean.copy(of: loader)
@@ -100,7 +106,7 @@ struct RunnerPatcherTests {
         ]).status == 0)
 
         #expect(RunnerPatcher.verify(build: build, root: root)
-            == ["x86_64-unix/wine is missing the dyld entitlement"])
+            .contains("x86_64-unix/wine is missing the dyld entitlement"))
 
         let outcome = try RunnerPatcher.install(build: build, root: root)
         #expect(outcome.loaders == ["x86_64-unix/wine"])
@@ -112,7 +118,7 @@ struct RunnerPatcherTests {
     @Test("Installing into a runner that is already right writes nothing")
     func installIsIdempotent() throws {
         guard let (root, build) = try Self.healthyClone() else { return }
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
 
         let outcome = try RunnerPatcher.install(build: build, root: root)
         #expect(outcome.wroteNothing)
@@ -140,6 +146,54 @@ struct RunnerPatcherTests {
 
         try RunnerPatcher.keepClean(file)
         #expect(try Data(contentsOf: Clean.copy(of: file)) == Data(contentsOf: file))
+    }
+
+    @Test("A hardened loader can load an independently signed Wine library after repair")
+    func repairsLibraryValidation() throws {
+        let scratch = try RuntimeFixture.scratch("loader-validation")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try RuntimeFixture.make(at: scratch)
+        let root = scratch.appending(path: "Wine")
+        let loader = root.appending(path: "lib/wine/x86_64-unix/wine")
+        let library = loader.deletingLastPathComponent().appending(path: "ntdll.so")
+        let source = scratch.appending(path: "loader.c")
+        try Data("""
+            #include <dlfcn.h>
+            #include <stdio.h>
+            int main(int c, char **v) {
+                void *p = dlopen(v[1], RTLD_NOW);
+                if (!p) { puts(dlerror()); return 1; }
+                dlclose(p);
+                return 0;
+            }
+            """.utf8).write(to: source)
+        try Shell.check("/usr/bin/clang", [source.path, "-o", loader.path])
+        let librarySource = scratch.appending(path: "library.c")
+        try Data("int wine_library(void) { return 42; }\n".utf8).write(to: librarySource)
+        try Shell.check("/usr/bin/clang", ["-dynamiclib", librarySource.path, "-o", library.path])
+        try Shell.check("/usr/bin/codesign", ["-f", "-s", "-", library.path])
+        let plist = scratch.appending(path: "entitlements.plist")
+        try PropertyListSerialization.data(fromPropertyList: [
+            "com.apple.security.cs.allow-dyld-environment-variables": true,
+        ], format: .xml, options: 0).write(to: plist)
+        try Shell.check("/usr/bin/codesign", ["-f", "-s", "-", "--options", "runtime",
+            "--entitlements", plist.path, loader.path])
+        let build = RunnerBuild.native(name: "winecx-gptk", version: "4.7.54")
+        let bridge = scratch.appending(path: "bridge")
+        for builtin in RunnerPatcher.builtins(in: root) {
+            let file = bridge.appending(path: "\(builtin.arch)/\(builtin.name)")
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("bridge fixture".utf8).write(to: file)
+        }
+        // Before the repair macOS rejects this library, as it rejected the real Whisky ntdll.so.
+        #expect(try Shell.run(loader.path, [library.path]).status != 0)
+        #expect(RunnerPatcher.verify(build: build, root: root, bridge: bridge)
+            .contains("x86_64-unix/wine is missing the library validation entitlement"))
+        let outcome = try RunnerPatcher.install(build: build, root: root, bridge: bridge)
+        #expect(outcome.loaders == ["x86_64-unix/wine"])
+        #expect(RunnerPatcher.verify(build: build, root: root, bridge: bridge).isEmpty)
+        #expect(try Shell.run(loader.path, [library.path]).status == 0)
+        #expect(try RunnerPatcher.install(build: build, root: root, bridge: bridge).wroteNothing)
     }
 
     @Test("Loader discovery finds both the bare and the bundled layout")

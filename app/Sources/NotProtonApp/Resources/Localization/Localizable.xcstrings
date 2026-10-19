@@ -193,6 +193,22 @@
         }
       }
     },
+    "%@ does not match the D3DMetal runtime library." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ does not match the D3DMetal runtime library."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ does not match the D3DMetal runtime library."
+          }
+        }
+      }
+    },
     "%@ does not verify against its own signature. " : {
       "localizations" : {
         "it" : {
@@ -321,6 +337,22 @@
         }
       }
     },
+    "%@ is missing the library validation entitlement" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ is missing the library validation entitlement"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ is missing the library validation entitlement"
+          }
+        }
+      }
+    },
     "%@ is not Steam." : {
       "localizations" : {
         "it" : {
@@ -397,6 +429,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 并非由 Valve 签名。预期 TeamIdentifier=%@。"
+          }
+        }
+      }
+    },
+    "%@ is not the D3DMetal runtime link." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ is not the D3DMetal runtime link."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ is not the D3DMetal runtime link."
           }
         }
       }
@@ -2251,6 +2299,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "CrossOver 已激活。"
+          }
+        }
+      }
+    },
+    "D3DMetal's shared library points outside the runtime copy." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "D3DMetal's shared library points outside the runtime copy."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "D3DMetal's shared library points outside the runtime copy."
           }
         }
       }
@@ -5825,6 +5889,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ ntdll 的可选头为 %@，预期为 %@。"
+          }
+        }
+      }
+    },
+    "The D3DMetal bridge directory points outside the runtime copy." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The D3DMetal bridge directory points outside the runtime copy."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The D3DMetal bridge directory points outside the runtime copy."
           }
         }
       }

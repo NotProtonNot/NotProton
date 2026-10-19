@@ -8,6 +8,8 @@ enum RunnerPatcher {
 
     private static let dyldEntitlement = "com.apple.security.cs.allow-dyld-environment-variables"
 
+    private static let libraryEntitlement = "com.apple.security.cs.disable-library-validation"
+
     static let windowsBuiltins = [
         (arch: "i386-windows", name: "lsteamclient.dll"),
         (arch: "x86_64-windows", name: "lsteamclient.dll"),
@@ -33,14 +35,18 @@ enum RunnerPatcher {
         var ntdll: [WineArch] = []
         var builtins: [String] = []
         var loaders: [String] = []
+        var graphicsLinks: [String] = []
 
-        var wroteNothing: Bool { ntdll.isEmpty && builtins.isEmpty && loaders.isEmpty }
+        var wroteNothing: Bool { ntdll.isEmpty && builtins.isEmpty && loaders.isEmpty && graphicsLinks.isEmpty }
     }
 
     static func install(
         build: RunnerBuild, root: URL, bridge: URL = SupportPaths.bridge
     ) throws -> Outcome {
         var outcome = Outcome()
+        if build.provider == .whisky {
+            outcome.graphicsLinks = try WhiskyGraphicsLinks.repair(in: root)
+        }
         outcome.ntdll = try installNtdll(build: build, root: root, bridge: bridge)
         outcome.builtins = try installBuiltins(root: root, bridge: bridge)
         outcome.loaders = try grantLoaderEntitlement(root: root)
@@ -50,7 +56,7 @@ enum RunnerPatcher {
     static func verify(
         build: RunnerBuild, root: URL, bridge: URL = SupportPaths.bridge
     ) -> [String] {
-        var wrong: [String] = []
+        var wrong = build.provider == .whisky ? WhiskyGraphicsLinks.verify(in: root) : []
         for arch in WineArch.allCases {
             guard let expected = build.patchedNtdll[arch] else { continue }
             let live = root.appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll")
@@ -83,8 +89,13 @@ enum RunnerPatcher {
                 if !signatureIsValid(signingTarget(for: loader)) {
                     wrong.append(String(localized: "\(name(of: loader)) has a broken signature"))
                 }
-            } else if granted?.contains(dyldEntitlement) != true {
-                wrong.append(String(localized: "\(name(of: loader)) is missing the dyld entitlement"))
+            } else {
+                if granted?.contains(dyldEntitlement) != true {
+                    wrong.append(String(localized: "\(name(of: loader)) is missing the dyld entitlement"))
+                }
+                if granted?.contains(libraryEntitlement) != true {
+                    wrong.append(String(localized: "\(name(of: loader)) is missing the library validation entitlement"))
+                }
             }
         }
 
@@ -152,6 +163,7 @@ enum RunnerPatcher {
             }
             if existing?.contains(restrictedEntitlement) == true { continue }
             if existing?.contains(dyldEntitlement) == true,
+               existing?.contains(libraryEntitlement) == true,
                signatureIsValid(signingTarget(for: loader)) { continue }
 
             guard let existing, !existing.isEmpty else {
@@ -211,10 +223,14 @@ enum RunnerPatcher {
             .appending(path: "np-entitlements-\(UUID().uuidString).plist")
         defer { try? FileManager.default.removeItem(at: plist) }
 
-        try Data(existing.utf8).write(to: plist)
-        _ = try Shell.run("/usr/libexec/PlistBuddy", [
-            "-c", "Add :\(dyldEntitlement) bool true", plist.path(percentEncoded: false),
-        ])
+        var granted = try PropertyListSerialization.propertyList(
+            from: Data(existing.utf8), format: nil) as? [String: Any] ?? [:]
+        granted[dyldEntitlement] = true
+        // The ad-hoc loader loads Wine and Steam libraries signed independently.
+        // Hardened runtime would otherwise reject them before Wine can start.
+        granted[libraryEntitlement] = true
+        try PropertyListSerialization.data(fromPropertyList: granted, format: .xml, options: 0)
+            .write(to: plist)
 
         try keepClean(loader)
         let target = signingTarget(for: loader)

@@ -46,6 +46,12 @@ select_graphics_backend
 is "DXVK x64" native64 "$(cat "$WINEPREFIX/drive_c/windows/system32/d3d11.dll")"
 is "DXVK x32" native32 "$(cat "$WINEPREFIX/drive_c/windows/syswow64/d3d11.dll")"
 is "user overrides preserved" 'user=n;d3d11=n,b' "$WINEDLLOVERRIDES"
+# Newer Whisky runtimes ship the same architecture layout under DXVK3.
+mv "$RUNNER_ROOT/DXVK" "$RUNNER_ROOT/DXVK3"
+select_graphics_backend
+is "DXVK3 x64" native64 "$(cat "$WINEPREFIX/drive_c/windows/system32/d3d11.dll")"
+is "DXVK3 remains selected" dxvk "$CX_ACTIVE_GRAPHICS_BACKEND"
+mv "$RUNNER_ROOT/DXVK3" "$RUNNER_ROOT/DXVK"
 # Restaging must not replace the saved originals with backend DLLs.
 select_graphics_backend
 CX_GRAPHICS_BACKEND=dxmt

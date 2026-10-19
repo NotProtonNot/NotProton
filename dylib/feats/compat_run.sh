@@ -1224,7 +1224,12 @@ select_graphics_backend() {
   backend="${CX_GRAPHICS_BACKEND:-d3dmetal}"
   case "$backend" in
     d3dmetal|wined3d) payload="" ;;
-    dxvk) payload="$RUNNER_ROOT/DXVK" ;;
+    dxvk)
+      payload="$RUNNER_ROOT/DXVK"
+      if [ "$np_provider" = whisky ] && [ ! -d "$payload/x64" ] && [ -d "$RUNNER_ROOT/DXVK3/x64" ]; then
+        payload="$RUNNER_ROOT/DXVK3"
+      fi
+      ;;
     dxmt) payload="$RUNNER_ROOT/DXMT" ;;
     *)
       echo "=== unknown graphics backend $backend, using d3dmetal ===" >> "$log" 2>&1 || true
