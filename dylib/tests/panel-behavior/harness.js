@@ -26,8 +26,15 @@ const FORMS = {
 
 // `fallback` and `fexTools` stand in for what the hook sets before the transform.
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
-               { fallback = 'notproton', fexTools = [], names = ['R0', 'B0'] } = {}) {
-  const raw = execFileSync(emit, [form, fallback, ...fexTools], { encoding: 'utf8' }).trim();
+               { fallback = 'notproton', fexTools = [], names = ['R0', 'B0'],
+                 ready, feats } = {}) {
+  // Feature rows are handed over rather than read from disk, so a check reads the same
+  // on any machine and says nothing about which features an install carries.
+  const env = { ...process.env };
+  if (ready !== undefined) env.NP_TEST_READY = ready;
+  if (feats !== undefined) env.NP_TEST_FEATS = feats;
+  const raw = execFileSync(emit, [form, fallback, ...fexTools],
+                           { encoding: 'utf8', env }).trim();
   const f = FORMS[form];
   const body = expand(raw, { [f.react]: names[0], [f.barrel]: names[1] });
   const src = form === 'component' ? 'var ' + body.replace(/,$/, '') : body.replace(/;$/, '');

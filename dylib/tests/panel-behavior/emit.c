@@ -4,6 +4,7 @@
 #include "../../feats/webpatch.c"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int np_log_level = 0;
@@ -26,6 +27,8 @@ int main(int argc, char **argv) {
         np_webpatch_set_fallback_tool(argc >= 3 ? argv[2] : NULL);
         np_webpatch_set_fex_tools((const char *const *)argv + 3,
                                   argc > 3 ? (size_t)(argc - 3) : 0);
+        // Both default to empty, which is what an install with no descriptors looks like.
+        np_webpatch_set_features(getenv("NP_TEST_READY"), getenv("NP_TEST_FEATS"));
         put_panel(strcmp(argv[1], "component") == 0 ? NP_CX_OPTIONS_COMPONENT
                                                     : NP_CX_OPTIONS_STATEMENT);
         return 0;
