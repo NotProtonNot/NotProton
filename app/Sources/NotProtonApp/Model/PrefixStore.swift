@@ -72,6 +72,13 @@ struct BottleGame: Sendable, Hashable, Identifiable {
     var title: String { name.isEmpty ? String(localized: "App \(appID)") : name }
 }
 
+struct BottleSteamLibrary: Sendable, Hashable, Identifiable {
+    let name: String
+    let steamapps: URL
+
+    var id: String { steamapps.path(percentEncoded: false) }
+}
+
 enum PrefixStore {
 
     static func libraries(vdf: URL = SupportPaths.Steam.libraryFoldersVDF) -> [SteamLibrary] {
@@ -288,28 +295,61 @@ enum PrefixStore {
         return games
     }
 
+    // One Steam library per bottle (x86 preferred) for move-into-bottle targets.
+    static func bottleSteamLibraries(
+        bottlesRoot: URL = SupportPaths.CrossOver.bottles
+    ) -> [BottleSteamLibrary] {
+        var seen: Set<String> = []
+        var found: [BottleSteamLibrary] = []
+        for entry in bottleSteamappsEntries(bottlesRoot: bottlesRoot)
+        where seen.insert(entry.name).inserted {
+            found.append(entry)
+        }
+        return found
+    }
+
     static func scanCrossOverBottles(
         bottlesRoot: URL = SupportPaths.CrossOver.bottles
     ) -> [BottleGame] {
+        var found: [BottleGame] = []
+        var seen: Set<String> = []
+        for bottle in bottleSteamappsEntries(bottlesRoot: bottlesRoot) {
+            collectGames(from: bottle.steamapps, label: bottle.name, into: &found, seen: &seen)
+        }
+        return found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private static func bottleSteamappsEntries(
+        bottlesRoot: URL
+    ) -> [BottleSteamLibrary] {
         let fm = FileManager.default
         let bottles = (try? fm.contentsOfDirectory(
             at: bottlesRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
         )) ?? []
-        var found: [BottleGame] = []
-        var seen: Set<String> = []
+        var found: [BottleSteamLibrary] = []
         for bottle in bottles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath: bottle.path(percentEncoded: false), isDirectory: &isDirectory),
                 isDirectory.boolValue
             else { continue }
+            let name = bottle.lastPathComponent
             let drive = bottle.appending(path: "drive_c")
-            let roots = [
-                drive.appending(path: "Program Files (x86)/Steam/steamapps"),
-                drive.appending(path: "Program Files/Steam/steamapps"),
-            ].filter { fm.fileExists(atPath: $0.path(percentEncoded: false)) }
-            for steamapps in roots {
-                collectGames(from: steamapps, label: bottle.lastPathComponent, into: &found, seen: &seen)
+            for relative in ["Program Files (x86)/Steam/steamapps", "Program Files/Steam/steamapps"] {
+                let steamapps = drive.appending(path: relative)
+                guard fm.fileExists(atPath: steamapps.path(percentEncoded: false)) else { continue }
+                found.append(BottleSteamLibrary(name: name, steamapps: steamapps))
             }
+        }
+        return found
+    }
+
+    static func scanNativeLibraries(
+        _ libraries: [SteamLibrary] = PrefixStore.libraries()
+    ) -> [BottleGame] {
+        var found: [BottleGame] = []
+        var seen: Set<String> = []
+        for library in libraries {
+            collectGames(from: library.steamapps, label: library.displayName, into: &found, seen: &seen)
         }
         return found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }

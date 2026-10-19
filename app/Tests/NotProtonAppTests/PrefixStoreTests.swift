@@ -767,4 +767,83 @@ struct PrefixStoreTests {
             !FileManager.default.fileExists(
                 atPath: source.appending(path: "common/Fresh").path(percentEncoded: false)))
     }
+
+    private func plantNativeGame(
+        library: URL, appID: String, installdir: String, name: String
+    ) throws {
+        let steamapps = library.appending(path: "steamapps")
+        let common = steamapps.appending(path: "common/\(installdir)")
+        try FileManager.default.createDirectory(at: common, withIntermediateDirectories: true)
+        try write("native", to: common.appending(path: "game.bin"))
+        try write(
+            """
+            "AppState"
+            {
+            \t"appid"\t\t"\(appID)"
+            \t"name"\t\t"\(name)"
+            \t"installdir"\t\t"\(installdir)"
+            }
+            """, to: steamapps.appending(path: "appmanifest_\(appID).acf"))
+    }
+
+    @Test("Bottles with Steam are listed once, preferring Program Files (x86)")
+    func listsBottleSteamTargets() throws {
+        let dir = try scratchDirectory("pfx-bottle-targets")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bottles = dir.appending(path: "Bottles")
+        try plantBottleGame(
+            bottles: bottles, bottle: "Both", under: "Program Files (x86)/Steam",
+            appID: "1", installdir: "A", name: "A")
+        try plantBottleGame(
+            bottles: bottles, bottle: "Both", under: "Program Files/Steam",
+            appID: "2", installdir: "B", name: "B")
+        try plantBottleGame(
+            bottles: bottles, bottle: "Only", under: "Program Files/Steam",
+            appID: "3", installdir: "C", name: "C")
+        try FileManager.default.createDirectory(
+            at: bottles.appending(path: "Empty/drive_c"), withIntermediateDirectories: true)
+
+        let targets = PrefixStore.bottleSteamLibraries(bottlesRoot: bottles)
+        #expect(targets.map(\.name) == ["Both", "Only"])
+        #expect(targets[0].steamapps.path(percentEncoded: false).contains("Program Files (x86)"))
+    }
+
+    @Test("Native Steam libraries yield their installed games")
+    func scansNativeLibraries() throws {
+        let dir = try scratchDirectory("pfx-native-scan")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = dir.appending(path: "SteamLibrary")
+        try plantNativeGame(library: library, appID: "50", installdir: "NativeGame", name: "Native")
+
+        let games = PrefixStore.scanNativeLibraries([SteamLibrary(root: library)])
+        #expect(games.map(\.appID) == ["50"])
+        #expect(games.first?.sourceLabel == library.lastPathComponent)
+    }
+
+    @Test("Move puts a native game into an existing bottle steamapps")
+    func transfersIntoBottle() throws {
+        let dir = try scratchDirectory("pfx-into-bottle")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let bottles = dir.appending(path: "Bottles")
+        try plantBottleGame(
+            bottles: bottles, bottle: "CX", under: "Program Files (x86)/Steam",
+            appID: "99", installdir: "Placeholder", name: "Keep Steam Alive")
+        let native = dir.appending(path: "Native")
+        try plantNativeGame(library: native, appID: "60", installdir: "BackHome", name: "Back Home")
+
+        let listed = PrefixStore.scanNativeLibraries([SteamLibrary(root: native)])
+        let dest = PrefixStore.bottleSteamLibraries(bottlesRoot: bottles)[0].steamapps
+        try PrefixStore.transfer(listed, into: dest)
+
+        #expect(
+            FileManager.default.fileExists(
+                atPath: dest.appending(path: "common/BackHome/game.bin").path(percentEncoded: false)))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: dest.appending(path: "appmanifest_60.acf").path(percentEncoded: false)))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: native.appending(path: "steamapps/common/BackHome")
+                    .path(percentEncoded: false)))
+    }
 }

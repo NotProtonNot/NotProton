@@ -346,10 +346,10 @@ struct StatusView: View {
                 )
                 StatusRow(
                     title: String(localized: "Steam library"),
-                    value: String(localized: "Move games from CrossOver bottles into native Steam."),
+                    value: String(localized: "Move games between CrossOver bottles and native Steam."),
                     action: StatusAction(
                         label: String(localized: "Move\u{2026}"),
-                        help: String(localized: "Scan CrossOver bottles and transfer selected games."),
+                        help: String(localized: "Transfer selected games into Steam or back into a bottle."),
                         isEnabled: status.isIdle
                     ) { libraryMovePresented = true }
                 )
@@ -763,9 +763,26 @@ struct StatusView: View {
 }
 
 private struct LibraryMoveSheet: View {
+    private enum Direction: String, CaseIterable, Identifiable {
+        case intoSteam
+        case intoBottle
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .intoSteam: String(localized: "Into Steam")
+            case .intoBottle: String(localized: "Into bottle")
+            }
+        }
+    }
+
     @Environment(SystemStatus.self) private var status
     @Binding var isPresented: Bool
 
+    @State private var direction: Direction = .intoSteam
+    @State private var bottles: [BottleSteamLibrary] = []
+    @State private var bottleID: String?
     @State private var games: [BottleGame] = []
     @State private var selection: Set<String> = []
     @State private var thumbs: [String: NSImage] = [:]
@@ -781,36 +798,33 @@ private struct LibraryMoveSheet: View {
                 Button(String(localized: "Select Custom Folder")) { pickFolder() }
                     .buttonStyle(.bordered)
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.top)
+            Picker(String(localized: "Destination"), selection: $direction) {
+                ForEach(Direction.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .onChange(of: direction) { _, _ in reloadSources() }
 
-            if games.isEmpty {
+            if direction == .intoBottle, bottles.isEmpty {
                 ContentUnavailableView(
-                    String(localized: "No games found"),
+                    String(localized: "No bottle with Steam"),
                     systemImage: "shippingbox",
-                    description: Text(String(localized: "Select a custom folder, or install Steam games in a CrossOver bottle."))
+                    description: Text(String(localized: "Install Steam in a CrossOver bottle first."))
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(games) { game in
-                        Toggle(isOn: Binding(
-                            get: { selection.contains(game.id) },
-                            set: { on in
-                                if on { selection.insert(game.id) } else { selection.remove(game.id) }
-                            }
-                        )) {
-                            HStack(spacing: 8) {
-                                libraryThumb(game.id)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(game.title)
-                                    Text(game.sourceLabel)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
+                if direction == .intoBottle, bottles.count > 1 {
+                    Picker(String(localized: "Bottle"), selection: $bottleID) {
+                        ForEach(bottles) { Text($0.name).tag(Optional($0.id)) }
                     }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
                 }
+                gameList
             }
 
             Divider()
@@ -821,11 +835,12 @@ private struct LibraryMoveSheet: View {
                 Button(String(localized: "Move")) { attemptMove() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(direction == .intoBottle && bottles.isEmpty)
             }
             .padding()
         }
         .frame(minWidth: 420, minHeight: 360)
-        .onAppear { loadInitial() }
+        .onAppear { reloadSources() }
         .alert(
             String(localized: "Can't move"),
             isPresented: Binding(
@@ -845,7 +860,44 @@ private struct LibraryMoveSheet: View {
             Button(String(localized: "Move Anyway")) { startTransfer() }
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "Some games are on a different volume than your Steam library. macOS will copy them instead of renaming, which is slower and uses more disk while it runs."))
+            Text(String(localized: "Some games are on a different volume than the destination. macOS will copy them instead of renaming, which is slower and uses more disk while it runs."))
+        }
+    }
+
+    @ViewBuilder
+    private var gameList: some View {
+        if games.isEmpty {
+            ContentUnavailableView(
+                String(localized: "No games found"),
+                systemImage: "shippingbox",
+                description: Text(
+                    direction == .intoBottle
+                        ? String(localized: "No games in the native Steam library. Select a custom folder if they live elsewhere.")
+                        : String(localized: "Select a custom folder, or install Steam games in a CrossOver bottle.")
+                )
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List {
+                ForEach(games) { game in
+                    Toggle(isOn: Binding(
+                        get: { selection.contains(game.id) },
+                        set: { on in
+                            if on { selection.insert(game.id) } else { selection.remove(game.id) }
+                        }
+                    )) {
+                        HStack(spacing: 8) {
+                            libraryThumb(game.id)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(game.title)
+                                Text(game.sourceLabel)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -853,10 +905,23 @@ private struct LibraryMoveSheet: View {
         games.filter { selection.contains($0.id) }
     }
 
-    private func loadInitial() {
-        let scanned = status.scanLibraryMoveGames()
+    private var destinationSteamapps: URL? {
+        switch direction {
+        case .intoSteam:
+            status.libraryMoveDestination()
+        case .intoBottle:
+            bottles.first { $0.id == bottleID }?.steamapps
+        }
+    }
+
+    private func reloadSources() {
+        bottles = PrefixStore.bottleSteamLibraries()
+        if bottleID == nil || !bottles.contains(where: { $0.id == bottleID }) {
+            bottleID = bottles.first?.id
+        }
+        let scanned = status.scanLibraryMoveGames(intoBottle: direction == .intoBottle)
         games = scanned
-        selection = Set(scanned.map(\.id))
+        selection = direction == .intoBottle ? [] : Set(scanned.map(\.id))
         thumbs = Self.loadThumbs(for: scanned)
     }
 
@@ -870,8 +935,10 @@ private struct LibraryMoveSheet: View {
             alertMessage = String(localized: "Those games are already in the list.")
         case .merged(let next, let added):
             games = next
-            for game in added {
-                selection.insert(game.id)
+            if direction == .intoSteam {
+                for game in added {
+                    selection.insert(game.id)
+                }
             }
             for (id, image) in Self.loadThumbs(for: added) {
                 thumbs[id] = image
@@ -882,9 +949,13 @@ private struct LibraryMoveSheet: View {
     private func attemptMove() {
         if selection.isEmpty {
             alertMessage = String(localized: "Select at least one game to move.")
+        } else if direction == .intoBottle, destinationSteamapps == nil {
+            alertMessage = String(localized: "Pick a CrossOver bottle that already has Steam.")
         } else if let reason = status.libraryMoveBlockReason {
             alertMessage = reason
-        } else if PrefixStore.crossesVolumes(selectedGames, destSteamapps: status.libraryMoveDestination()) {
+        } else if let dest = destinationSteamapps,
+            PrefixStore.crossesVolumes(selectedGames, destSteamapps: dest)
+        {
             confirmCrossVolume = true
         } else {
             startTransfer()
@@ -892,9 +963,10 @@ private struct LibraryMoveSheet: View {
     }
 
     private func startTransfer() {
+        guard let dest = destinationSteamapps else { return }
         let moving = selectedGames
         isPresented = false
-        Task { await status.transferLibraryGames(moving) }
+        Task { await status.transferLibraryGames(moving, into: dest) }
     }
 
     private static func loadThumbs(for games: [BottleGame]) -> [String: NSImage] {

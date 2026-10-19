@@ -383,9 +383,11 @@ final class SystemStatus {
 
     private static let toolsRestartHint = String(localized: "Restart Steam to update its list of compatibility tools.")
 
-    func scanLibraryMoveGames() -> [BottleGame] {
-        let games = PrefixStore.scanCrossOverBottles()
-        AppLog.note("library move opened: \(games.count) games")
+    func scanLibraryMoveGames(intoBottle: Bool) -> [BottleGame] {
+        let games = intoBottle
+            ? PrefixStore.scanNativeLibraries()
+            : PrefixStore.scanCrossOverBottles()
+        AppLog.note("library move opened: \(games.count) games\(intoBottle ? " (into bottle)" : "")")
         return games
     }
 
@@ -427,18 +429,17 @@ final class SystemStatus {
             ?? SupportPaths.Steam.userData.appending(path: "steamapps")
     }
 
-    func transferLibraryGames(_ games: [BottleGame]) async {
+    func transferLibraryGames(_ games: [BottleGame], into destSteamapps: URL) async {
         guard !games.isEmpty else { return }
         if let reason = libraryMoveBlockReason {
             setFailure(reason)
             AppLog.note("library move refused: \(reason)")
             return
         }
-        let dest = libraryMoveDestination()
         let count = games.count
         await perform(from: String(localized: "Moving library games")) { _ in
             try await Task.detached(priority: .userInitiated) {
-                try PrefixStore.transfer(games, into: dest)
+                try PrefixStore.transfer(games, into: destSteamapps)
             }.value
             return String(localized: "Transferred \(count) games.")
         }
