@@ -11,6 +11,14 @@ from resolve import PE, SECTION_FLAGS, SECTION_NAME, SECTION_SIZE, resolve, shel
 
 # A new build needs its ntdll hash added here and in build-ntdll.sh.
 PAYLOAD_BY_CLEAN_SHA = {
+    "8b32c9f6f71b4f15fcaccb19b0f2adab9391ae73ad539cae9e136f8ee7d24128": "detour2-whisky-4.7.3.bin",
+    "cc8a9035cea0e26c5d333ef220f1becefc27ae44d2cdcdaea3278e8739d26fd9": "detour32-whisky-4.7.3.bin",
+    "e4824bda7170ddc77f55357c2be2b256787a79ce1fb8bb54b2794e6200a8132e": "detour2-whisky-4.8.12.bin",
+    "9fa20eee518ba7219c5710720814e2fffb5f0b667429bce336bb1cbd234298bc": "detour32-whisky-4.8.12.bin",
+    "20111d365e092f3dd787fe04bb3347d5135e68ca77bf91c1e42e4451f0bb0265": "detour2-whisky-4.8.22.bin",
+    "f3999711b04a99c991a477c75a9c858580fc502a930c8d730b3d13ddf3339601": "detour32-whisky-4.8.22.bin",
+    "006ece15ead59d616287466c243bc7eeef3c99de37f7eb84fcf49efbc0f01aa1": "detour2-whisky-3.1.1.bin",
+    "bc463dfc7f03fbfc7e013e2942be993913263069a302d93ef6bc384a4f8daba3": "detour32-whisky-3.1.1.bin",
     "5e4a782ef6c5e79f70cda10083b786fda89f1364c1e4c1de00654ff61d4ea762": "detour2-winecx.bin",
     "0540c0e79b0316a4ecbe884fa88b438ae63a2dcf0b246081a0e9fc0a9a09eb26": "detour32-winecx.bin",
     "04c7200b6645decb7c2d1ba6b0195abc9af83257072558d11aa72cc067ac3377": "detour2.bin",

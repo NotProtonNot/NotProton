@@ -177,6 +177,50 @@ enum SupportedRunners {
 
     static let whisky: [RunnerBuild] = [
         RunnerBuild.whisky(
+            name: "WhiskyWine", version: "4.7.3",
+            cleanNtdll: [
+                .x86_64Windows: "8b32c9f6f71b4f15fcaccb19b0f2adab9391ae73ad539cae9e136f8ee7d24128",
+                .i386Windows: "cc8a9035cea0e26c5d333ef220f1becefc27ae44d2cdcdaea3278e8739d26fd9",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "4573d521671a48212670e7543aa9ebf0921e383dada69477f677f435df2bef5a",
+                .i386Windows: "8ad83740df2da5e79ed435e4bc57e82b4b6a4b984fbec73e1160ca81dfce1b44",
+            ]
+        ),
+        RunnerBuild.whisky(
+            name: "winecx-gptk", version: "4.8.12",
+            cleanNtdll: [
+                .x86_64Windows: "e4824bda7170ddc77f55357c2be2b256787a79ce1fb8bb54b2794e6200a8132e",
+                .i386Windows: "9fa20eee518ba7219c5710720814e2fffb5f0b667429bce336bb1cbd234298bc",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "3384330b6ee9e0056d1e2645c3ba863b64198ffc8f9cf91e8e2730815d9a7a2d",
+                .i386Windows: "bfbe8b782a8c6cf4ba93aaa5fa72faf2e7b94e417811a6176aad9aa347ba6590",
+            ]
+        ),
+        RunnerBuild.whisky(
+            name: "winecx-gptk", version: "4.8.22",
+            cleanNtdll: [
+                .x86_64Windows: "20111d365e092f3dd787fe04bb3347d5135e68ca77bf91c1e42e4451f0bb0265",
+                .i386Windows: "f3999711b04a99c991a477c75a9c858580fc502a930c8d730b3d13ddf3339601",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "61f9b210d9d20a967b20e74a40f4e97c08d3dd9156e1525b04e23a3acb3ed6b8",
+                .i386Windows: "663ccb9d077b2d7214093751d089443e8b4e09a07e491a0a24eca703809ad667",
+            ]
+        ),
+        RunnerBuild.whisky(
+            name: "WhiskyWine", version: "3.1.1",
+            cleanNtdll: [
+                .x86_64Windows: "006ece15ead59d616287466c243bc7eeef3c99de37f7eb84fcf49efbc0f01aa1",
+                .i386Windows: "bc463dfc7f03fbfc7e013e2942be993913263069a302d93ef6bc384a4f8daba3",
+            ],
+            patchedNtdll: [
+                .x86_64Windows: "92fdd10a87c86202a269bd2088f5af400a7cc7c15da531276b142ee498441f7d",
+                .i386Windows: "0bc01ee285ef8b9bc66e7c707834bedd3d74823cec562cd27fa28a6c5fe2d116",
+            ]
+        ),
+        RunnerBuild.whisky(
             name: "winecx-gptk",
             version: "4.7.54",
             cleanNtdll: [

@@ -10,7 +10,8 @@ This tool is intended to be used with the stable Steam Client (version 179191863
 
 **NTFS file systems/drivers are not currently supported.**
 
-This fork also supports **WhiskyWine winecx-gptk 4.7.54** and runtimes that declare native
+This fork also supports **WhiskyWine 3.1.1 / 4.7.3**, **winecx-gptk 4.7.54 / 4.8.12 / 4.8.22**,
+and runtimes that declare native
 `lsteamclient` support in `WhiskyWineVersion.plist`. Other builds require their own verified
 ntdll and detour pins before they can be used. CrossOver support and its license requirements
 remain available; a Whisky runtime does not require CrossOver or a CrossOver license.

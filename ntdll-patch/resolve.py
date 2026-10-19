@@ -11,6 +11,30 @@ PAYLOAD = {0x8664: 864, 0x14c: 1376, 0xaa64: 868}  # detour2.bin, detour32.bin, 
 # Keyed by input sha256 so the comparison only runs against the build the tree pins, so a
 # new build will report derived values rather than a wall of expected mismatches
 PINNED = {
+    # WhiskyWine 4.7.3 (x86_64)
+    '8b32c9f6f71b4f15fcaccb19b0f2adab9391ae73ad539cae9e136f8ee7d24128':
+        {'hookRVA': 0x52de3, 'stolen': '4883bc24f000000000', 'caveRVA': 0x83360, 'caveSize': 0xca0, 'wm': 'rbx', 'resume': 0x52dec, 'load_path': 0xd0, 'placement': 'padding', 'payload': 'e1bbd185b19de3e23d627ae3a8bf25ed1b767bff5690102c5312a5ed3813e736', 'exports': {'LdrGetDllHandle': 0x170017950, 'LdrLoadDll': 0x1700184c0, 'NtProtectVirtualMemory': 0x17000f690, 'NtOpenFile': 0x17000f2f0, 'NtReadFile': 0x17000ed50, 'NtClose': 0x17000ee70}},
+    # WhiskyWine 4.7.3 (i386)
+    'cc8a9035cea0e26c5d333ef220f1becefc27ae44d2cdcdaea3278e8739d26fd9':
+        {'hookRVA': 0x4f880, 'stolen': 'f645b4027529', 'caveRVA': 0x808a0, 'caveSize': 0x760, 'wm': 'ebx', 'resume': 0x4f886, 'load_path': -0x5c, 'placement': 'padding', 'flags_slot': -0x4c, 'flags_bit': 0x2, 'payload': '0676104e0bd56c4a1e8c473d9cbcd21fb2ba105fc7dc6cf5a70d37692c129e28', 'exports': {'LdrGetDllHandle': 0x7bc12aa0, 'LdrLoadDll': 0x7bc13640, 'NtProtectVirtualMemory': 0x7bc0d7a4, 'NtOpenFile': 0x7bc0d5d4, 'NtReadFile': 0x7bc0d304, 'NtClose': 0x7bc0d394}},
+    # winecx-gptk 4.8.12 (x86_64)
+    'e4824bda7170ddc77f55357c2be2b256787a79ce1fb8bb54b2794e6200a8132e':
+        {'hookRVA': 0x34cf3, 'stolen': '488b842410010000', 'caveRVA': 0x73594, 'caveSize': 0xa6c, 'wm': 'rdi', 'resume': 0x34cfb, 'load_path': 0xa0, 'placement': 'padding', 'payload': '58f149bd253a094be3771dc8ce936182c35ed04fe15945218f21996d10ffdc47', 'exports': {'LdrGetDllHandle': 0x17002f820, 'LdrLoadDll': 0x17002d340, 'NtProtectVirtualMemory': 0x170055718, 'NtOpenFile': 0x170055378, 'NtReadFile': 0x170054dd8, 'NtClose': 0x170054ef8}},
+    # winecx-gptk 4.8.12 (i386)
+    '9fa20eee518ba7219c5710720814e2fffb5f0b667429bce336bb1cbd234298bc':
+        {'hookRVA': 0x2edcd, 'stolen': '8b4514a802', 'caveRVA': 0x6676d, 'caveSize': 0x893, 'wm': 'edi', 'resume': 0x2edd2, 'load_path': -0x40, 'placement': 'padding', 'flags_slot': 0x14, 'flags_bit': 0x2, 'payload': '3706a5171ba9693ced9edd76cdc66d1594e9df27155a7f6520b5ca0d4db32b33', 'exports': {'LdrGetDllHandle': 0x7bc2a930, 'LdrLoadDll': 0x7bc28ab0, 'NtProtectVirtualMemory': 0x7bc4c8c8, 'NtOpenFile': 0x7bc4c6f8, 'NtReadFile': 0x7bc4c428, 'NtClose': 0x7bc4c4b8}},
+    # winecx-gptk 4.8.22 (x86_64)
+    '20111d365e092f3dd787fe04bb3347d5135e68ca77bf91c1e42e4451f0bb0265':
+        {'hookRVA': 0x34cf3, 'stolen': '488b842410010000', 'caveRVA': 0x73594, 'caveSize': 0xa6c, 'wm': 'rdi', 'resume': 0x34cfb, 'load_path': 0xa0, 'placement': 'padding', 'payload': '58f149bd253a094be3771dc8ce936182c35ed04fe15945218f21996d10ffdc47', 'exports': {'LdrGetDllHandle': 0x17002f820, 'LdrLoadDll': 0x17002d340, 'NtProtectVirtualMemory': 0x170055718, 'NtOpenFile': 0x170055378, 'NtReadFile': 0x170054dd8, 'NtClose': 0x170054ef8}},
+    # winecx-gptk 4.8.22 (i386)
+    'f3999711b04a99c991a477c75a9c858580fc502a930c8d730b3d13ddf3339601':
+        {'hookRVA': 0x2edcd, 'stolen': '8b4514a802', 'caveRVA': 0x6676d, 'caveSize': 0x893, 'wm': 'edi', 'resume': 0x2edd2, 'load_path': -0x40, 'placement': 'padding', 'flags_slot': 0x14, 'flags_bit': 0x2, 'payload': '3706a5171ba9693ced9edd76cdc66d1594e9df27155a7f6520b5ca0d4db32b33', 'exports': {'LdrGetDllHandle': 0x7bc2a930, 'LdrLoadDll': 0x7bc28ab0, 'NtProtectVirtualMemory': 0x7bc4c8c8, 'NtOpenFile': 0x7bc4c6f8, 'NtReadFile': 0x7bc4c428, 'NtClose': 0x7bc4c4b8}},
+    # WhiskyWine 3.1.1 (x86_64)
+    '006ece15ead59d616287466c243bc7eeef3c99de37f7eb84fcf49efbc0f01aa1':
+        {'hookRVA': 0x47572, 'stolen': '4883bc24e000000000', 'caveRVA': 0xb3000, 'caveSize': 0x1000, 'wm': 'rsi', 'resume': 0x4757b, 'load_path': 0xc0, 'placement': 'section', 'payload': '46f43cd4e31af1022ae6e34ba81158f24a29c350c046db37af4c189ca25fcb48', 'exports': {'LdrGetDllHandle': 0x170014d10, 'LdrLoadDll': 0x170015830, 'NtProtectVirtualMemory': 0x17000f330, 'NtOpenFile': 0x17000ef90, 'NtReadFile': 0x17000e9f0, 'NtClose': 0x17000eb10}},
+    # WhiskyWine 3.1.1 (i386)
+    'bc463dfc7f03fbfc7e013e2942be993913263069a302d93ef6bc384a4f8daba3':
+        {'hookRVA': 0x44ae0, 'stolen': 'f645c0017529', 'caveRVA': 0xad000, 'caveSize': 0x1000, 'wm': 'ebx', 'resume': 0x44ae6, 'load_path': -0x50, 'placement': 'section', 'flags_slot': -0x40, 'flags_bit': 0x1, 'payload': '82fc03888bb27c888c9845bdba430d219db203253a0a5a4e28f24a75b3233bfb', 'exports': {'LdrGetDllHandle': 0x7bc12780, 'LdrLoadDll': 0x7bc13270, 'NtProtectVirtualMemory': 0x7bc0d544, 'NtOpenFile': 0x7bc0d374, 'NtReadFile': 0x7bc0d0a4, 'NtClose': 0x7bc0d134}},
     # winecx-gptk 4.7.54 (WhiskyWine)
     '5e4a782ef6c5e79f70cda10083b786fda89f1364c1e4c1de00654ff61d4ea762':
         {'hookRVA': 0x34c93, 'stolen': '488b842410010000', 'caveRVA': 0x73424, 'caveSize': 3036,

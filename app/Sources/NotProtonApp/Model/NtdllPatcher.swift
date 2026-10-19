@@ -52,6 +52,88 @@ enum NtdllPatcher {
 
 
     static let byBuild: [String: [NtdllPatch]] = [
+        "WhiskyWine-4.7.3": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-whisky-4.7.3",
+                payloadSHA256: "e1bbd185b19de3e23d627ae3a8bf25ed1b767bff5690102c5312a5ed3813e736",
+                caveRVA: 0x83360, payloadRVA: 0x83360,
+                hooks: [NtdllHook(rva: 0x52de3, stolen: [0x48, 0x83, 0xbc, 0x24, 0xf0, 0x00, 0x00, 0x00, 0x00])],
+                caveSize: 3232, cavePad: 0x0,
+                machine: 0x8664, magic: 0x20b, imageBase: 0x170000000
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-whisky-4.7.3",
+                payloadSHA256: "0676104e0bd56c4a1e8c473d9cbcd21fb2ba105fc7dc6cf5a70d37692c129e28",
+                caveRVA: 0x808a0, payloadRVA: 0x808a0,
+                hooks: [NtdllHook(rva: 0x4f880, stolen: [0xf6, 0x45, 0xb4, 0x02, 0x75, 0x29])],
+                caveSize: 1888, cavePad: 0x0,
+                machine: 0x14c, magic: 0x10b, imageBase: 0x7bc00000
+            ),
+        ],
+        "winecx-gptk-4.8.12": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-whisky-4.8.12",
+                payloadSHA256: "58f149bd253a094be3771dc8ce936182c35ed04fe15945218f21996d10ffdc47",
+                caveRVA: 0x73594, payloadRVA: 0x735a0,
+                hooks: [NtdllHook(rva: 0x34cf3, stolen: [0x48, 0x8b, 0x84, 0x24, 0x10, 0x01, 0x00, 0x00])],
+                caveSize: 2668, cavePad: 0xcc,
+                machine: 0x8664, magic: 0x20b, imageBase: 0x170000000
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-whisky-4.8.12",
+                payloadSHA256: "3706a5171ba9693ced9edd76cdc66d1594e9df27155a7f6520b5ca0d4db32b33",
+                caveRVA: 0x6676d, payloadRVA: 0x66770,
+                hooks: [NtdllHook(rva: 0x2edcd, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02])],
+                caveSize: 2195, cavePad: 0xcc,
+                machine: 0x14c, magic: 0x10b, imageBase: 0x7bc00000
+            ),
+        ],
+        "winecx-gptk-4.8.22": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-whisky-4.8.22",
+                payloadSHA256: "58f149bd253a094be3771dc8ce936182c35ed04fe15945218f21996d10ffdc47",
+                caveRVA: 0x73594, payloadRVA: 0x735a0,
+                hooks: [NtdllHook(rva: 0x34cf3, stolen: [0x48, 0x8b, 0x84, 0x24, 0x10, 0x01, 0x00, 0x00])],
+                caveSize: 2668, cavePad: 0xcc,
+                machine: 0x8664, magic: 0x20b, imageBase: 0x170000000
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-whisky-4.8.22",
+                payloadSHA256: "3706a5171ba9693ced9edd76cdc66d1594e9df27155a7f6520b5ca0d4db32b33",
+                caveRVA: 0x6676d, payloadRVA: 0x66770,
+                hooks: [NtdllHook(rva: 0x2edcd, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02])],
+                caveSize: 2195, cavePad: 0xcc,
+                machine: 0x14c, magic: 0x10b, imageBase: 0x7bc00000
+            ),
+        ],
+        "WhiskyWine-3.1.1": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-whisky-3.1.1",
+                payloadSHA256: "46f43cd4e31af1022ae6e34ba81158f24a29c350c046db37af4c189ca25fcb48",
+                caveRVA: 0xb3000, payloadRVA: 0xb3000,
+                hooks: [NtdllHook(rva: 0x47572, stolen: [0x48, 0x83, 0xbc, 0x24, 0xe0, 0x00, 0x00, 0x00, 0x00])],
+                caveSize: 4096, cavePad: 0x0,
+                machine: 0x8664, magic: 0x20b, imageBase: 0x170000000,
+                placement: .section
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-whisky-3.1.1",
+                payloadSHA256: "82fc03888bb27c888c9845bdba430d219db203253a0a5a4e28f24a75b3233bfb",
+                caveRVA: 0xad000, payloadRVA: 0xad000,
+                hooks: [NtdllHook(rva: 0x44ae0, stolen: [0xf6, 0x45, 0xc0, 0x01, 0x75, 0x29])],
+                caveSize: 4096, cavePad: 0x0,
+                machine: 0x14c, magic: 0x10b, imageBase: 0x7bc00000,
+                placement: .section
+            ),
+        ],
         "winecx-gptk-4.7.54": [
             NtdllPatch(
                 arch: .x86_64Windows,

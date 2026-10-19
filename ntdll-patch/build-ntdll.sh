@@ -54,6 +54,23 @@ FEX41073_PATCHED_X86_64=2b47ed8c19d1d15d0f82519d39d64bf34113b285c4ada325bb64c5e5
 FEX41073_PATCHED_I386=3f4b0d9589c1f374e3c2fd135263f2bf3c8300e09dd010fd778936dd71e894ad
 FEX41073_PATCHED_AARCH64=2efb13f3303adc2c8ee61b93e027e4e94730a2e6b0162c7e6aebd4104200f07c
 
+WHISKY473_CLEAN_X86_64=8b32c9f6f71b4f15fcaccb19b0f2adab9391ae73ad539cae9e136f8ee7d24128
+WHISKY473_PATCHED_X86_64=4573d521671a48212670e7543aa9ebf0921e383dada69477f677f435df2bef5a
+WHISKY473_CLEAN_I386=cc8a9035cea0e26c5d333ef220f1becefc27ae44d2cdcdaea3278e8739d26fd9
+WHISKY473_PATCHED_I386=8ad83740df2da5e79ed435e4bc57e82b4b6a4b984fbec73e1160ca81dfce1b44
+WHISKY4812_CLEAN_X86_64=e4824bda7170ddc77f55357c2be2b256787a79ce1fb8bb54b2794e6200a8132e
+WHISKY4812_PATCHED_X86_64=3384330b6ee9e0056d1e2645c3ba863b64198ffc8f9cf91e8e2730815d9a7a2d
+WHISKY4812_CLEAN_I386=9fa20eee518ba7219c5710720814e2fffb5f0b667429bce336bb1cbd234298bc
+WHISKY4812_PATCHED_I386=bfbe8b782a8c6cf4ba93aaa5fa72faf2e7b94e417811a6176aad9aa347ba6590
+WHISKY4822_CLEAN_X86_64=20111d365e092f3dd787fe04bb3347d5135e68ca77bf91c1e42e4451f0bb0265
+WHISKY4822_PATCHED_X86_64=61f9b210d9d20a967b20e74a40f4e97c08d3dd9156e1525b04e23a3acb3ed6b8
+WHISKY4822_CLEAN_I386=f3999711b04a99c991a477c75a9c858580fc502a930c8d730b3d13ddf3339601
+WHISKY4822_PATCHED_I386=663ccb9d077b2d7214093751d089443e8b4e09a07e491a0a24eca703809ad667
+WHISKY311_CLEAN_X86_64=006ece15ead59d616287466c243bc7eeef3c99de37f7eb84fcf49efbc0f01aa1
+WHISKY311_PATCHED_X86_64=92fdd10a87c86202a269bd2088f5af400a7cc7c15da531276b142ee498441f7d
+WHISKY311_CLEAN_I386=bc463dfc7f03fbfc7e013e2942be993913263069a302d93ef6bc384a4f8daba3
+WHISKY311_PATCHED_I386=0bc01ee285ef8b9bc66e7c707834bedd3d74823cec562cd27fa28a6c5fe2d116
+
 install=0
 [ "${1:-}" = "--install" ] && install=1
 
@@ -81,11 +98,15 @@ flavor_of() {
             "$ROSETTA_CLEAN_X86_64")      echo rosetta; return 0 ;;
             "$ROSETTA41069_CLEAN_X86_64") echo rosetta-41069; return 0 ;;
             "$ROSETTA41073_CLEAN_X86_64") echo rosetta-41073; return 0 ;;
+            "$WHISKY473_CLEAN_X86_64") echo whisky-4.7.3; return 0 ;;
+            "$WHISKY4812_CLEAN_X86_64") echo whisky-4.8.12; return 0 ;;
+            "$WHISKY4822_CLEAN_X86_64") echo whisky-4.8.22; return 0 ;;
+            "$WHISKY311_CLEAN_X86_64") echo whisky-3.1.1; return 0 ;;
             "$CX26_CLEAN_X86_64")         echo cx26; return 0 ;;
         esac
     done
     die "no ntdll under $CX_ROOT/lib/wine matches a pinned build
-       pass FLAVOR=rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069 or fex-41073 to choose the pins anyway"
+       pass FLAVOR=rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069, fex-41073 or whisky-<version> to choose the pins anyway"
 }
 
 if [ -z "${FLAVOR:-}" ]; then
@@ -93,6 +114,10 @@ if [ -z "${FLAVOR:-}" ]; then
 fi
 
 case "$FLAVOR" in
+    whisky-4.7.3) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=WhiskyWine-4.7.3 ;;
+    whisky-4.8.12) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=winecx-gptk-4.8.12 ;;
+    whisky-4.8.22) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=winecx-gptk-4.8.22 ;;
+    whisky-3.1.1) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=WhiskyWine-3.1.1 ;;
     rosetta)       tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.40921 ;;
     rosetta-41069) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41069 ;;
     rosetta-41073) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41073 ;;
@@ -103,7 +128,7 @@ case "$FLAVOR" in
                    BUILD=27.0.0.41069-fex ;;
     fex-41073)     tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc clang ld.lld"
                    BUILD=27.0.0.41073-fex ;;
-    *)             die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069 or fex-41073" ;;
+    *)             die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069, fex-41073 or whisky-<version>" ;;
 esac
 
 for t in $tools; do
@@ -148,6 +173,34 @@ patch_one() {
 }
 
 case "$FLAVOR" in
+    whisky-4.7.3)
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh whisky-4.7.3 detour2-whisky-4.7.3.bin \
+            "$WHISKY473_CLEAN_X86_64" "$WHISKY473_PATCHED_X86_64"
+        patch_one i386-windows build32.sh whisky-4.7.3 detour32-whisky-4.7.3.bin \
+            "$WHISKY473_CLEAN_I386" "$WHISKY473_PATCHED_I386"
+        ;;
+    whisky-4.8.12)
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh whisky-4.8.12 detour2-whisky-4.8.12.bin \
+            "$WHISKY4812_CLEAN_X86_64" "$WHISKY4812_PATCHED_X86_64"
+        patch_one i386-windows build32.sh whisky-4.8.12 detour32-whisky-4.8.12.bin \
+            "$WHISKY4812_CLEAN_I386" "$WHISKY4812_PATCHED_I386"
+        ;;
+    whisky-4.8.22)
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh whisky-4.8.22 detour2-whisky-4.8.22.bin \
+            "$WHISKY4822_CLEAN_X86_64" "$WHISKY4822_PATCHED_X86_64"
+        patch_one i386-windows build32.sh whisky-4.8.22 detour32-whisky-4.8.22.bin \
+            "$WHISKY4822_CLEAN_I386" "$WHISKY4822_PATCHED_I386"
+        ;;
+    whisky-3.1.1)
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh whisky-3.1.1 detour2-whisky-3.1.1.bin \
+            "$WHISKY311_CLEAN_X86_64" "$WHISKY311_PATCHED_X86_64"
+        patch_one i386-windows build32.sh whisky-3.1.1 detour32-whisky-3.1.1.bin \
+            "$WHISKY311_CLEAN_I386" "$WHISKY311_PATCHED_I386"
+        ;;
     rosetta)
         ARCHES="x86_64-windows i386-windows"
         patch_one x86_64-windows build.sh   rosetta detour2.bin \
