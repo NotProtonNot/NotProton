@@ -99,9 +99,6 @@ for (const form of Object.keys(FORMS)) {
   t.ok(css[0].props.children.includes('.MSCXPanel .MSCXRowDesc>:last-child{flex-basis:100%}'),
        'and the rule that drops a description onto its own line');
 
-  // Developer rows come from descriptors, so these speak for the shapes a descriptor can
-  // take rather than for whichever features an install happens to carry. With none
-  // declared the panel is what every check above already asserts: no Developer section.
   const FEATS = JSON.stringify([
     { k: 'NOTPROTON_ALPHA', l: 'Alpha', on: '1', off: '', dep: '', d: '' },
     { k: 'NOTPROTON_BETA', l: 'Beta', on: '1', off: '0', dep: '', d: 'Why Beta.' },
@@ -110,10 +107,8 @@ for (const form of Object.keys(FORMS)) {
   ]).replace(/"(\w+)":/g, '$1:');
 
   t.ok(!sections(nodes('')).includes('Developer'),
-       'no descriptors means no Developer section');
-  // "len && <jsx>" yields 0 for an empty array and React renders that as a stray "0".
-  // walk() drops non-objects, so this scans raw children instead; the self-check below
-  // keeps it from passing because it looks in the wrong place.
+       'no plugins means no Developer section');
+  // rows.length && <jsx> puts a stray "0" on the page when there are no rows.
   const hasZero = n => {
     if (n === 0) return true;
     if (!n || typeof n !== 'object') return false;
@@ -124,7 +119,7 @@ for (const form of Object.keys(FORMS)) {
   t.ok(hasZero({ props: { children: [1 && 'x', 0 && 'y'] } }),
        'the stray-zero scanner finds a zero when there is one');
   t.ok(!hasZero(P({ details: details('') })),
-       'no descriptors renders nothing rather than a literal 0');
+       'no plugins renders nothing rather than a literal 0');
 
   const { render: PF } = panel(emit, form, undefined,
                               { ready: '{"NOTPROTON_ALPHA":0}', feats: FEATS });
@@ -135,7 +130,7 @@ for (const form of Object.keys(FORMS)) {
 
   t.ok(fnodes('').filter(x => x.type === 'Section')
          .some(x => x.props.label === 'Developer'),
-       'descriptors add a Developer section');
+       'plugins add a Developer section');
   t.ok(!flabels('').some(l => l.startsWith('Beta:')),
        'a dependent row stays hidden while its parent is off');
   t.ok(flabels('NOTPROTON_BETA=1 %command%').some(l => l.startsWith('Beta:')),
@@ -143,7 +138,7 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!flabels('NOTPROTON_BETA=0 %command%').some(l => l.startsWith('Beta:')),
        'a parent at its off value does not count as on');
   t.ok(alpha('') && alpha('').props.disabled === true,
-       'a feature whose assets are missing renders disabled');
+       'a plugin whose assets are missing renders disabled');
   t.ok(alpha('').props.label.endsWith('(not installed)'),
        'it says why it cannot be used');
   t.ok(alpha('NOTPROTON_ALPHA=1 %command%').props.checked === false,
@@ -151,19 +146,40 @@ for (const form of Object.keys(FORMS)) {
   t.ok(frows('').filter(x => x.props.disabled === true).length === 1,
        'only that one is disabled');
   t.ok(frows('').find(x => x.props.label === 'Beta').props.disabled === false,
-       'a feature with no readiness entry stays enabled');
-  // The row's children are checkbox, label and description as siblings, and the panel's
-  // own rule lays them out in a row. A description row wraps instead, with the last child
-  // taking the full width, so the checkbox and label stay on one line and the text drops
-  // beneath them.
+       'a plugin with no readiness entry stays enabled');
   t.ok(frows('').find(x => x.props.label === 'Beta').props.className === 'MSCXRow MSCXRowDesc',
        'a row with a description opts out of the row-direction rule');
   t.ok(frows('').find(x => x.props.label.startsWith('Alpha')).props.className === 'MSCXRow',
        'a row without one keeps the plain row class');
   t.ok(frows('').find(x => x.props.label === 'Beta').props.description === 'Why Beta.',
-       "a descriptor's description reaches the row");
+       "a plugin's description reaches the row");
   t.ok(frows('').find(x => x.props.label.startsWith('Alpha')).props.description === undefined,
-       'a descriptor without one passes no description at all');
+       'a plugin without one passes no description at all');
+
+  const CHAIN = JSON.stringify([
+    { k: 'NOTPROTON_BETA', l: 'Beta', on: '1', off: '0', dep: '', d: '' },
+    { k: 'NOTPROTON_BETA_SUB', l: 'Beta: extra', on: '1', off: '0',
+      dep: 'NOTPROTON_BETA', d: '' },
+    { k: 'NOTPROTON_BETA_SUB_SUB', l: 'Beta: more', on: '1', off: '0',
+      dep: 'NOTPROTON_BETA_SUB', d: '' },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const chain = ready => {
+    const { render } = panel(emit, form, undefined, { ready, feats: CHAIN });
+    return o => walk(render({ details: details(o) }))
+      .filter(x => x.type === 'Toggle').map(x => x.props.label);
+  };
+  t.ok(chain('{}')('NOTPROTON_BETA_SUB=1 NOTPROTON_BETA_SUB_SUB=1 %command%')
+         .every(l => !l.startsWith('Beta:')),
+       'a row stays hidden while any plugin above it is off');
+  t.ok(chain('{}')('NOTPROTON_BETA=1 NOTPROTON_BETA_SUB=1 %command%').includes('Beta: more'),
+       'and appears once the whole chain is on');
+  t.ok(!chain('{"NOTPROTON_BETA":0}')('NOTPROTON_BETA=1 %command%').includes('Beta: extra'),
+       'a parent that is not installed does not count as on');
+  const { render: PB } = panel(emit, form, undefined,
+                              { ready: '{"NOTPROTON_RAW_CONTROLLERS":0}', feats: CHAIN });
+  t.ok(walk(PB({ details: details('') })).filter(x => x.type === 'Toggle')
+         .every(x => x.props.disabled !== true),
+       'readiness never disables a built-in row');
 
   const { render: S } = panel(emit, form, undefined, { names: ['o', 't'] });
   const shadowed = walk(S({ details: details('CX_GRAPHICS_BACKEND=dxmt %command%') }));

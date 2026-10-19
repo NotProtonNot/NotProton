@@ -28,8 +28,6 @@ const FORMS = {
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
                { fallback = 'notproton', fexTools = [], names = ['R0', 'B0'],
                  ready, feats } = {}) {
-  // Feature rows are handed over rather than read from disk, so a check reads the same
-  // on any machine and says nothing about which features an install carries.
   const env = { ...process.env };
   if (ready !== undefined) env.NP_TEST_READY = ready;
   if (feats !== undefined) env.NP_TEST_FEATS = feats;

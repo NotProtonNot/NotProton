@@ -1,14 +1,9 @@
-// Feature descriptors drive the Developer rows and whether each one is offerable, so
-// both answers are checked against a descriptor directory this test builds itself. The
-// emitters read $HOME, which is what makes a temp tree enough to pin them down.
 #include "../feats/webpatch.c"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
 
-// Satisfies the log macros without pulling in log.c. Rejection reasons land on stderr,
-// which is where a check that expects one goes looking.
 int   np_log_level = NP_LVL_WARN;
 FILE *np_log_file;
 
@@ -48,7 +43,6 @@ static void clear_descs(void) {
     if (system(cmd) != 0) { shout("cannot clear %s", g_featdir); g_failed++; }
 }
 
-// Touch a file under the temp home so a "requires" can be made to resolve.
 static void make_asset(const char *rel) {
     char path[2048], cmd[2200];
     FILE *f;
@@ -59,7 +53,6 @@ static void make_asset(const char *rel) {
     fclose(f);
 }
 
-// feat_build caches, so each call re-reads the directory the test just rewrote.
 static void rebuild(void) {
     g_feat_ready_done = 0;
     feat_build();
@@ -78,14 +71,14 @@ int main(void) {
     snprintf(g_featdir, sizeof(g_featdir),
              "%s/" NP_FEAT_DIR, g_home);
     snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", g_featdir);
-    if (system(cmd) != 0) { fputs("cannot make the descriptor directory\n", stderr); return 2; }
+    if (system(cmd) != 0) { fputs("cannot make the plugins folder\n", stderr); return 2; }
     setenv("HOME", g_home, 1);
 
-    puts("== an empty descriptor directory");
+    puts("== an empty plugins folder");
     ok(strcmp(feats_json(), "[]") == 0, "renders no rows");
     ok(strcmp(ready_json(), "{}") == 0, "reports no readiness");
 
-    puts("== a descriptor with an unmet requires");
+    puts("== a plugin with an unmet requires");
     write_desc("10-a.conf",
                "key = NOTPROTON_A\nlabel = Feature A\nsection = dev\n"
                "on = 1\noff = 0\nrequires = assets/a.dylib\n");
@@ -133,11 +126,72 @@ int main(void) {
     write_desc("40-dup.conf", "key = NOTPROTON_OK\nlabel = Again\nsection = dev\n");
     {
         const char *j = feats_json();
-        ok(strstr(j, "NOTPROTON_OK") != NULL, "a good descriptor still loads");
+        ok(strstr(j, "NOTPROTON_OK") != NULL, "a good plugin still loads");
         ok(strstr(j, "NOTPROTON_BAD") == NULL, "an unknown section is refused");
-        ok(strstr(j, "No key") == NULL, "a descriptor with no key is refused");
+        ok(strstr(j, "No key") == NULL, "a plugin with no key is refused");
         ok(strstr(j, "Again") == NULL, "a repeated key is refused");
     }
+    clear_descs();
+    write_desc("10-evil.conf", "key = NOTPROTON_A:-}$(touch x)${X\nlabel = Evil\n");
+    write_desc("20-lower.conf", "key = NOTPROTON_low\nlabel = Lower\n");
+    write_desc("30-bare.conf", "key = NOTPROTON_\nlabel = Bare\n");
+    write_desc("40-nolabel.conf", "key = NOTPROTON_NOLABEL\n");
+    ok(strcmp(feats_json(), "[]") == 0, "a key that is not a NOTPROTON_ name is refused");
+    ok(strcmp(ready_json(), "{}") == 0, "and so is a plugin with no label");
+
+    puts("== a repeated field");
+    clear_descs();
+    write_desc("10-f.conf",
+               "key = NOTPROTON_F\nkey = NOTPROTON_G\nlabel = First\nlabel = Second\n"
+               "on = 2\non = 3\n");
+    ok(strstr(feats_json(), "{k:\"NOTPROTON_F\",l:\"First\",on:\"2\"") != NULL,
+       "keeps its first value");
+
+    puts("== limits shared with compat_run.sh");
+    clear_descs();
+    {
+        char body[4096];
+        memset(body, 'x', sizeof(body));
+        memcpy(body, "key = NOTPROTON_LONG\nlabel = L\n# ", 33);
+        memcpy(body + 2100, "\n", 2);
+        write_desc("10-line.conf", body);
+    }
+    write_desc("20-on.conf", "key = NOTPROTON_ON\nlabel = On\non = 0123456789012345678901234567890123\n");
+    ok(strcmp(feats_json(), "[]") == 0, "a line or value too long loses the file");
+    clear_descs();
+    make_asset("assets/fifth.dylib");
+    write_desc("10-five.conf",
+               "key = NOTPROTON_FIVE\nlabel = Five\nrequires = m1\nrequires = m2\n"
+               "requires = m3\nrequires = m4\nrequires = assets/fifth.dylib\n");
+    ok(strcmp(ready_json(), "{\"NOTPROTON_FIVE\":0}") == 0, "only the first four requires count");
+    clear_descs();
+    write_desc("10-vt.conf", "key\v= NOTPROTON_VT\f\nlabel = Vt\n");
+    ok(strstr(feats_json(), "k:\"NOTPROTON_VT\"") != NULL, "any blank counts as space");
+    clear_descs();
+    for (int i = 0; i < NP_FEAT_MAX; i++) {
+        char name[32], body[2048], fill[600];
+        memset(fill, '"', sizeof(fill));
+        snprintf(name, sizeof(name), "%02d.conf", i);
+        snprintf(body, sizeof(body),
+                 "key = NOTPROTON_%0180d\nlabel = %.190s\ndescription = %.510s\n"
+                 "on = %.31s\noff = %.31s\ndepends = %.190s\n",
+                 i, fill, fill, fill, fill, fill);
+        write_desc(name, body);
+    }
+    {
+        const char *j = feats_json();
+        int rows = 0;
+        for (const char *p = j; (p = strstr(p, "{k:")); p++) rows++;
+        ok(rows == NP_FEAT_MAX, "the most plugins at their longest all render");
+    }
+
+    puts("== a transform");
+    rebuild();
+    {
+        size_t len = 0;
+        free(np_webpatch_transform((const uint8_t *)"x", 1, &len, NULL));
+    }
+    ok(!g_feat_ready_done, "reads the plugins again");
 
     puts("== an optional description");
     clear_descs();
@@ -149,7 +203,7 @@ int main(void) {
     clear_descs();
     write_desc("10-e.conf", "key = NOTPROTON_E\nlabel = Ee\nsection = dev\n");
     ok(strstr(feats_json(), "d:\"\"") != NULL,
-       "is empty when the descriptor omits it");
+       "is empty when the plugin omits it");
 
     puts("== a label cannot break the page it renders into");
     clear_descs();
@@ -158,7 +212,7 @@ int main(void) {
     ok(strstr(feats_json(), "l:\"He said \\\"go\\\" \\\\ onwards\"") != NULL,
        "quotes and backslashes are escaped");
 
-    puts("== a missing descriptor directory");
+    puts("== a missing plugins folder");
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_featdir);
     if (system(cmd) != 0) { shout("cannot remove %s", g_featdir); g_failed++; }
     ok(strcmp(feats_json(), "[]") == 0, "renders no rows, since nothing ships by default");
@@ -168,6 +222,6 @@ int main(void) {
     if (system(cmd) != 0) shout("note: could not remove %s", g_home);
 
     if (g_failed) { printf("\n%d failure(s)\n", g_failed); return 1; }
-    puts("\n==> featcheck: descriptors load, rank, validate and report readiness");
+    puts("\n==> featcheck: plugins load, rank, validate and report readiness");
     return 0;
 }

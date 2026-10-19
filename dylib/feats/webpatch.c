@@ -28,8 +28,7 @@
 #define NP_FALLBACK_TOOL "\021"
 // Stands for the JS array set by np_webpatch_set_fex_tools.
 #define NP_FEX_TOOLS "\022"
-// Stand for the readiness object and the Developer rows, both read from features.d.
-// Past NP_C12, so they do not land in the capture range.
+// MSCXReady and MSCXFeat.
 #define NP_READY "\027"
 #define NP_FEATS "\030"
 
@@ -93,9 +92,9 @@ void np_webpatch_set_fex_tools(const char *const *names, size_t count) {
 
 static int has_suffix(const char *s, const char *suf);
 
-// "Developer" section rows are declared in ~/.config/notproton/features.d/*.conf, one
-// "key = value" per line, and read by compat_run.sh 
-#define NP_FEAT_DIR      ".config/notproton/features.d"
+// "Developer" section rows are declared in ~/Library/Application Support/notproton/plugins/*.conf,
+// one "key = value" per line, applied at launch by compat_run.sh.
+#define NP_FEAT_DIR      "Library/Application Support/notproton/plugins"
 #define NP_FEAT_MAX      32
 #define NP_FEAT_REQ_MAX  4
 #define NP_FEAT_STR      192
@@ -122,11 +121,29 @@ static int feat_exists(const char *home, const char *rel) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+// isspace() without the locale, to match [[:space:]] in compat_run.sh.
+static int feat_space(char c) {
+    return c == ' ' || (c >= '\t' && c <= '\r');
+}
+
 static void feat_trim(char *v) {
-    size_t n;
-    v[strcspn(v, "\r\n")] = 0;
-    n = strlen(v);
-    while (n && (v[n - 1] == ' ' || v[n - 1] == '\t')) v[--n] = 0;
+    size_t n = strlen(v);
+    while (n && feat_space(v[n - 1])) v[--n] = 0;
+}
+
+// compat_run.sh ignores keys that aren't valid shell variable names, so the compatibility panel does the same thing
+static int feat_key_ok(const char *k) {
+    if (strncmp(k, "NOTPROTON_", 10) != 0 || !k[10]) return 0;
+    for (k += 10; *k; k++)
+        if (!((*k >= 'A' && *k <= 'Z') || (*k >= '0' && *k <= '9') || *k == '_')) return 0;
+    return 1;
+}
+
+// Takes the first value when a setting appears twice so as to match compat_run.sh.
+static void feat_set(char *dst, size_t size, const char *v, int *bad) {
+    if (*dst) return;
+    if (strlen(v) >= size) *bad = 1;
+    snprintf(dst, size, "%s", v);
 }
 
 static np_feat_t *feat_find(np_feat_t *list, int n, const char *key) {
@@ -135,56 +152,70 @@ static np_feat_t *feat_find(np_feat_t *list, int n, const char *key) {
     return NULL;
 }
 
-// One descriptor file. Unknown fields are ignored so a descriptor written for a later
-// version still loads, and a file with no key is skipped rather than failing the patch.
+// Unknown fields are ignored so a plugin file written for a later version still loads.
 static void feat_read_file(const char *path, np_feat_t *list, int *count) {
     char line[2048];
     np_feat_t f;
+    int bad = 0;
     FILE *fp = fopen(path, "r");
     if (!fp) return;
     memset(&f, 0, sizeof(f));
     while (fgets(line, sizeof(line), fp)) {
         char *eq, *v, *k = line;
-        while (*k == ' ' || *k == '\t') k++;
+        size_t len = strcspn(line, "\n");
+        if (len >= sizeof(line) - 1) {
+            NP_WARN("plugins: %s has a line over %zu bytes, ignored", path, sizeof(line) - 2);
+            fclose(fp);
+            return;
+        }
+        line[len] = 0;
+        while (feat_space(*k)) k++;
         if (*k == '#' || !(eq = strchr(k, '='))) continue;
         *eq = 0;
         v = eq + 1;
         feat_trim(k);
-        while (*v == ' ' || *v == '\t') v++;
+        while (feat_space(*v)) v++;
         feat_trim(v);
         if (!*v) continue;
-        if (strcmp(k, "key") == 0) snprintf(f.key, sizeof(f.key), "%s", v);
-        else if (strcmp(k, "label") == 0) snprintf(f.label, sizeof(f.label), "%s", v);
-        else if (strcmp(k, "description") == 0)
-            snprintf(f.desc, sizeof(f.desc), "%s", v);
-        else if (strcmp(k, "section") == 0) snprintf(f.section, sizeof(f.section), "%s", v);
-        else if (strcmp(k, "on") == 0) snprintf(f.on, sizeof(f.on), "%s", v);
-        else if (strcmp(k, "off") == 0) snprintf(f.off, sizeof(f.off), "%s", v);
-        else if (strcmp(k, "depends") == 0) snprintf(f.depends, sizeof(f.depends), "%s", v);
+        if (strcmp(k, "key") == 0) feat_set(f.key, sizeof(f.key), v, &bad);
+        else if (strcmp(k, "label") == 0) feat_set(f.label, sizeof(f.label), v, &bad);
+        else if (strcmp(k, "description") == 0) feat_set(f.desc, sizeof(f.desc), v, &bad);
+        else if (strcmp(k, "section") == 0) feat_set(f.section, sizeof(f.section), v, &bad);
+        else if (strcmp(k, "on") == 0) feat_set(f.on, sizeof(f.on), v, &bad);
+        else if (strcmp(k, "off") == 0) feat_set(f.off, sizeof(f.off), v, &bad);
+        else if (strcmp(k, "depends") == 0) feat_set(f.depends, sizeof(f.depends), v, &bad);
         else if (strcmp(k, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
-            snprintf(f.req[f.nreq++], NP_FEAT_STR, "%s", v);
+            feat_set(f.req[f.nreq++], NP_FEAT_STR, v, &bad);
     }
     fclose(fp);
-    // A descriptor with no key cannot be acted on; everything else is optional.
+    if (bad) {
+        NP_WARN("plugins: %s has a value that's too long, ignored", path);
+        return;
+    }
     if (!*f.on) snprintf(f.on, sizeof(f.on), "1");
     if (!*f.section) snprintf(f.section, sizeof(f.section), "dev");
     if (!*f.key) {
-        NP_WARN("features: %s declares no key, ignored", path);
+        NP_WARN("plugins: %s has no key, ignored", path);
         return;
     }
-    // Only the Developer section is descriptor-driven. Dropping an unknown section
-    // quietly would look exactly like a typo that worked, so say so and skip the file.
+    if (!feat_key_ok(f.key)) {
+        NP_WARN("plugins: %s has an invalid key %s, ignored", path, f.key);
+        return;
+    }
+    if (!*f.label) {
+        NP_WARN("plugins: %s has no label, ignored", path);
+        return;
+    }
     if (strcmp(f.section, "dev") != 0) {
-        NP_WARN("features: %s declares section '%s', which does not exist; "
-                "the only section descriptors can add to is 'dev'", path, f.section);
+        NP_WARN("plugins: %s is not in the dev section, ignored", path);
         return;
     }
     if (feat_find(list, *count, f.key)) {
-        NP_WARN("features: %s repeats key %s, ignored", path, f.key);
+        NP_WARN("plugins: %s repeats key %s, ignored", path, f.key);
         return;
     }
     if (*count >= NP_FEAT_MAX) {
-        NP_WARN("features: more than %d descriptors, %s ignored", NP_FEAT_MAX, path);
+        NP_WARN("plugins: %s is over the %d plugin limit, ignored", path, NP_FEAT_MAX);
         return;
     }
     list[(*count)++] = f;
@@ -202,7 +233,7 @@ static int feat_load(const char *home, np_feat_t *list) {
     if ((d = opendir(dir))) {
         while ((de = readdir(d))) {
             char **grown;
-            if (de->d_name[0] == '.') continue;
+            if (de->d_name[0] == '.' || strchr(de->d_name, '\n')) continue;
             if (!has_suffix(de->d_name, ".conf")) continue;
             grown = realloc(names, (size_t)(nnames + 1) * sizeof(*names));
             if (!grown) break;
@@ -212,7 +243,6 @@ static int feat_load(const char *home, np_feat_t *list) {
             nnames++;
         }
         closedir(d);
-        // readdir order is not defined; sort so the panel row order is stable.
         for (int i = 1; i < nnames; i++)
             for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
                 char *t = names[j - 1]; names[j - 1] = names[j]; names[j] = t;
@@ -229,9 +259,10 @@ static int feat_load(const char *home, np_feat_t *list) {
     return count;
 }
 
-static _Thread_local char g_feat_ready[4096] = "{}";
-static _Thread_local char g_feat_rows[16384] = "[]";
+static _Thread_local char g_feat_ready[NP_FEAT_MAX * (NP_FEAT_STR + 8) + 4] = "{}";
+static _Thread_local char g_feat_rows[NP_FEAT_MAX * (2 * (3 * NP_FEAT_STR + NP_FEAT_DESC + 64) + 32) + 4] = "[]";
 static _Thread_local int  g_feat_ready_done;
+static _Thread_local int  g_feat_pinned;
 static void feat_build(void);
 
 static const char *marker_text(char c) {
@@ -333,8 +364,6 @@ static int out_put(np_out_t *o, const char *p, size_t n) {
     return 1;
 }
 
-// Built once from features.d, or supplied by a test through np_webpatch_set_features.
-
 static int out_jsstr(np_out_t *o, const char *v) {
     if (!out_put(o, "\"", 1)) return 0;
     for (const char *p = v; *p; p++) {
@@ -352,12 +381,12 @@ static void feat_build(void) {
     int n = 0, wrote = 0;
 
     g_feat_ready_done = 1;
+    snprintf(g_feat_ready, sizeof(g_feat_ready), "{}");
+    snprintf(g_feat_rows, sizeof(g_feat_rows), "[]");
     if (!home) return;
     n = feat_load(home, list);
     if (!out_put(&ready, "{", 1) || !out_put(&rows, "[", 1)) goto done;
     for (int i = 0; i < n; i++) {
-        // Nothing declared means nothing can be missing: a row that only steers another
-        // feature, such as a sub-option, is always offerable.
         int ok = list[i].nreq == 0;
         char item[NP_FEAT_STR + 32];
         int len;
@@ -366,7 +395,6 @@ static void feat_build(void) {
         len = snprintf(item, sizeof(item), "%s\"%s\":%d", i ? "," : "", list[i].key, ok);
         if (len < 0 || len >= (int)sizeof(item) || !out_put(&ready, item, (size_t)len)) goto done;
 
-        if (strcmp(list[i].section, "dev") != 0 || !*list[i].label) continue;
         if (wrote++ && !out_put(&rows, ",", 1)) goto done;
         if (!out_put(&rows, "{k:", 3) || !out_jsstr(&rows, list[i].key)) goto done;
         if (!out_put(&rows, ",l:", 3) || !out_jsstr(&rows, list[i].label)) goto done;
@@ -381,18 +409,18 @@ static void feat_build(void) {
         snprintf(g_feat_ready, sizeof(g_feat_ready), "%.*s", (int)ready.len, ready.buf);
         snprintf(g_feat_rows, sizeof(g_feat_rows), "%.*s", (int)rows.len, rows.buf);
     } else {
-        NP_WARN("features: descriptors are too large to render, ignoring them");
+        NP_WARN("plugins: too large to show, all ignored");
     }
 done:
     free(ready.buf);
     free(rows.buf);
 }
 
-// Lets a check supply both rather than read whatever an install happens to carry.
 void np_webpatch_set_features(const char *ready, const char *rows) {
     snprintf(g_feat_ready, sizeof(g_feat_ready), "%s", ready ? ready : "{}");
     snprintf(g_feat_rows, sizeof(g_feat_rows), "%s", rows ? rows : "[]");
     g_feat_ready_done = 1;
+    g_feat_pinned = 1;
 }
 
 static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
@@ -518,8 +546,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,s=L.s," \
     "MSCXReady=" NP_READY ",MSCXFeat=" NP_FEATS "," \
-    "on1=k=>{const p=MSCXFeat.find(x=>x.k===k);return!!p&&g(k)===p.on}," \
-    "T=(ks,l,on,off,d)=>{const rd=MSCXReady[ks[0]]!==0;" \
+    "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
+    "return!!p&&n<32&&MSCXReady[k]!==0&&g(k)===p.on&&(!p.dep||on1(p.dep,n+1))}," \
+    "T=(ks,l,on,off,d,r)=>{const rd=r!==0;" \
     "return(0," RT ".jsx)(" BARREL ".Yh," \
     "{className:\"MSCXRow\"+(d?\" MSCXRowDesc\":\"\")," \
     "label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
@@ -578,7 +607,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "]},\"ctl\")," \
     "(MSCXFeat.length?(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
     "children:MSCXFeat.filter(f=>!f.dep||on1(f.dep))" \
-    ".map(f=>T([f.k],f.l,f.on,f.off,f.d))},\"dev\"):null)" \
+    ".map(f=>T([f.k],f.l,f.on,f.off,f.d,MSCXReady[f.k]))},\"dev\"):null)" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \
@@ -882,6 +911,8 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
 
     if (out_shape)
         *out_shape = NULL;
+    if (!g_feat_pinned)
+        g_feat_ready_done = 0;
 
     const np_ui_shape_t *shape = NULL;
     for (size_t i = 0; i < NP_SHAPE_COUNT; i++) {

@@ -33,6 +33,11 @@ for (const form of Object.keys(FORMS)) {
         '允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）',
         'Lascia che i giochi leggano direttamente i controller (può interferire con Steam Input, sconsigliato)'));
       assert(nodes.some(n => n.props.label === t('Disable hidraw', '停用 hidraw', 'Disable hidraw')));
+      const feats = panel(emit, form, globals, {
+        ready: '{"NOTPROTON_X":0}', feats: '[{k:"NOTPROTON_X",l:"X",on:"1",off:"",dep:"",d:""}]' });
+      const fnodes = walk(feats.render({ details: details('') }));
+      assert(fnodes.some(n => n.props.label === t('Developer', '开发者', 'Developer')));
+      assert(fnodes.some(n => n.props.label === 'X' + t(' (not installed)', ' (未安装)', ' (not installed)')));
       raw.props.onChange(true);
       assert.equal(written.at(-1).opts, 'NOTPROTON_RAW_CONTROLLERS=1 CX_GRAPHICS_BACKEND=dxmt %command%');
       const hud = nodes.find(n => n.props.label === t('Metal HUD', 'Metal 性能监视器', 'Metal HUD'));
