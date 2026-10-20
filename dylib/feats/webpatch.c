@@ -356,7 +356,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "]},\"ctl\")," \
     "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \
-    "\"Reduced x87 precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")" \
+    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \

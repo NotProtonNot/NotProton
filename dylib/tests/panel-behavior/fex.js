@@ -7,7 +7,7 @@ const emit = process.argv[2];
 if (!emit) { console.error('usage: fex.js <emit>'); process.exit(2); }
 
 const AVX = 'Advertise AVX2 to Rosetta';
-const X87 = 'Reduced x87 precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)';
+const X87 = 'Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)';
 
 // The hook passes only FEX tools; notproton-rosetta stands for a Rosetta tool next to it.
 const FEX_TOOLS = ['notproton-fex'];
