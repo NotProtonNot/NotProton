@@ -6,7 +6,7 @@ This is done by forcibly enabling the Steam Play functionality in macOS Steam (w
 present and inert) as well as by porting some components of Valve's Proton to macOS.
 
 This tool is intended to be used with the stable Steam Client (version 1791918634) as well as the beta Steam Client (version 1792192922) paired with **CrossOver 26.3 or CrossOver [Preview](https://www.codeweavers.com/preview)
-20261006 / 20260821 / 20261015**, with more supported versions to come.
+20260821 / 20261006 / 20261015**, with more supported versions to come.
 
 **NTFS file systems/drivers are not currently supported.**
 
