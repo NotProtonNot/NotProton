@@ -32,7 +32,7 @@ for (const form of Object.keys(FORMS)) {
         'Let games read controllers directly (May break Steam Input. Not recommended)',
         '允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）',
         'Lascia che i giochi leggano direttamente i controller (può interferire con Steam Input, sconsigliato)'));
-      assert(nodes.some(n => n.props.label === t('Disable hidraw', '停用 hidraw', 'Disable hidraw')));
+      assert(nodes.some(n => n.props.label === t('Disable hidraw', '停用 hidraw', 'Disattiva hidraw')));
       raw.props.onChange(true);
       assert.equal(written.at(-1).opts, 'NOTPROTON_RAW_CONTROLLERS=1 CX_GRAPHICS_BACKEND=dxmt %command%');
       const hud = nodes.find(n => n.props.label === t('Metal HUD', 'Metal 性能监视器', 'Metal HUD'));
@@ -44,6 +44,11 @@ for (const form of Object.keys(FORMS)) {
           'Abilita CrossOver in Proprietà > Compatibilità per installare e avviare la versione Windows.'],
         ['image-files-label', 'Image Files (*.tga,*.png,*.exe)', '图像文件 (*.tga,*.png,*.exe)',
           'File immagine (*.tga,*.png,*.exe)'],
+        ['library-windows-hint', 'Show only games that run on Windows and do not have a macOS version',
+          'Show only games that run on Windows and do not have a macOS version',
+          'Mostra solo i giochi che funzionano su Windows e non hanno una versione macOS'],
+        ['library-windows-summary', 'Runs on Windows, no Mac OS version', 'Runs on Windows, no Mac OS version',
+          'Funziona su Windows, nessuna versione macOS'],
       ]) {
         const src = execFileSync(emit, [mode], { encoding: 'utf8' });
         assert.equal(new Function('globalThis', `return ${src}`)(globals), t(...labels));

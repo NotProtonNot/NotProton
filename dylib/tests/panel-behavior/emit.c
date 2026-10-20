@@ -42,7 +42,15 @@ int main(int argc, char **argv) {
         fputs(NP_IMAGE_FILES_LABEL, stdout);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "library-windows-hint") == 0) {
+        fputs(NP_LIBRARY_WINDOWS_HINT, stdout);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "library-windows-summary") == 0) {
+        fputs(NP_LIBRARY_WINDOWS_SUMMARY, stdout);
+        return 0;
+    }
     fputs("usage: emit component|statement [fallback [fex-tool...]]|migration|compat-hint|"
-          "image-files-label\n", stderr);
+          "image-files-label|library-windows-hint|library-windows-summary\n", stderr);
     return 2;
 }
