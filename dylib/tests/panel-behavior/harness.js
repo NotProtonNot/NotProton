@@ -15,7 +15,7 @@ const expand = (s, caps) => s.replace(/[\u0001-\u0008\u0013-\u0016]/g, c => {
 
 const mk = (type, props) => ({ type, props });
 const react = { jsx: mk, jsxs: mk, Fragment: 'Fragment' };
-const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle' };
+const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle', $n: 'Button' };
 
 // The two shapes take the payload in different forms and bind different names, which
 // is the whole of the difference between them.
@@ -32,14 +32,18 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
   const body = expand(raw, { [f.react]: names[0], [f.barrel]: names[1] });
   const src = form === 'component' ? 'var ' + body.replace(/,$/, '') : body.replace(/;$/, '');
   const written = [];
+  // Each file dialog records its request and answers with the next entry in `files`,
+  // straight away so a check can read what was written without awaiting.
+  const dialogs = [], files = [];
   const SteamClient = {
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
+    System: { OpenFileDialog: q => { dialogs.push(q); const p = files.shift(); return { then: f => f(p) }; } },
   };
   const build = new Function(names[0], names[1], 'SteamClient', 'globalThis',
     src + '\nreturn { MSCXOpts, MSCXPick: typeof MSCXPick === "function" ? MSCXPick : null,' +
     ' MSCXToolQuery: typeof MSCXToolQuery === "function" ? MSCXToolQuery : null };');
   const { MSCXOpts, MSCXPick, MSCXToolQuery } = build(react, barrel, SteamClient, globals);
-  return { render: MSCXOpts, pick: MSCXPick, toolQuery: MSCXToolQuery, written };
+  return { render: MSCXOpts, pick: MSCXPick, toolQuery: MSCXToolQuery, written, dialogs, files };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the
