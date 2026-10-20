@@ -291,10 +291,25 @@ prefix_machine() {
 
 tool_name() {
   case "$1" in
-    aa64) printf 'the FEX build of CrossOver' ;;
-    8664) printf 'the Rosetta build of CrossOver' ;;
-    *) printf 'an older 32-bit setup' ;;
+    aa64) printf 'FEX' ;;
+    8664) printf 'Rosetta' ;;
+    *) printf '32-bit' ;;
   esac
+}
+
+# CrossOver's previews are versioned by date, which reads as a release without the word.
+preview_name() {
+  case "$1" in
+    "CrossOver 20"[0-9][0-9]" "*) printf 'CrossOver Preview %s' "${1#CrossOver }" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# Tool names already end in the arch, which the sentence names on its own.
+running_name() {
+  run_name=$1
+  case "$run_name" in *" - Rosetta" | *" - FEX") run_name=${run_name% - *} ;; esac
+  printf '%s, running through %s' "$(preview_name "$run_name")" "$2"
 }
 
 # Steam passes "run" for helpers such as install scripts, which get no dialog.
@@ -312,40 +327,59 @@ alert_safe() {
   printf '%s' "$1" | tr -d '"\\'
 }
 
-rebuild_prefix() {
-  # Install-script helpers must never prompt or rebuild behind the player's back.
-  [ "$verb" != run ] || exit 1
-  [ "${np_rebuilt:-0}" != 1 ] || {
-    show_alert "Prefix rebuild failed" "The rebuilt prefix still does not match the selected compatibility tool. Check notproton-run.log."
-    exit 1
-  }
+# The log path reaches AppleScript as an argument, so a quote in it cannot end a string.
+show_rebuild_failure() {
+  [ "$verb" != run ] || return 0
   exec 8>&- 9>&-
-  choice=$(osascript - "$1" "$np_display" <<'APPLESCRIPT'
+  answer=$(osascript - "$log" <<'APPLESCRIPT'
 on run argv
-  set explanation to (item 1 of argv) & return & return & "Rebuild with " & (item 2 of argv) & "? Saved games will be preserved. A backup also keeps a copy of the original prefix."
-  set answer to display dialog explanation with title "This game needs its prefix rebuilt" buttons {"Cancel", "Rebuild Prefix", "Backup & Rebuild Prefix"} default button "Backup & Rebuild Prefix" cancel button "Cancel" with icon caution
+  set answer to display alert "Prefix rebuild failed!" message ("Check notproton-run.log at " & (item 1 of argv) & ".") as critical buttons {"Open Log", "OK"} default button "OK"
   return button returned of answer
 end run
 APPLESCRIPT
-  ) || exit 1
+  ) || answer=""
+  [ "$answer" != "Open Log" ] || open "$log" >/dev/null 2>&1 || true
+}
+
+# $1 is the title, $2 the message. With $3, that button skips the rebuild and the launch goes on.
+rebuild_prefix() {
+  # Install-script helpers must never prompt or rebuild behind the player's back.
+  [ "$verb" != run ] || { [ -n "$3" ] && return 0; exit 1; }
+  [ "${np_rebuilt:-0}" != 1 ] || {
+    show_rebuild_failure
+    exit 1
+  }
+  exec 8>&- 9>&-
+  choice=$(osascript - "$1" "$2" "${3:-Cancel}" <<'APPLESCRIPT'
+on run argv
+  set answer to display dialog (item 2 of argv) with title (item 1 of argv) buttons {item 3 of argv, "Rebuild Prefix", "Backup & Rebuild Prefix"} default button "Backup & Rebuild Prefix" cancel button (item 3 of argv) with icon caution
+  return button returned of answer
+end run
+APPLESCRIPT
+  ) || choice=""
   case "$choice" in
     'Backup & Rebuild Prefix') backup=keep-backup ;;
     'Rebuild Prefix') backup=discard-backup ;;
-    *) exit 1 ;;
+    *)
+      [ -n "$3" ] || exit 1
+      prepare_prefix_directory || exit 1
+      return 0
+      ;;
   esac
   executable=$(cat "$np_support/app-executable" 2>/dev/null) || executable=""
   if [ ! -x "$executable" ]; then
-    show_alert "NotProton app unavailable" "Open NotProton and install or repair it again, then relaunch the game."
+    show_alert "Couldn't find the NotProton app" "The prefix wasn't rebuilt and the game wasn't launched, because the NotProton app was moved or deleted since it was installed. Open NotProton and click Install again, then launch the game."
     exit 1
   fi
   if ! "$executable" --rebuild-prefix "$STEAM_COMPAT_DATA_PATH" "${np_tool_dir##*/}" \
     "$np_build" "$np_flavor" "$backup" >> "$log" 2>&1; then
-    show_alert "Prefix rebuild failed" "The game was not launched. Check notproton-run.log for details. Quit any running game or Wine tool before trying again."
+    show_rebuild_failure
     exit 1
   fi
+  rm -f "$STEAM_COMPAT_DATA_PATH/notproton-switch"
   # A competing launch or rebuild may have run while the dialog was open.
   # Retake the normal launch lock and check both mismatches before touching Wine.
-  prepare_prefix_directory
+  prepare_prefix_directory || exit 1
   np_rebuilt=1
   note_other_build
   refuse_foreign_prefix
@@ -359,7 +393,18 @@ refuse_foreign_prefix() {
   have=$(prefix_machine) || return 0
   [ "$have" = "$want" ] && return 0
   echo "=== prefix ntdll is $have and this compatibility tool wants $want, rebuild the prefix in NotProton ===" >> "$log" 2>&1 || true
-  rebuild_prefix "This game originally ran under $(tool_name "$have"), but the selected compatibility tool uses $(tool_name "$want")."
+  had_tool=$(tool_name "$have")
+  want_tool=$(tool_name "$want")
+  explanation="$had_tool prefixes cannot be used with versions of CrossOver that run through $want_tool unless they are rebuilt."
+  # note_other_build read the build that set up the prefix.
+  case "$have:$had_display" in
+    aa64:?* | 8664:?*)
+      explanation="This game's prefix was last used by $(running_name "$had_display" "$had_tool"). $explanation"
+      ;;
+  esac
+  rebuild_prefix "This game needs its prefix rebuilt" "$explanation
+
+Do you want to rebuild the prefix for $(running_name "$np_display" "$want_tool")? Your save games will be preserved and not lost."
 }
 
 last_wine_build() {
@@ -403,7 +448,76 @@ note_other_build() {
   fi
   if [ -n "$had_build" ] && [ "$had_build" != "$np_build" ]; then
     echo "=== prefix was last run by build $had_build (${had_display:-unknown}), Wine updates it for $np_build ===" >> "$log" 2>&1 || true
+    switch="$STEAM_COMPAT_DATA_PATH/notproton-switch"
+    rm -f "$switch"
+    # Only a build the game is known to have run on can be blamed for a crash after the switch.
+    if [ "$(head -1 "$STEAM_COMPAT_DATA_PATH/notproton-healthy" 2>/dev/null)" = "$had_build" ]; then
+      printf '%s\n%s\n0\n' "$had_build" "${had_display:-CrossOver build $had_build}" > "$switch" 2>/dev/null || true
+    fi
   fi
+}
+
+# Healthy is a session Steam did not cut short or that lasted, with no Wine crash. Failed is a
+# crash within the first minute. Anything else says nothing about the build.
+session_health() {
+  crashed=0
+  grep -q -E 'Unhandled (page fault|exception)|err:module:import_dll' "$1" 2>/dev/null && crashed=1
+  if [ "$crashed" = 1 ] && [ "$2" -lt 60 ] && [ "$3" != 1 ]; then
+    echo failed
+  elif [ "$crashed" = 0 ] && { [ "$3" != 1 ] || [ "$2" -ge 60 ]; }; then
+    echo healthy
+  else
+    echo unknown
+  fi
+}
+
+set_switch_state() {
+  if ! { sed -n 1,2p "$switch" && printf '%s\n' "$1"; } > "$switch.$$" \
+    || ! mv -f "$switch.$$" "$switch"; then
+    rm -f "$switch.$$"
+  fi
+}
+
+# The switch record is old build, its name, then the healthy sessions since or "failed".
+# Two healthy sessions clear it.
+record_session() {
+  switch="$STEAM_COMPAT_DATA_PATH/notproton-switch"
+  health=$(session_health "$1" "$2" "$3")
+  echo "=== session health: $health after $2s ===" >> "$log" 2>&1 || true
+  case "$health" in
+    healthy)
+      printf '%s\n' "$np_build" > "$STEAM_COMPAT_DATA_PATH/notproton-healthy" 2>/dev/null || true
+      [ -f "$switch" ] || return 0
+      count=$(sed -n 3p "$switch")
+      case "$count" in
+        0) set_switch_state 1 ;;
+        *) rm -f "$switch" ;;
+      esac
+      ;;
+    failed)
+      [ -f "$switch" ] || return 0
+      set_switch_state failed
+      ;;
+  esac
+}
+
+# Asked once per switch, at the next launch after the crash.
+offer_switch_rebuild() {
+  switch="$STEAM_COMPAT_DATA_PATH/notproton-switch"
+  [ "$(sed -n 3p "$switch" 2>/dev/null)" = failed ] || return 0
+  [ "$verb" != run ] || return 0
+  old_display=$(sed -n 2p "$switch")
+  case "${wine_unix##*/}" in
+    aarch64-unix) now_arch=aa64 ;;
+    *) now_arch=8664 ;;
+  esac
+  rm -f "$switch"
+  echo "=== last session crashed after switching from $old_display, offering a rebuild ===" >> "$log" 2>&1 || true
+  rebuild_prefix "This game may need its prefix rebuilt" \
+    "Something appears to have gone wrong the last time you ran this game! Rebuilding the prefix may fix it.
+
+Rebuild your prefix for $(running_name "$np_display" "$(tool_name "$now_arch")")? Your save games will be preserved and not lost." \
+    "Launch Without Rebuilding"
 }
 
 claim_prefix() {
@@ -1216,6 +1330,8 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   stage_step="prefix arch check"
   refuse_foreign_prefix
   claim_prefix
+  stage_step="prefix switch check"
+  offer_switch_rebuild
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
   if [ "${wine_unix##*/}" = aarch64-unix ]; then
     echo "fex: FEX_X87REDUCEDPRECISION=$FEX_X87REDUCEDPRECISION from $fex_from" >> "$log" 2>&1 || true
@@ -1642,6 +1758,7 @@ kill_wine_prefix() {
 # termination signal to this run script, this handles it
 # shellcheck disable=SC2329 # the trap below invokes this
 terminate() {
+  np_terminated=1
   echo "=== termination signal received, killing wine prefix ===" >> "$log" 2>&1 || true
   kill_wine_prefix
   [ -n "$open_pid" ] && kill "$open_pid" 2>/dev/null || true
@@ -1679,6 +1796,8 @@ set -- \
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
 [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+np_started=$(date +%s)
+np_terminated=0
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
 open_pid=$!
 /usr/bin/caffeinate -d -i -w "$open_pid" >> "$log" 2>&1 &
@@ -1686,5 +1805,7 @@ status=0
 wait "$open_pid" || status=$?
 echo "=== game exited status=$status, killing wine prefix ===" >> "$log" 2>&1 || true
 kill_wine_prefix
+[ -z "$STEAM_COMPAT_DATA_PATH" ] \
+  || record_session "$loader_root/notproton-wine.log" "$(($(date +%s) - np_started))" "$np_terminated"
 echo "=== wine prefix killed, session ending ===" >> "$log" 2>&1 || true
 exit $status

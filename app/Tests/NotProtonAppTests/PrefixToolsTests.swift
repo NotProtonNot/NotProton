@@ -353,10 +353,10 @@ struct PrefixToolsTests {
 
         #expect(helper.upperBound == gate.lowerBound)
         #expect(gate.upperBound < alert.lowerBound)
-        #expect(source.ranges(of: "osascript").count == 2)
+        #expect(source.ranges(of: "osascript").count == 3)
         let rebuild = try #require(source.range(of: "rebuild_prefix() {"))
         let prompt = try #require(source.range(of: "choice=$(osascript"))
-        #expect(source[rebuild.upperBound..<prompt.lowerBound].contains(#"[ "$verb" != run ] || exit 1"#))
+        #expect(source[rebuild.upperBound..<prompt.lowerBound].contains(#"[ "$verb" != run ] || { [ -n "$3" ] && return 0; exit 1; }"#))
 
         let calls = source.ranges(of: "  show_alert \"")
         #expect(!calls.isEmpty)
