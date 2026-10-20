@@ -98,7 +98,8 @@ enum PrefixTools {
            arch == nil || named.tool.prefixArch == arch {
             return named
         }
-        return byArch(served)
+        // Any build of the prefix's arch can run it, see note_other_build in compat_run.sh.
+        return byArch(served) ?? byArch(tools)
     }
 
     static func resolvedTool(

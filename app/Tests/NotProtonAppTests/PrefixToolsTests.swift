@@ -1559,17 +1559,21 @@ struct PrefixLastBuildTests {
         #expect(PrefixTools.tool(for: prefix, among: both, runners: runners)?.name == "notproton-fex-rosetta")
     }
 
-    @Test("A prefix another CrossOver updated gets no tool, so nothing runs over it")
-    func noToolForAnotherWine() throws {
+    @Test("A prefix another CrossOver updated runs on an installed tool of its arch")
+    func anotherWineFallsBackToItsArch() throws {
         let (dir, runners, prefix) = try makeWorld()
         defer { try? FileManager.default.removeItem(at: dir) }
         let release = try #require(SupportedRunners.all.first { $0.id == Self.release })
         let tools = SupportedRunners.tools(for: [release])
 
         try updated(prefix, "1787334674\n")
-        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners) == nil)
+        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners)?.build == Self.release)
 
         try updated(prefix, "1784112240\n")
+        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners)?.build == Self.release)
+
+        try "\(Self.preview)\nCrossOver Preview (Rosetta)\n".write(
+            to: prefix.root.appending(path: PrefixTools.buildRecordName), atomically: true, encoding: .utf8)
         #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners)?.build == Self.release)
     }
 }
