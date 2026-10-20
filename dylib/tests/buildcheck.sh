@@ -118,6 +118,8 @@ is "an open alert does not keep the prefix locked" "free" "$(cat "$data/during-a
 
 echo "== rebuild choices =="
 arch_functions="$(extract prefix_machine)
+$(extract preview_name)
+$(extract running_name)
 $(extract tool_name)
 $(extract refuse_foreign_prefix)"
 arch_data="$work/arch/pfx/drive_c/windows/system32"
@@ -127,14 +129,22 @@ dd if=/dev/zero bs=1 count=60 of="$arch_data/ntdll.dll" 2>/dev/null
 printf '\100\000\000\000PE\000\000\144\206' >> "$arch_data/ntdll.dll"
 arch_case() {
 	(
-		WINEPREFIX="$work/arch/pfx" wine_unix="$1" log=/dev/null
+		WINEPREFIX="$work/arch/pfx" wine_unix="$1" log=/dev/null np_display="CrossOver 2026 10 15-ARM64 - FEX" had_display="${2:-}"
 		# shellcheck disable=SC2329
-		rebuild_prefix() { printf 'rebuild: %s\n' "$1"; }
+		rebuild_prefix() { printf 'rebuild: %s: %s\n' "$1" "$2"; }
 		eval "$arch_functions"
 		refuse_foreign_prefix
 	)
 }
-is "an architecture mismatch offers rebuilding" 'rebuild: This game originally ran under the Rosetta build of CrossOver, but the selected compatibility tool uses the FEX build of CrossOver.' "$(arch_case aarch64-unix)"
+is "an architecture mismatch offers rebuilding" 'rebuild: This game needs its prefix rebuilt: Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
+
+Do you want to rebuild the prefix for CrossOver Preview 2026 10 15-ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix)"
+is "the build that set up the prefix is named" 'rebuild: This game needs its prefix rebuilt: This game'"'"'s prefix was last used by CrossOver 26.3, running through Rosetta. Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
+
+Do you want to rebuild the prefix for CrossOver Preview 2026 10 15-ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix 'CrossOver 26.3')"
+is "a tool name's own arch suffix is not repeated" 'rebuild: This game needs its prefix rebuilt: This game'"'"'s prefix was last used by CrossOver Preview 2026 10 15-ARM64, running through Rosetta. Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
+
+Do you want to rebuild the prefix for CrossOver Preview 2026 10 15-ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix 'CrossOver 2026 10 15-ARM64 - Rosetta')"
 is "a matching architecture needs no rebuild" "" "$(arch_case x86_64-unix)"
 rebuild=$(extract rebuild_prefix)
 mkdir -p "$work/app with spaces"
@@ -148,7 +158,7 @@ chmod +x "$work/app with spaces/NotProtonApp"
 printf '%s' "$work/app with spaces/NotProtonApp" > "$np_support/app-executable"
 
 rebuild_case() {
-	choice=$1 command_status=$2 launch_verb=$3
+	choice=$1 command_status=$2 launch_verb=$3 skip=${4:-}
 	data=$(mktemp -d "$work/compat data.XXXXXX")
 	(
 		export TEST_DATA="$data" TEST_STATUS="$command_status"
@@ -157,9 +167,11 @@ rebuild_case() {
 in its name'
 		verb=$launch_verb log="$data/log"
 		# shellcheck disable=SC2329
-		osascript() { cat > "$data/prompt"; [ "$choice" != cancel ] || return 1; printf '%s\n' "$choice"; }
+		osascript() { cat > "$data/prompt"; shift; printf '%s\n' "$@" > "$data/prompt-args"; [ "$choice" != cancel ] || return 1; printf '%s\n' "$choice"; }
 		# shellcheck disable=SC2329
 		show_alert() { echo "$1" >> "$data/alerts"; }
+		# shellcheck disable=SC2329
+		show_rebuild_failure() { echo "rebuild failed" >> "$data/alerts"; }
 		# shellcheck disable=SC2329
 		prepare_prefix_directory() { exec 8>> "$data/.notproton-prefix.lock"; /usr/bin/lockf -s -t 0 8; echo locked >> "$data/checks"; }
 		# shellcheck disable=SC2329
@@ -169,8 +181,9 @@ in its name'
 		eval "$rebuild"
 		prepare_prefix_directory
 		: > "$data/checks"
-		rebuild_prefix 'Previous "tool" with \ and a newline
-in its name'
+		echo stale > "$data/notproton-switch"
+		rebuild_prefix 'A title' 'Previous "tool" with \ and a newline
+in its name' ${skip:+"$skip"}
 		echo launched >> "$data/checks"
 	) && status=0 || status=$?
 }
@@ -195,13 +208,100 @@ is "cancel never calls the app" no "$([ -f "$data/arguments" ] && echo yes || ec
 rebuild_case 'Rebuild Prefix' 7 waitforexitandrun
 is "a failed rebuild stops the launch" 1 "$status"
 is "a failed rebuild never continues launch preparation" "" "$(cat "$data/checks")"
+is "a failed rebuild says so" "rebuild failed" "$(cat "$data/alerts")"
 rebuild_case 'Rebuild Prefix' 0 run
 is "install helpers refuse silently" 1 "$status"
 is "install helpers never prompt" no "$([ -f "$data/prompt" ] && echo yes || echo no)"
+rebuild_case cancel 0 waitforexitandrun 'Launch Without Rebuilding'
+is "skipping an offered rebuild goes on with the launch" 0 "$status"
+is "a skipped rebuild retakes the lock and launches" "locked
+launched" "$(cat "$data/checks")"
+is "a skipped rebuild never calls the app" no "$([ -f "$data/arguments" ] && echo yes || echo no)"
+is "the skip button is labelled as asked" "Launch Without Rebuilding" "$(tail -1 "$data/prompt-args")"
+rebuild_case 'Rebuild Prefix' 0 run 'Launch Without Rebuilding'
+is "install helpers skip an offered rebuild silently" 0 "$status"
+rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
+is "a finished rebuild clears the switch record" no "$([ -f "$data/notproton-switch" ] && echo yes || echo no)"
 printf '%s' "$work/missing" > "$np_support/app-executable"
 rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
 is "a moved or missing app stops the launch" 1 "$status"
-is "a missing app explains how to repair" 'NotProton app unavailable' "$(cat "$data/alerts")"
+is "a missing app explains how to repair" "Couldn't find the NotProton app" "$(cat "$data/alerts")"
+
+
+echo "== crashes after a switch =="
+health_functions="$(extract note_other_build)
+$(extract preview_name)
+$(extract running_name)
+$(extract tool_name)
+$(extract last_wine_build)
+$(extract session_health)
+$(extract set_switch_state)
+$(extract record_session)
+$(extract offer_switch_rebuild)"
+crash_log="$work/crash.log"
+printf 'wine: Unhandled page fault on execute access to 0000000001A23DA0\n' > "$crash_log"
+clean_log="$work/clean.log"
+printf 'fixme:ntdll:stub\n' > "$clean_log"
+health() {
+	(
+		log=/dev/null
+		eval "$health_functions"
+		session_health "$@"
+	)
+}
+is "a crash in the first minute is a failure" failed "$(health "$crash_log" 5 0)"
+is "a crash after a minute says nothing" unknown "$(health "$crash_log" 300 0)"
+is "a crash Steam stopped says nothing" unknown "$(health "$crash_log" 5 1)"
+is "a session without a crash is healthy" healthy "$(health "$clean_log" 3 0)"
+is "a long session Steam stopped is healthy" healthy "$(health "$clean_log" 600 1)"
+is "a short session Steam stopped says nothing" unknown "$(health "$clean_log" 5 1)"
+is "a missing log is healthy" healthy "$(health "$work/none.log" 5 0)"
+
+# Each step is one launch: switch to a build, then a session that ends healthy or failed.
+switch_world() {
+	data=$(mktemp -d "$work/switch.XXXXXX")
+	[ -z "$1" ] || printf '%s\n' "$1" > "$data/notproton-healthy"
+	printf 'old-build\nOld Tool\n' > "$data/notproton-build"
+}
+session() {
+	(
+		STEAM_COMPAT_DATA_PATH=$data np_build=$1 np_display="New Tool" log=/dev/null verb=waitforexitandrun
+		# shellcheck disable=SC2329
+		rebuild_prefix() { printf '%s|%s|%s\n' "$1" "$2" "$3" >> "$data/offers"; }
+		eval "$health_functions"
+		note_other_build
+		printf '%s\nNew Tool\n' "$1" > "$data/notproton-build"
+		offer_switch_rebuild
+		record_session "$2" "$3" 0
+	)
+}
+state() { sed -n 3p "$data/notproton-switch" 2>/dev/null || echo none; }
+
+switch_world old-build
+session new-build "$clean_log" 5
+is "a switch from a build that worked is tracked" 1 "$(state)"
+session new-build "$clean_log" 5
+is "two healthy sessions clear the record" none "$([ -f "$data/notproton-switch" ] && state || echo none)"
+is "the healthy build is remembered" new-build "$(cat "$data/notproton-healthy")"
+
+switch_world old-build
+session new-build "$crash_log" 5
+is "a crash after the switch is recorded" failed "$(state)"
+is "nothing is offered in the session that crashed" no "$([ -f "$data/offers" ] && echo yes || echo no)"
+session new-build "$crash_log" 5
+is "the next launch offers a rebuild for the selected tool" "This game may need its prefix rebuilt|Something appears to have gone wrong the last time you ran this game! Rebuilding the prefix may fix it.
+
+Rebuild your prefix for New Tool, running through Rosetta? Your save games will be preserved and not lost.|Launch Without Rebuilding" "$(cat "$data/offers")"
+is "the offer is made once per switch" none "$([ -f "$data/notproton-switch" ] && state || echo none)"
+session new-build "$crash_log" 5
+is "a crash after the offer is not offered again" 1 "$(grep -c "^This game may need" "$data/offers")"
+
+switch_world ""
+session new-build "$crash_log" 5
+is "a game never seen working is not blamed on the switch" none "$([ -f "$data/notproton-switch" ] && state || echo none)"
+switch_world other-build
+session new-build "$crash_log" 5
+is "a game seen working on another build is not blamed on this switch" none "$([ -f "$data/notproton-switch" ] && state || echo none)"
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> buildcheck: all assertions hold"
