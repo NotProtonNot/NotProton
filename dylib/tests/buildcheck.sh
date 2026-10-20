@@ -6,7 +6,7 @@ SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 
 extract() { sed -n "/^$1() {\$/,/^}\$/p" "$SRC"; }
 functions=""
-for name in alert_safe last_wine_build refuse_other_build claim_prefix; do
+for name in last_wine_build note_other_build claim_prefix; do
 	body=$(extract "$name")
 	[ -n "$body" ] || { echo "FAIL: $name not found in $SRC"; exit 1; }
 	functions="$functions
@@ -45,15 +45,16 @@ launch() {
 		np_build=$build
 		np_display="display of $build"
 		CX_ROOT="$np_support/runners/crossover-$build/CrossOver"
-		log=/dev/null
-		# shellcheck disable=SC2329 # called by the extracted refusal
+		log="$data/log"
+		# shellcheck disable=SC2329 # a switch must not raise a dialog
 		show_alert() { printf 'alert: %s\n' "$2"; }
 		eval "$functions"
-		refuse_other_build
+		note_other_build
 		claim_prefix
 	) > "$data/out" 2>&1 && status=0 || status=$?
 	echo "status=$status"
-	grep -o 'last run by [^,]*' "$data/out" || true
+	cat "$data/out"
+	grep -o 'last run by build [^=]*,' "$data/log" 2>/dev/null || true
 	[ ! -f "$data/notproton-build" ] || head -1 "$data/notproton-build"
 }
 
@@ -62,26 +63,34 @@ is "a fresh prefix is claimed" "status=0
 26.3.0.39832" "$(launch 26.3.0.39832 "" "")"
 is "a prefix this build last updated is claimed" "status=0
 26.3.0.39832" "$(launch 26.3.0.39832 "$(mtime 26.3.0.39832)" "")"
-is "a prefix another clone updated is refused and named" "status=1
-last run by CrossOver Preview (FEX)" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921-fex)" "")"
-is "a prefix no clone updated is refused" "status=1
-last run by another version of CrossOver" "$(launch 26.3.0.39832 1 "")"
+is "a prefix another clone updated runs and is claimed" "status=0
+last run by build 27.0.0.40921-fex (CrossOver Preview (FEX)),
+26.3.0.39832" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921-fex)" "")"
+is "a prefix no clone updated runs and is claimed" "status=0
+last run by build other (another version of CrossOver),
+26.3.0.39832" "$(launch 26.3.0.39832 1 "")"
 is "updates the user disabled say nothing, so the prefix is claimed" "status=0
 26.3.0.39832" "$(launch 26.3.0.39832 disable "")"
 
 clone 27.0.0.40921 202608211200
-is "a prefix either of two clones updated names neither" "status=1
-last run by another version of CrossOver" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921)" "")"
+is "a prefix either of two clones updated names neither" "status=0
+last run by build other (another version of CrossOver),
+26.3.0.39832" "$(launch 26.3.0.39832 "$(mtime 27.0.0.40921)" "")"
 
 echo "== prefixes with a record =="
 is "the record wins over the Wine that updated the prefix" "status=0
 27.0.0.40921-fex" "$(launch 27.0.0.40921-fex "$(mtime 26.3.0.39832)" "27.0.0.40921-fex
 CrossOver Preview (FEX)
 ")"
-is "a record for another build is refused" "status=1
-last run by CrossOver Preview (FEX)
-27.0.0.40921-fex" "$(launch 26.3.0.39832 "" "27.0.0.40921-fex
+is "an older build takes over a newer build's prefix" "status=0
+last run by build 27.0.0.40921-fex (CrossOver Preview (FEX)),
+26.3.0.39832" "$(launch 26.3.0.39832 "" "27.0.0.40921-fex
 CrossOver Preview (FEX)
+")"
+is "a newer build takes over an older build's prefix" "status=0
+last run by build 26.3.0.39832 (CrossOver 26.3),
+27.0.0.40921-fex" "$(launch 27.0.0.40921-fex "" "26.3.0.39832
+CrossOver 26.3
 ")"
 
 echo "== alerts =="

@@ -125,18 +125,25 @@ struct PrefixesModelTests {
         try Data(text.utf8).write(to: url)
     }
 
-    @Test("Only a prefix recorded for a build that is no longer set up is stale")
+    @Test("Only a prefix whose arch no installed tool runs is stale")
     func flagsStalePrefixes() async throws {
-        let (dir, library) = try makeLibrary(appIDs: ["1574480", "253750", "447700"])
+        let (dir, library) = try makeLibrary(appIDs: ["1574480", "253750", "447700", "71230"])
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let compatdata = library.compatdata
         try "\(Self.tool.build)\n\(Self.tool.display)\n".write(
             to: compatdata.appending(path: "1574480/\(PrefixTools.buildRecordName)"),
             atomically: true, encoding: .utf8)
-        try "1.0.0.1\n".write(
-            to: compatdata.appending(path: "253750/\(PrefixTools.buildRecordName)"),
-            atomically: true, encoding: .utf8)
+        for (appID, machine) in [("253750", UInt16(0x8664)), ("71230", UInt16(0xAA64))] {
+            let root = compatdata.appending(path: appID)
+            try write("1.0.0.1\n", to: root.appending(path: PrefixTools.buildRecordName))
+            var bytes = [UInt8](repeating: 0, count: 0x40)
+            bytes[0x3c] = 0x40
+            bytes += [0x50, 0x45, 0x00, 0x00, UInt8(machine & 0xff), UInt8(machine >> 8)]
+            try FileManager.default.createDirectory(
+                at: root.appending(path: "pfx/drive_c/windows/system32"), withIntermediateDirectories: true)
+            try Data(bytes).write(to: root.appending(path: "pfx/drive_c/windows/system32/ntdll.dll"))
+        }
 
         let model = PrefixesModel(libraries: { [library] }, installedTools: { [Self.tool] })
         await model.load()
@@ -146,7 +153,10 @@ struct PrefixesModelTests {
         }
         #expect(model.isStale(try prefix("1574480")) == false)
         #expect(model.lastTool(try prefix("1574480")) == Self.tool.display)
-        #expect(model.isStale(try prefix("253750")) == true)
+        // Another build of the same arch updates the prefix in place.
+        #expect(model.isStale(try prefix("253750")) == false)
+        #expect(model.lastTool(try prefix("253750")) == Self.tool.display)
+        #expect(model.isStale(try prefix("71230")) == true)
         #expect(model.isStale(try prefix("447700")) == false)
         #expect(model.lastTool(try prefix("447700")) == nil)
     }

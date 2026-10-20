@@ -348,7 +348,10 @@ last_wine_build() {
   done
 }
 
-refuse_other_build() {
+# A prefix from another build of the same arch runs as is, in either direction. Its
+# .update-timestamp no longer matches wine.inf, and Wine reruns wine.inf on first start,
+# which replaces builtin DLLs and keeps native ones.
+note_other_build() {
   record="$STEAM_COMPAT_DATA_PATH/notproton-build"
   had_build=""
   had_display=""
@@ -361,10 +364,7 @@ refuse_other_build() {
     last_wine_build
   fi
   if [ -n "$had_build" ] && [ "$had_build" != "$np_build" ]; then
-    echo "=== prefix was last run by build $had_build and this compatibility tool runs $np_build, rebuild the prefix in NotProton ===" >> "$log" 2>&1 || true
-    had_display=$(alert_safe "${had_display:-CrossOver build $had_build}")
-    show_alert "This game needs its prefix rebuilt" "This game's prefix was last run by $had_display, and this compatibility tool runs $(alert_safe "$np_display"). Rebuild the prefix in NotProton to run it here, or pick $had_display again in the game's Compatibility settings. You will not lose game saves by rebuilding the prefix."
-    exit 1
+    echo "=== prefix was last run by build $had_build (${had_display:-unknown}), Wine updates it for $np_build ===" >> "$log" 2>&1 || true
   fi
 }
 
@@ -1174,7 +1174,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   printf '%s' "$WINEMSYNC" \
     > "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true
   stage_step="prefix build check"
-  refuse_other_build
+  note_other_build
   stage_step="prefix arch check"
   refuse_foreign_prefix
   claim_prefix
