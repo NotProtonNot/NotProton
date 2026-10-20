@@ -11,12 +11,10 @@ extension PrefixTools {
         now: Date = .now,
         keepBackup: Bool = true
     ) throws -> URL? {
-        let kept = try recreate(
+        try rebuild(
             prefix, runner: SupportPaths.clonedRoot(forBuild: tool.build, runners: runners),
-            flavor: tool.tool.flavor, now: now, keepBackup: keepBackup
+            flavor: tool.tool.flavor, now: now, keepBackup: keepBackup, record: tool
         )
-        try writeBuildRecord(tool, for: prefix)
-        return kept
     }
 
     @discardableResult
@@ -26,6 +24,13 @@ extension PrefixTools {
         flavor: CompatTool.Flavor = .fex,
         now: Date = .now,
         keepBackup: Bool = true
+    ) throws -> URL? {
+        try rebuild(prefix, runner: runner, flavor: flavor, now: now, keepBackup: keepBackup)
+    }
+
+    private static func rebuild(
+        _ prefix: WinePrefix, runner: URL, flavor: CompatTool.Flavor,
+        now: Date, keepBackup: Bool, record: InstalledTool? = nil
     ) throws -> URL? {
         guard let claim = PrefixStore.claim(prefix) else {
             throw StepFailure(
@@ -89,6 +94,7 @@ extension PrefixTools {
             if parked { try? fm.moveItem(at: previous, to: prefix.pfx) }
             throw error
         }
+        if let record { try writeBuildRecord(record, for: prefix) }
         guard parked else { return nil }
         guard keepBackup else {
             try? fm.removeItem(at: previous)

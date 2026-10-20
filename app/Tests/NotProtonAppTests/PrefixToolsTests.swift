@@ -353,7 +353,10 @@ struct PrefixToolsTests {
 
         #expect(helper.upperBound == gate.lowerBound)
         #expect(gate.upperBound < alert.lowerBound)
-        #expect(source.ranges(of: "osascript").count == 1, "an alert bypasses show_alert")
+        #expect(source.ranges(of: "osascript").count == 2)
+        let rebuild = try #require(source.range(of: "rebuild_prefix() {"))
+        let prompt = try #require(source.range(of: "choice=$(osascript"))
+        #expect(source[rebuild.upperBound..<prompt.lowerBound].contains(#"[ "$verb" != run ] || exit 1"#))
 
         let calls = source.ranges(of: "  show_alert \"")
         #expect(!calls.isEmpty)
@@ -363,6 +366,52 @@ struct PrefixToolsTests {
             let next = rest[rest.index(after: line)...].prefix { $0 != "\n" }
             #expect(next.trimmingCharacters(in: .whitespaces) == "exit 1")
         }
+    }
+
+    @Test("Steam rebuild requests use the exact selected tool and library", arguments: [true, false])
+    func steamRebuildRequest(keepBackup: Bool) throws {
+        let (dir, _, prefix) = try usedPrefixAndRunner()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let selected = InstalledTool(tool: CompatTool(name: "chosen", flavor: .rosetta, display: "Chosen"), build: "chosen-build")
+        let other = InstalledTool(tool: CompatTool(name: "old", flavor: .fex, display: "Old"), build: "old-build")
+        let args = [prefix.root.path(percentEncoded: false), selected.name, selected.build,
+                    selected.tool.flavor.rawValue, keepBackup ? "keep-backup" : "discard-backup"]
+        let request = try RebuildPrefixCommand.request(args, tools: [other, selected])
+        #expect(request.prefix.root == prefix.root)
+        #expect(request.tool == selected)
+        #expect(request.keepBackup == keepBackup)
+        for index in 0..<args.count {
+            var invalid = args
+            invalid[index] = "invalid"
+            #expect(throws: StepFailure.self) { try RebuildPrefixCommand.request(invalid, tools: [selected]) }
+        }
+        #expect(throws: StepFailure.self) { try RebuildPrefixCommand.request([], tools: [selected]) }
+        #expect(throws: StepFailure.self) { try RebuildPrefixCommand.request(args + ["extra"], tools: [selected]) }
+        #expect(throws: StepFailure.self) { try RebuildPrefixCommand.request(args, tools: []) }
+    }
+
+    @Test("A selected-tool rebuild preserves saves and records the selected build", arguments: [true, false])
+    func steamRebuildSelectedTool(keepBackup: Bool) throws {
+        let (dir, runner, prefix) = try usedPrefixAndRunner()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tool = InstalledTool(tool: CompatTool(name: "chosen", flavor: .rosetta, display: "Chosen"), build: "chosen-build")
+        let runners = dir.appending(path: "runners")
+        let target = SupportPaths.clonedRoot(forBuild: tool.build, runners: runners)
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: runner, to: target)
+        let claim = try #require(PrefixStore.claim(prefix))
+        #expect(throws: StepFailure.self) {
+            try PrefixTools.recreate(prefix, as: tool, runners: runners, keepBackup: keepBackup)
+        }
+        #expect(PrefixTools.buildRecord(of: prefix) == nil)
+        #expect(PrefixStore.backups(of: prefix).isEmpty)
+        claim.release()
+        let backup = try PrefixTools.recreate(prefix, as: tool, runners: runners, keepBackup: keepBackup)
+        #expect((backup != nil) == keepBackup)
+        #expect(PrefixStore.backups(of: prefix).count == (keepBackup ? 1 : 0))
+        #expect(PrefixTools.buildRecord(of: prefix)?.build == tool.build)
+        let save = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/Roaming/game/save.dat")
+        #expect(try String(contentsOf: save, encoding: .utf8) == "save")
     }
 
     @Test("The Rosetta flavor takes the x86_64 tree on a runner that has both")
