@@ -485,8 +485,21 @@ enum PrefixStore {
     }
 
     static func transfer(_ games: [BottleGame], into destSteamapps: URL) throws {
-        let fm = FileManager.default
         let destCommon = destSteamapps.appending(path: "common")
+        for game in games {
+            let destGame = destCommon.appending(path: game.installdir)
+            let destManifest = destSteamapps.appending(path: "appmanifest_\(game.appID).acf")
+            if sameResolvedPath(game.commonURL, destGame)
+                || sameResolvedPath(game.manifestURL, destManifest)
+            {
+                throw StepFailure(
+                    step: String(localized: "Move library games"),
+                    detail: String(localized: "\(game.title) is already in that library.")
+                )
+            }
+        }
+
+        let fm = FileManager.default
         try fm.createDirectory(at: destCommon, withIntermediateDirectories: true)
         for game in games {
             let destGame = destCommon.appending(path: game.installdir)
@@ -501,8 +514,19 @@ enum PrefixStore {
         }
     }
 
+    private static func sameResolvedPath(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+            == b.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+    }
+
     private static func mergeMove(from source: URL, to dest: URL) throws {
         let fm = FileManager.default
+        if sameResolvedPath(source, dest) {
+            throw StepFailure(
+                step: String(localized: "Move library games"),
+                detail: String(localized: "Source and destination are the same folder.")
+            )
+        }
         if !fm.fileExists(atPath: dest.path(percentEncoded: false)) {
             try fm.moveItem(at: source, to: dest)
             return

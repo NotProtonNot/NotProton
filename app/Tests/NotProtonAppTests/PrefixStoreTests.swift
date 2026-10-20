@@ -831,6 +831,23 @@ struct PrefixStoreTests {
         #expect(games.first?.sourceLabel == library.lastPathComponent)
     }
 
+    @Test("Transfer refuses when source and destination resolve to the same path")
+    func refusesTransferOntoSelf() throws {
+        let dir = try scratchDirectory("pfx-self-transfer")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = dir.appending(path: "Native")
+        try plantNativeGame(library: library, appID: "70", installdir: "Stay", name: "Stay Put")
+        let steamapps = library.appending(path: "steamapps")
+        let listed = PrefixStore.games(inSteamapps: steamapps, sourceLabel: "Native")
+        let marker = steamapps.appending(path: "common/Stay/game.bin")
+
+        #expect(throws: StepFailure.self) {
+            try PrefixStore.transfer(listed, into: steamapps)
+        }
+        #expect(FileManager.default.fileExists(atPath: marker.path(percentEncoded: false)))
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "native")
+    }
+
     @Test("Move puts a native game into an existing bottle steamapps")
     func transfersIntoBottle() throws {
         let dir = try scratchDirectory("pfx-into-bottle")
