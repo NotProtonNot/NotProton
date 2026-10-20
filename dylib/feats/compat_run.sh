@@ -312,6 +312,45 @@ alert_safe() {
   printf '%s' "$1" | tr -d '"\\'
 }
 
+rebuild_prefix() {
+  # Install-script helpers must never prompt or rebuild behind the player's back.
+  [ "$verb" != run ] || exit 1
+  [ "${np_rebuilt:-0}" != 1 ] || {
+    show_alert "Prefix rebuild failed" "The rebuilt prefix still does not match the selected compatibility tool. Check notproton-run.log."
+    exit 1
+  }
+  exec 8>&- 9>&-
+  choice=$(osascript - "$1" "$np_display" <<'APPLESCRIPT'
+on run argv
+  set explanation to (item 1 of argv) & return & return & "Rebuild with " & (item 2 of argv) & "? Saved games will be preserved. A backup also keeps a copy of the original prefix."
+  set answer to display dialog explanation with title "This game needs its prefix rebuilt" buttons {"Cancel", "Rebuild Prefix", "Backup & Rebuild Prefix"} default button "Backup & Rebuild Prefix" cancel button "Cancel" with icon caution
+  return button returned of answer
+end run
+APPLESCRIPT
+  ) || exit 1
+  case "$choice" in
+    'Backup & Rebuild Prefix') backup=keep-backup ;;
+    'Rebuild Prefix') backup=discard-backup ;;
+    *) exit 1 ;;
+  esac
+  executable=$(cat "$np_support/app-executable" 2>/dev/null) || executable=""
+  if [ ! -x "$executable" ]; then
+    show_alert "NotProton app unavailable" "Open NotProton and install or repair it again, then relaunch the game."
+    exit 1
+  fi
+  if ! "$executable" --rebuild-prefix "$STEAM_COMPAT_DATA_PATH" "${np_tool_dir##*/}" \
+    "$np_build" "$np_flavor" "$backup" >> "$log" 2>&1; then
+    show_alert "Prefix rebuild failed" "The game was not launched. Check notproton-run.log for details. Quit any running game or Wine tool before trying again."
+    exit 1
+  fi
+  # A competing launch or rebuild may have run while the dialog was open.
+  # Retake the normal launch lock and check both mismatches before touching Wine.
+  prepare_prefix_directory
+  np_rebuilt=1
+  note_other_build
+  refuse_foreign_prefix
+}
+
 refuse_foreign_prefix() {
   case "${wine_unix##*/}" in
     aarch64-unix) want=aa64 ;;
@@ -320,8 +359,7 @@ refuse_foreign_prefix() {
   have=$(prefix_machine) || return 0
   [ "$have" = "$want" ] && return 0
   echo "=== prefix ntdll is $have and this compatibility tool wants $want, rebuild the prefix in NotProton ===" >> "$log" 2>&1 || true
-  show_alert "This game needs its prefix rebuilt" "This game originally ran under $(tool_name "$have"), but $(tool_name "$want") is present now. The prefix needs to be rebuilt in NotProton in order to run the game. You will not lose game saves by rebuilding the prefix."
-  exit 1
+  rebuild_prefix "This game originally ran under $(tool_name "$have"), but the selected compatibility tool uses $(tool_name "$want")."
 }
 
 last_wine_build() {

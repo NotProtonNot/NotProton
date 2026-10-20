@@ -48,6 +48,8 @@ launch() {
 		log="$data/log"
 		# shellcheck disable=SC2329 # a switch must not raise a dialog
 		show_alert() { printf 'alert: %s\n' "$2"; }
+		# shellcheck disable=SC2329
+		rebuild_prefix() { show_alert "rebuild" "$1"; exit 1; }
 		eval "$functions"
 		note_other_build
 		claim_prefix
@@ -113,6 +115,93 @@ data=$(mktemp -d "$work/compatdata.XXXXXX")
 	show_alert "title" "message"
 )
 is "an open alert does not keep the prefix locked" "free" "$(cat "$data/during-alert" 2>/dev/null)"
+
+echo "== rebuild choices =="
+arch_functions="$(extract prefix_machine)
+$(extract tool_name)
+$(extract refuse_foreign_prefix)"
+arch_data="$work/arch/pfx/drive_c/windows/system32"
+mkdir -p "$arch_data"
+dd if=/dev/zero bs=1 count=60 of="$arch_data/ntdll.dll" 2>/dev/null
+# DOS header points at a PE header with the x86_64 machine word.
+printf '\100\000\000\000PE\000\000\144\206' >> "$arch_data/ntdll.dll"
+arch_case() {
+	(
+		WINEPREFIX="$work/arch/pfx" wine_unix="$1" log=/dev/null
+		# shellcheck disable=SC2329
+		rebuild_prefix() { printf 'rebuild: %s\n' "$1"; }
+		eval "$arch_functions"
+		refuse_foreign_prefix
+	)
+}
+is "an architecture mismatch offers rebuilding" 'rebuild: This game originally ran under the Rosetta build of CrossOver, but the selected compatibility tool uses the FEX build of CrossOver.' "$(arch_case aarch64-unix)"
+is "a matching architecture needs no rebuild" "" "$(arch_case x86_64-unix)"
+rebuild=$(extract rebuild_prefix)
+mkdir -p "$work/app with spaces"
+cat > "$work/app with spaces/NotProtonApp" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@" > "$TEST_DATA/arguments"
+/usr/bin/lockf -s -t 0 "$TEST_DATA/.notproton-prefix.lock" true || exit 66
+exit "$TEST_STATUS"
+SH
+chmod +x "$work/app with spaces/NotProtonApp"
+printf '%s' "$work/app with spaces/NotProtonApp" > "$np_support/app-executable"
+
+rebuild_case() {
+	choice=$1 command_status=$2 launch_verb=$3
+	data=$(mktemp -d "$work/compat data.XXXXXX")
+	(
+		export TEST_DATA="$data" TEST_STATUS="$command_status"
+		STEAM_COMPAT_DATA_PATH=$data np_tool_dir=/tools/chosen np_build=selected-build np_flavor=rosetta
+		np_display='Selected "tool" with \ and a newline
+in its name'
+		verb=$launch_verb log="$data/log"
+		# shellcheck disable=SC2329
+		osascript() { cat > "$data/prompt"; [ "$choice" != cancel ] || return 1; printf '%s\n' "$choice"; }
+		# shellcheck disable=SC2329
+		show_alert() { echo "$1" >> "$data/alerts"; }
+		# shellcheck disable=SC2329
+		prepare_prefix_directory() { exec 8>> "$data/.notproton-prefix.lock"; /usr/bin/lockf -s -t 0 8; echo locked >> "$data/checks"; }
+		# shellcheck disable=SC2329
+		note_other_build() { echo build >> "$data/checks"; }
+		# shellcheck disable=SC2329
+		refuse_foreign_prefix() { echo arch >> "$data/checks"; }
+		eval "$rebuild"
+		prepare_prefix_directory
+		: > "$data/checks"
+		rebuild_prefix 'Previous "tool" with \ and a newline
+in its name'
+		echo launched >> "$data/checks"
+	) && status=0 || status=$?
+}
+rebuild_case 'Backup & Rebuild Prefix' 0 waitforexitandrun
+is "backup rebuild succeeds with lock released for the app" 0 "$status"
+is "selected tool and backup choice reach the app as arguments" "--rebuild-prefix
+$data
+chosen
+selected-build
+rosetta
+keep-backup" "$(cat "$data/arguments")"
+is "launch retakes its lock and rechecks both mismatches" "locked
+build
+arch
+launched" "$(cat "$data/checks")"
+rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
+is "rebuild without backup succeeds" 0 "$status"
+is "rebuild without backup passes discard-backup" discard-backup "$(tail -1 "$data/arguments")"
+rebuild_case cancel 0 waitforexitandrun
+is "cancel stops the launch" 1 "$status"
+is "cancel never calls the app" no "$([ -f "$data/arguments" ] && echo yes || echo no)"
+rebuild_case 'Rebuild Prefix' 7 waitforexitandrun
+is "a failed rebuild stops the launch" 1 "$status"
+is "a failed rebuild never continues launch preparation" "" "$(cat "$data/checks")"
+rebuild_case 'Rebuild Prefix' 0 run
+is "install helpers refuse silently" 1 "$status"
+is "install helpers never prompt" no "$([ -f "$data/prompt" ] && echo yes || echo no)"
+printf '%s' "$work/missing" > "$np_support/app-executable"
+rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
+is "a moved or missing app stops the launch" 1 "$status"
+is "a missing app explains how to repair" 'NotProton app unavailable' "$(cat "$data/alerts")"
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> buildcheck: all assertions hold"
