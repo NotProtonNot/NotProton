@@ -15,7 +15,8 @@ const expand = (s, caps) => s.replace(/[\u0001-\u0008\u0013-\u0016]/g, c => {
 
 const mk = (type, props) => ({ type, props });
 const react = { jsx: mk, jsxs: mk, Fragment: 'Fragment' };
-const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle' };
+const barrel = { XY: 'Section', m: 'Dropdown', y4: 'Toggle', Yh: 'Checkbox',
+                 J1: 'FieldProvider' };
 
 // The two shapes take the payload in different forms and bind different names, which
 // is the whole of the difference between them.
@@ -27,10 +28,13 @@ const FORMS = {
 // `fallback` and `fexTools` stand in for what the hook sets before the transform.
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
                { fallback = 'notproton', fexTools = [], names = ['R0', 'B0'],
-                 ready, feats } = {}) {
+                 ready, feats, vars } = {}) {
+  // Feature rows are handed over rather than read from disk, so a check reads the same
+  // on any machine and says nothing about which features an install carries.
   const env = { ...process.env };
   if (ready !== undefined) env.NP_TEST_READY = ready;
   if (feats !== undefined) env.NP_TEST_FEATS = feats;
+  if (vars !== undefined) env.NP_TEST_VARS = vars;
   const raw = execFileSync(emit, [form, fallback, ...fexTools],
                            { encoding: 'utf8', env }).trim();
   const f = FORMS[form];

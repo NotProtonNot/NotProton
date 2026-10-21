@@ -154,7 +154,325 @@ case "$np_build" in *[!A-Za-z0-9.-]*) np_build="" ;; esac
 np_display=$(sed -n 's/.*"display_name"[[:space:]]*"\(.*\)".*/\1/p' \
   "$np_tool_dir/compatibilitytool.vdf" 2>/dev/null | head -1) || np_display=""
 [ -n "$np_display" ] || np_display="CrossOver build ${np_build:-unknown}"
+if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
+  log="$STEAM_COMPAT_DATA_PATH/notproton-run.log"
+else
+  log=/dev/null
+fi
+[ "$(stat -f %z "$log" 2>/dev/null || echo 0)" -gt 262144 ] \
+  && : > "$log" || true
+# A runner variant carries a different build of something that has to be builtin, which is
+# the only reason to replace a whole runner rather than drop a DLL in the prefix. Each one
+# is a descriptor naming a tree and where that tree lands in the runner, so nothing here
+# knows what any particular variant contains. Variants are clones, so resolving per game
+# means two games can use different ones at once.
+np_variant_conf_dir="$np_support/variants"
+np_variant_used=""
+np_variant_field() {
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*\)\$/\1/p" "$1"
+}
+np_variant_say() {
+  echo "=== variants: $* ===" >> "${log:-/dev/null}" 2>&1 || true
+}
+
+# Mirrors np_compat_tool_builds in compat.c: the panel and the launch path have to agree
+# on which architecture a tool runs, or one offers a variant the other refuses.
+np_variant_arch() {
+  case "$np_flavor" in
+    (fex) printf 'aarch64' ;;
+    (*)   printf 'x86_64' ;;
+  esac
+}
+
+# Whether a tree has anything for the architecture this runner runs. A tree naming no
+# architecture at all is not filtered, since dst may be a flat directory.
+np_variant_fits_arch() {
+  np_v_named=0
+  np_v_fits=0
+  np_v_want_arch=$(np_variant_arch)
+  for np_v_d in "$1"/*; do
+    [ -d "$np_v_d" ] || continue
+    np_v_d_arch=$(np_variant_dir_arch "$(basename "$np_v_d")")
+    [ -n "$np_v_d_arch" ] || continue
+    np_v_named=1
+    [ "$np_v_d_arch" != "$np_v_want_arch" ] || np_v_fits=1
+  done
+  [ "$np_v_named" -eq 0 ] || [ "$np_v_fits" -eq 1 ]
+}
+
+# The architecture a directory in a tree is for, empty when it names none. A runner can
+# hold more than one slot, so landing somewhere is not the same as being usable.
+np_variant_dir_arch() {
+  case "$1" in
+    (x86_64|x86_64-*)   printf 'x86_64' ;;
+    (aarch64|aarch64-*) printf 'aarch64' ;;
+    (i386|i386-*)       printf 'i386' ;;
+    (arm64ec|arm64ec-*) printf 'arm64ec' ;;
+  esac
+}
+
+# Requested names, split on +, sorted so a combination is named and overlaid the same way
+# whichever order it was asked for in.
+np_variant_names() {
+  printf '%s' "$1" | tr '+' '\n' | grep -v '^$' | LC_ALL=C sort -u | tr '\n' ' '
+}
+np_variant_dir_name() {
+  np_v_joined="crossover-$np_build"
+  for np_v_n in $1; do
+    np_v_joined="$np_v_joined-$np_v_n"
+  done
+  printf '%s' "$np_v_joined"
+}
+
+# Reads one descriptor into np_v_src and np_v_dst. Unknown keys are refused so a typo
+# cannot quietly mean something else, and a descriptor that cannot be used drops the
+# variant rather than stopping the game.
+np_variant_read() {
+  np_v_src=""
+  np_v_dst=""
+  np_v_conf="$np_variant_conf_dir/$1.conf"
+  [ -r "$np_v_conf" ] || { np_variant_say "$1 has no descriptor at $np_v_conf"; return 1; }
+  np_v_bad=$(sed -n 's/^[[:space:]]*\([A-Za-z][A-Za-z-]*\)[[:space:]]*=.*/\1/p' "$np_v_conf" \
+    | grep -vx -e label -e variant -e src -e dst | LC_ALL=C sort -u | tr '\n' ' ') || true
+  if [ -n "$np_v_bad" ]; then
+    np_variant_say "$np_v_conf has unknown keys ($np_v_bad), so $1 is refused"
+    return 1
+  fi
+  np_v_src=$(np_variant_field "$np_v_conf" src | head -1)
+  np_v_dst=$(np_variant_field "$np_v_conf" dst | head -1)
+  if [ -z "$np_v_src" ] || [ -z "$np_v_dst" ]; then
+    np_variant_say "$np_v_conf needs both src and dst, so $1 is refused"
+    return 1
+  fi
+  # Leading parens: a case pattern's ) can otherwise close a $( ) around this.
+  case "$np_v_src" in
+    (/*) ;;
+    (*) np_v_src="$HOME/$np_v_src" ;;
+  esac
+  case "$np_v_dst" in
+    (/*|*..*)
+      np_variant_say "$np_v_conf dst must be a relative path inside the runner, so $1 is refused"
+      return 1 ;;
+  esac
+  if [ ! -d "$np_v_src" ]; then
+    np_variant_say "$1 builds from $np_v_src, which is not there"
+    return 1
+  fi
+  if ! np_variant_fits_arch "$np_v_src"; then
+    np_variant_say "$1 has nothing for $np_v_want_arch, which is what this runner runs, so it is refused"
+    return 1
+  fi
+  return 0
+}
+
+# What the variant should be made of. Rebuilding is decided by comparing this against the
+# copy recorded in the built runner, which is a handful of stat calls.
+np_variant_manifest() {
+  for np_v_name in $1; do
+    np_variant_read "$np_v_name" || return 1
+    printf '%s %s\n' "$np_v_name" "$np_v_dst"
+    ( cd "$np_v_src" && find . -type f -exec stat -f '%N %z %m' {} + ) | LC_ALL=C sort
+  done
+  return 0
+}
+
+# Wine keeps a wineserver running inside the runner, so a process running from there is a
+# live session and the tree under it must not move.
+np_variant_busy() {
+  # shellcheck disable=SC2009 # pgrep matches arguments; the executable path is the signal
+  ps -axww -o comm= 2>/dev/null | grep -qF "$1/"
+}
+
+# winebuild --builtin writes this over the DOS stub, and it is the whole reason a tree can
+# be shared as a zip: the mark travels in the file, so nobody downstream needs a toolchain.
+np_variant_builtin() {
+  [ "$(dd if="$1" bs=1 skip=64 count=16 2>/dev/null)" = "Wine builtin DLL" ]
+}
+
+# A tree can hold more architectures than a runner has slots for -- DXMT builds one arch
+# per build directory but installs them into one prefix, so a shared tree may carry both.
+# A directory the runner does not have is skipped rather than fatal, and a variant that
+# lands nothing is refused, which is what catches a tree meant for the other machine.
+np_variant_overlay() {
+  np_v_root="$1"
+  for np_v_name in $2; do
+    np_variant_read "$np_v_name" || return 1
+    ( cd "$np_v_src" && find . -type f -print ) > "$np_v_root/.np-files" || return 1
+    np_v_laid=0
+    np_v_skipped=""
+    while IFS= read -r np_v_rel; do
+      np_v_rel=${np_v_rel#./}
+      np_v_at="$np_v_root/CrossOver/$np_v_dst/$np_v_rel"
+      np_v_dir=$(dirname "$np_v_rel")
+      if [ ! -d "$(dirname "$np_v_at")" ]; then
+        case " $np_v_skipped " in
+          *" $np_v_dir "*) ;;
+          *) np_v_skipped="$np_v_skipped $np_v_dir" ;;
+        esac
+        continue
+      fi
+      cp -f "$np_v_src/$np_v_rel" "$np_v_at" || return 1
+      # A downloaded tree arrives quarantined and Gatekeeper can refuse to dlopen it.
+      xattr -d com.apple.quarantine "$np_v_at" 2>/dev/null || true
+      case "$np_v_rel" in
+        *.dll)
+          if ! np_variant_builtin "$np_v_at"; then
+            np_variant_say "$np_v_name/$np_v_rel is not marked as a Wine builtin, so it would load as native and fail; $np_v_name is refused"
+            return 1
+          fi ;;
+      esac
+      np_v_laid=$(( np_v_laid + 1 ))
+    done < "$np_v_root/.np-files"
+    rm -f "$np_v_root/.np-files"
+    [ -z "$np_v_skipped" ] ||
+      np_variant_say "$np_v_name:$np_v_skipped has no counterpart in this runner, skipped"
+    if [ "$np_v_laid" -eq 0 ]; then
+      np_variant_say "nothing in $np_v_name belongs in this runner, so it is refused"
+      return 1
+    fi
+  done
+  return 0
+}
+
+# Builds into a scratch directory and moves it in, so a failure leaves the previous build
+# standing and the game runs last-known-good rather than a half-written tree.
+np_variant_build() {
+  np_v_target="$1"
+  np_v_names="$2"
+  np_v_want="$3"
+  np_v_base="$np_support/runners/crossover-$np_build"
+  np_v_lock="$np_v_target.lock"
+  np_v_new="$np_v_target.new"
+
+  if [ ! -d "$np_v_base/CrossOver/lib/wine" ]; then
+    np_variant_say "no base runner at $np_v_base yet, so nothing can be built from it"
+    return 1
+  fi
+
+  np_v_waited=0
+  while ! mkdir "$np_v_lock" 2>/dev/null; do
+    np_v_age=$(( $(date +%s) - $(stat -f %m "$np_v_lock" 2>/dev/null || date +%s) ))
+    if [ "$np_v_age" -gt 900 ]; then
+      np_variant_say "clearing a build lock left behind ${np_v_age}s ago"
+      rm -rf "$np_v_lock"
+      continue
+    fi
+    np_v_waited=$(( np_v_waited + 1 ))
+    if [ "$np_v_waited" -gt 120 ]; then
+      np_variant_say "another launch is still building $(basename "$np_v_target")"
+      return 1
+    fi
+    sleep 1
+  done
+
+  np_v_built=1
+  rm -rf "$np_v_new"
+  np_variant_say "building $(basename "$np_v_target") from $np_v_names"
+  if cp -c -R "$np_v_base" "$np_v_new" 2>/dev/null || cp -R "$np_v_base" "$np_v_new"; then
+    if np_variant_overlay "$np_v_new" "$np_v_names"; then
+      printf '%s\n' "$np_v_want" > "$np_v_new/CrossOver/.notproton-variant" \
+        && np_v_built=0
+    fi
+  fi
+  if [ "$np_v_built" = 0 ]; then
+    rm -rf "$np_v_target.old"
+    if [ -d "$np_v_target" ]; then
+      mv "$np_v_target" "$np_v_target.old" || np_v_built=1
+    fi
+    if [ "$np_v_built" = 0 ]; then
+      mv "$np_v_new" "$np_v_target" || np_v_built=1
+    fi
+    rm -rf "$np_v_target.old"
+  fi
+  [ "$np_v_built" = 0 ] || rm -rf "$np_v_new"
+  rm -rf "$np_v_lock"
+  if [ "$np_v_built" = 0 ]; then
+    np_variant_say "built $(basename "$np_v_target")"
+    return 0
+  fi
+  np_variant_say "could not build $(basename "$np_v_target")"
+  return 1
+}
+
+# Sets np_variant_root to a runner carrying the requested variants, building it when the
+# trees behind it have moved on. Returns 1 to leave the game on the base runner, so a
+# stale launch option never stops it starting.
+# One name in a request that has lost its descriptor must not take the rest with it: the
+# panel keeps a launch option a game already carries, and a game outlives a descriptor.
+np_variant_usable() {
+  np_v_keep=""
+  np_v_drop=""
+  np_v_declared=""
+  for np_v_name in $1; do
+    [ ! -r "$np_variant_conf_dir/$np_v_name.conf" ] || np_v_declared=1
+    if np_variant_read "$np_v_name"; then
+      np_v_keep="$np_v_keep$np_v_name "
+    else
+      np_v_drop="$np_v_drop$np_v_name "
+    fi
+  done
+}
+
+np_variant_resolve() {
+  np_v_asked=$(np_variant_names "$1")
+  [ -n "$np_v_asked" ] || return 1
+  np_variant_usable "$np_v_asked"
+  [ -z "$np_v_drop" ] || np_variant_say "ignoring ${np_v_drop% }, which cannot be used"
+
+  if [ -z "$np_v_keep" ]; then
+    # A runner built by hand still counts, which is what the install script produced
+    # before descriptors existed -- but only when nothing declared a descriptor. A
+    # descriptor that exists and was refused is an answer, not a gap to route around.
+    np_variant_root="$np_support/runners/$(np_variant_dir_name "$np_v_asked")"
+    if [ -z "$np_v_declared" ] && [ -d "$np_variant_root/CrossOver/lib/wine" ]; then
+      np_variant_say "using the prebuilt $(np_variant_dir_name "$np_v_asked")"
+      np_variant_root="$np_variant_root/CrossOver"
+      np_variant_used="$np_v_asked"
+      return 0
+    fi
+    return 1
+  fi
+
+  np_v_sel=${np_v_keep% }
+  np_variant_used="$np_v_sel"
+  np_variant_root="$np_support/runners/$(np_variant_dir_name "$np_v_sel")"
+  np_v_have="$np_variant_root/CrossOver/lib/wine"
+  np_v_want=$(np_variant_manifest "$np_v_sel") || np_v_want=""
+  [ -n "$np_v_want" ] || return 1
+
+  np_v_at="$np_variant_root/CrossOver/.notproton-variant"
+  if [ -d "$np_v_have" ] && [ "${NOTPROTON_VARIANT_REBUILD:-}" != 1 ] \
+     && [ "$(cat "$np_v_at" 2>/dev/null || true)" = "$np_v_want" ]; then
+    np_variant_root="$np_variant_root/CrossOver"
+    return 0
+  fi
+
+  if np_variant_busy "$np_variant_root"; then
+    if [ -d "$np_v_have" ]; then
+      np_variant_say "a game is running from $(np_variant_dir_name "$np_v_sel"), leaving it as it is"
+      np_variant_root="$np_variant_root/CrossOver"
+      return 0
+    fi
+    return 1
+  fi
+
+  if np_variant_build "$np_variant_root" "$np_v_sel" "$np_v_want" || [ -d "$np_v_have" ]; then
+    np_variant_root="$np_variant_root/CrossOver"
+    return 0
+  fi
+  return 1
+}
+
 CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
+np_variant=${NOTPROTON_RUNNER_VARIANT:-}
+case "$np_variant" in *[!A-Za-z0-9.+-]*) np_variant="" ;; esac
+if [ -n "$np_variant" ]; then
+  if np_variant_resolve "$np_variant"; then
+    CX_ROOT="$np_variant_root"
+  else
+    np_variant=""
+  fi
+fi
 export CX_ROOT
 # CrossOver initializes Rosetta's Windows thread-state support even without D3DMetal.
 if [ -f "$CX_ROOT/lib64/apple_gptk/external/libd3dshared.dylib" ]; then
@@ -193,13 +511,6 @@ without_lock_fds() {
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
 export PATH="$CX_ROOT/bin:$PATH"
 
-if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
-  log="$STEAM_COMPAT_DATA_PATH/notproton-run.log"
-else
-  log=/dev/null
-fi
-[ "$(stat -f %z "$log" 2>/dev/null || echo 0)" -gt 262144 ] \
-  && : > "$log" || true
 {
   echo "=== notproton run $(date) ==="
   echo "verb=$verb"
@@ -736,6 +1047,15 @@ if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
   exit 1
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
+if [ -n "${NOTPROTON_RUNNER_VARIANT:-}" ]; then
+  if [ -n "$np_variant_used" ]; then
+    echo "runner: variant asked for $NOTPROTON_RUNNER_VARIANT, using $np_variant_used" \
+      >> "$log" 2>&1 || true
+  else
+    echo "=== runner variant ${NOTPROTON_RUNNER_VARIANT} not installed, using the base runner ===" \
+      >> "$log" 2>&1 || true
+  fi
+fi
 
 # Each CrossOver build needs its own template.
 # FEX builds need two, one for FEX/arm64 Wine and one for Rosetta/AMD64 Wine

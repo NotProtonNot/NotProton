@@ -14,6 +14,7 @@ char *np_nativeplatform_javascript(void) {
 static int g_failed;
 static char g_home[1024];
 static char g_featdir[1200];
+static char g_vardir[1200];
 
 static void ok(int cond, const char *what) {
     printf("  %s  %s\n", cond ? "ok  " : "FAIL", what);
@@ -35,6 +36,35 @@ static void write_desc(const char *name, const char *body) {
     if (!(f = fopen(path, "w"))) { shout("cannot write %s", path); g_failed++; return; }
     fputs(body, f);
     fclose(f);
+}
+
+static void write_var(const char *name, const char *body) {
+    char path[2048];
+    FILE *f;
+    snprintf(path, sizeof(path), "%s/%s", g_vardir, name);
+    if (!(f = fopen(path, "w"))) { shout("cannot write %s", path); g_failed++; return; }
+    fputs(body, f);
+    fclose(f);
+}
+
+// Variants are offered per compat tool, and a tool is only a build whose runner is on
+// disk, so a check has to build both sides of that.
+static void make_dir(const char *fmt, const char *a, const char *b) {
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), fmt, a, b);
+    if (system(cmd) != 0) { shout("cannot run %s", cmd); g_failed++; }
+}
+
+static char *vars_json(void) {
+    g_var_done = 0;
+    var_build();
+    return g_var_rows;
+}
+
+static void clear_vars(void) {
+    char cmd[2600];
+    snprintf(cmd, sizeof(cmd), "rm -f '%s'/*.conf", g_vardir);
+    if (system(cmd) != 0) { shout("cannot clear %s", g_vardir); g_failed++; }
 }
 
 static void clear_descs(void) {
@@ -70,8 +100,12 @@ int main(void) {
     snprintf(g_home, sizeof(g_home), "%s", dir);
     snprintf(g_featdir, sizeof(g_featdir),
              "%s/" NP_FEAT_DIR, g_home);
-    snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", g_featdir);
-    if (system(cmd) != 0) { fputs("cannot make the plugins folder\n", stderr); return 2; }
+    np_support_path(g_vardir, sizeof(g_vardir), g_home, "variants");
+    snprintf(cmd, sizeof(cmd), "mkdir -p '%s' '%s'", g_featdir, g_vardir);
+    if (system(cmd) != 0) {
+        fputs("cannot make the plugins and variants folders\n", stderr);
+        return 2;
+    }
     setenv("HOME", g_home, 1);
 
     puts("== an empty plugins folder");
@@ -218,10 +252,95 @@ int main(void) {
     ok(strcmp(feats_json(), "[]") == 0, "renders no rows, since nothing ships by default");
     ok(strcmp(ready_json(), "{}") == 0, "reports no readiness");
 
+    puts("== runner variants");
+    {
+        const char *tools[]  = { "notproton", "notproton-26.3", "notproton-fex-rosetta" };
+        const char *builds[] = { "27.0-fex", "26.3.0", "27.0-fex" };
+        const char *archs[]  = { "aarch64", "x86_64", "x86_64" };
+        np_webpatch_set_tool_builds(tools, builds, archs, 3);
+    }
+    // The 26.3 runner carries one slot. The FEX runner carries both, as a real one does,
+    // which is why the slot a tool actually runs has to decide and not the directory.
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-26.3.0/CrossOver/lib/dxmt/x86_64-windows'%s", g_home, "");
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-27.0-fex/CrossOver/lib/dxmt/'{x86_64,aarch64}'-windows'%s",
+             g_home, "");
+    make_dir("mkdir -p '%s/trees/one/x86_64-windows'%s", g_home, "");
+    make_asset("trees/one/x86_64-windows/d3d11.dll");
+
+    ok(strcmp(vars_json(), "[]") == 0, "an empty directory offers nothing");
+
+    write_var("one.conf",
+              "label   = A build\nvariant = Backend\n"
+              "src     = trees/one\ndst     = lib/dxmt\n");
+    ok(strcmp(vars_json(),
+              "[{k:\"one\",l:\"A build\",v:\"Backend\","
+              "t:[\"notproton-26.3\",\"notproton-fex-rosetta\"]}]") == 0,
+       "an x86_64 tree is offered to the tools that run x86_64, and not to the arm64 one");
+
+    puts("== a tree for the other architecture");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/otherarch/aarch64-windows'%s", g_home, "");
+    make_asset("trees/otherarch/aarch64-windows/d3d11.dll");
+    write_var("otherarch.conf", "src = trees/otherarch\ndst = lib/dxmt\n");
+    ok(strstr(vars_json(), "t:[\"notproton\"]") != NULL,
+       "an arm64 tree is offered only to the tool that runs arm64 Wine");
+    ok(strstr(vars_json(), "l:\"otherarch\"") != NULL,
+       "and is labelled with its file name when the descriptor gives no label");
+    ok(strstr(vars_json(), "v:\"Runner\"") != NULL,
+       "and names no variant of its own, so it is offered as a plain runner variant");
+
+    puts("== a tree carrying both architectures");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/both/'{x86_64,aarch64}'-windows'%s", g_home, "");
+    make_asset("trees/both/x86_64-windows/d3d11.dll");
+    make_asset("trees/both/aarch64-windows/d3d11.dll");
+    write_var("bothslots.conf", "src = trees/both\ndst = lib/dxmt\n");
+    // A cross build produces one architecture at a time but installs them into one
+    // prefix, so a shared src holds both -- and the first runner has only the x86_64 slot.
+    ok(strstr(vars_json(), "t:[\"notproton\",\"notproton-26.3\",\"notproton-fex-rosetta\"]")
+       != NULL, "is offered everywhere, each runner taking the slot it has");
+
+    puts("== rejections");
+    clear_vars();
+    write_var("ok-one.conf", "src = trees/one\ndst = lib/dxmt\n");
+    write_var("typo.conf", "src = trees/one\ndst = lib/dxmt\nsrcc = elsewhere\n");
+    write_var("nowhere.conf", "label = No source\n");
+    write_var("escape.conf", "src = trees/one\ndst = ../../lib/wine\n");
+    write_var("absolute.conf", "src = trees/one\ndst = /lib/wine\n");
+    {
+        const char *j = vars_json();
+        ok(strstr(j, "ok-one") != NULL, "a good descriptor still loads");
+        ok(strstr(j, "typo") == NULL, "an unknown field is refused");
+        ok(strstr(j, "No source") == NULL, "a descriptor with no src is refused");
+        ok(strstr(j, "escape") == NULL, "a dst that climbs out of the runner is refused");
+        ok(strstr(j, "absolute") == NULL, "an absolute dst is refused");
+    }
+
+    puts("== a tree holding nothing");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/empty/x86_64-windows'%s", g_home, "");
+    write_var("hollow.conf", "src = trees/empty\ndst = lib/dxmt\n");
+    ok(strcmp(vars_json(), "[]") == 0, "is not offered at all");
+
+    puts("== a label cannot break the page it renders into");
+    clear_vars();
+    write_var("quoted.conf",
+              "label = He said \"go\" \\ onwards\nsrc = trees/one\ndst = lib/dxmt\n");
+    ok(strstr(vars_json(), "l:\"He said \\\"go\\\" \\\\ onwards\"") != NULL,
+       "quotes and backslashes are escaped");
+
+    puts("== a missing variant directory");
+    clear_vars();
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_vardir);
+    if (system(cmd) != 0) { shout("cannot remove %s", g_vardir); g_failed++; }
+    ok(strcmp(vars_json(), "[]") == 0, "offers nothing, since nothing ships by default");
+
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_home);
     if (system(cmd) != 0) shout("note: could not remove %s", g_home);
 
     if (g_failed) { printf("\n%d failure(s)\n", g_failed); return 1; }
-    puts("\n==> featcheck: plugins load, rank, validate and report readiness");
+    puts("\n==> featcheck: plugins and variants load, validate and report readiness");
     return 0;
 }

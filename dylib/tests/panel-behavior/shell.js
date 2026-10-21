@@ -54,7 +54,7 @@ function view(form, options) {
   const P = panel(emit, form);
   const nodes = walk(P.render({ details: details(options) }));
   const toggles = {};
-  nodes.filter(n => n.type === 'Toggle' && n.props.label in TOGGLES)
+  nodes.filter(n => n.type === 'Checkbox' && n.props.label in TOGGLES)
        .forEach(n => { toggles[TOGGLES[n.props.label]] = n; });
   const backend = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === 'dxvk'));
   const upscale = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === '1.5'));

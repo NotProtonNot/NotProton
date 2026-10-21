@@ -1,6 +1,7 @@
 // Enables Steam Play in the UI/enables the Compatibility tab in game properties
 #include "webpatch.h"
 #include "nativeplatform.h"
+#include "../util/file.h"
 #include "../util/log.h"
 
 #include <dirent.h>
@@ -31,6 +32,8 @@
 // MSCXReady and MSCXFeat.
 #define NP_READY "\027"
 #define NP_FEATS "\030"
+// Stands for the runner variants read from the support directory.
+#define NP_VARS "\031"
 
 #define NP_TOOL_NAME_MAX 128
 
@@ -263,7 +266,10 @@ static _Thread_local char g_feat_ready[NP_FEAT_MAX * (NP_FEAT_STR + 8) + 4] = "{
 static _Thread_local char g_feat_rows[NP_FEAT_MAX * (2 * (3 * NP_FEAT_STR + NP_FEAT_DESC + 64) + 32) + 4] = "[]";
 static _Thread_local int  g_feat_ready_done;
 static _Thread_local int  g_feat_pinned;
+static _Thread_local char g_var_rows[8192] = "[]";
+static _Thread_local int  g_var_done;
 static void feat_build(void);
+static void var_build(void);
 
 static const char *marker_text(char c) {
     if (c == NP_FALLBACK_TOOL[0]) return g_fallback_tool;
@@ -271,6 +277,10 @@ static const char *marker_text(char c) {
     if (c == NP_READY[0] || c == NP_FEATS[0]) {
         if (!g_feat_ready_done) feat_build();
         return c == NP_READY[0] ? g_feat_ready : g_feat_rows;
+    }
+    if (c == NP_VARS[0]) {
+        if (!g_var_done) var_build();
+        return g_var_rows;
     }
     return NULL;
 }
@@ -423,6 +433,253 @@ void np_webpatch_set_features(const char *ready, const char *rows) {
     g_feat_pinned = 1;
 }
 
+// Runner variants are declared in the support directory's variants/*.conf and assembled by
+// compat_run.sh at launch.
+#define NP_VAR_MAX  24
+#define NP_VAR_STR  192
+
+typedef struct {
+    char name[NP_VAR_STR];
+    char label[NP_VAR_STR];
+    char variant[NP_VAR_STR];
+    char src[1024];
+    char dst[NP_VAR_STR];
+} np_var_t;
+
+#define NP_VAR_TOOLS_MAX 8
+static _Thread_local char g_var_tool[NP_VAR_TOOLS_MAX][NP_TOOL_NAME_MAX];
+static _Thread_local char g_var_build[NP_VAR_TOOLS_MAX][NP_TOOL_NAME_MAX];
+static _Thread_local char g_var_arch[NP_VAR_TOOLS_MAX][NP_TOOL_NAME_MAX];
+static _Thread_local size_t g_var_tools;
+
+void np_webpatch_set_tool_builds(const char *const *names, const char *const *builds,
+                                 const char *const *archs, size_t count) {
+    g_var_tools = 0;
+    for (size_t i = 0; i < count && g_var_tools < NP_VAR_TOOLS_MAX; i++) {
+        if (!names[i] || !*names[i] || !builds[i] || !*builds[i]) continue;
+        if (!is_tool_name(names[i]) || !is_tool_name(builds[i])) continue;
+        snprintf(g_var_tool[g_var_tools], NP_TOOL_NAME_MAX, "%s", names[i]);
+        snprintf(g_var_build[g_var_tools], NP_TOOL_NAME_MAX, "%s", builds[i]);
+        snprintf(g_var_arch[g_var_tools], NP_TOOL_NAME_MAX, "%s",
+                 archs && archs[i] ? archs[i] : "");
+        g_var_tools++;
+    }
+}
+
+// A directory named for an architecture, such as x86_64-windows, only serves the tool
+// that runs that architecture
+static const char *var_arch_of(const char *dir) {
+    static const char *const known[] = { "x86_64", "aarch64", "i386", "arm64ec" };
+    for (size_t i = 0; i < sizeof(known) / sizeof(*known); i++) {
+        size_t n = strlen(known[i]);
+        if (strncmp(dir, known[i], n) == 0 && (dir[n] == 0 || dir[n] == '-'))
+            return known[i];
+    }
+    return NULL;
+}
+
+static int var_is_dir(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+// Every directory in src that holds a file, relative to src; "" is src itself. Bounded,
+// since this runs while Steam waits for a page.
+static int var_dirs(const char *root, const char *rel, char dirs[][NP_VAR_STR], int n,
+                    int depth) {
+    char path[2048];
+    struct dirent *de;
+    DIR *d;
+    int files = 0;
+
+    if (depth > 3 || n >= 16) return n;
+    if (snprintf(path, sizeof(path), "%s%s%s", root, *rel ? "/" : "", rel) >= (int)sizeof(path))
+        return n;
+    if (!(d = opendir(path))) return n;
+    while ((de = readdir(d))) {
+        char sub[NP_VAR_STR];
+        if (de->d_name[0] == '.') continue;
+        if (snprintf(sub, sizeof(sub), "%s%s%s", rel, *rel ? "/" : "", de->d_name)
+            >= (int)sizeof(sub)) continue;
+        if (snprintf(path, sizeof(path), "%s/%s", root, sub) >= (int)sizeof(path)) continue;
+        if (var_is_dir(path)) n = var_dirs(root, sub, dirs, n, depth + 1);
+        else files = 1;
+    }
+    closedir(d);
+    if (files && n < 16) snprintf(dirs[n++], NP_VAR_STR, "%s", rel);
+    return n;
+}
+
+static void var_read_file(const char *path, const char *home, np_var_t *list, int *count) {
+    char line[2048];
+    np_var_t v;
+    const char *base = strrchr(path, '/');
+    FILE *fp;
+    size_t len;
+
+    memset(&v, 0, sizeof(v));
+    base = base ? base + 1 : path;
+    snprintf(v.name, sizeof(v.name), "%s", base);
+    len = strlen(v.name);
+    if (len > 5) v.name[len - 5] = 0;          // drop .conf
+    for (const char *p = v.name; *p; p++)
+        if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+              (*p >= '0' && *p <= '9') || *p == '.' || *p == '-')) {
+            NP_WARN("variants: %s is not a usable variant name, ignored", base);
+            return;
+        }
+
+    if (!(fp = fopen(path, "r"))) return;
+    while (fgets(line, sizeof(line), fp)) {
+        char *eq, *val, *k = line;
+        while (*k == ' ' || *k == '\t') k++;
+        if (*k == '#' || !(eq = strchr(k, '='))) continue;
+        *eq = 0;
+        val = eq + 1;
+        feat_trim(k);
+        while (*val == ' ' || *val == '\t') val++;
+        feat_trim(val);
+        if (!*val) continue;
+        if (strcmp(k, "label") == 0) snprintf(v.label, sizeof(v.label), "%s", val);
+        else if (strcmp(k, "variant") == 0) snprintf(v.variant, sizeof(v.variant), "%s", val);
+        else if (strcmp(k, "src") == 0) snprintf(v.src, sizeof(v.src), "%s", val);
+        else if (strcmp(k, "dst") == 0) snprintf(v.dst, sizeof(v.dst), "%s", val);
+        else {
+            // Refused rather than ignored, as in features.d: a typo that looks like it
+            // worked is worse than a variant that does not appear.
+            NP_WARN("variants: %s declares '%s', which is not a variant field; "
+                    "the fields are label, variant, src and dst", path, k);
+            fclose(fp);
+            return;
+        }
+    }
+    fclose(fp);
+
+    if (!*v.src || !*v.dst) {
+        NP_WARN("variants: %s needs both src and dst, ignored", path);
+        return;
+    }
+    if (v.dst[0] == '/' || strstr(v.dst, "..")) {
+        NP_WARN("variants: %s dst must be a relative path inside the runner, ignored", path);
+        return;
+    }
+    if (v.src[0] != '/') {
+        char abs[1024];
+        if (snprintf(abs, sizeof(abs), "%s/%s", home, v.src) >= (int)sizeof(abs)) return;
+        snprintf(v.src, sizeof(v.src), "%s", abs);
+    }
+    if (!*v.label) snprintf(v.label, sizeof(v.label), "%s", v.name);
+    if (!*v.variant) snprintf(v.variant, sizeof(v.variant), "Runner");
+    if (*count >= NP_VAR_MAX) {
+        NP_WARN("variants: more than %d descriptors, %s ignored", NP_VAR_MAX, path);
+        return;
+    }
+    list[(*count)++] = v;
+}
+
+static int var_load(const char *home, np_var_t *list) {
+    char dir[2048];
+    struct dirent *de;
+    DIR *d;
+    int count = 0;
+    char **names = NULL;
+    int nnames = 0;
+
+    np_support_path(dir, sizeof(dir), home, "variants");
+    if (!(d = opendir(dir))) return 0;
+    while ((de = readdir(d))) {
+        char **grown;
+        if (de->d_name[0] == '.') continue;
+        if (!has_suffix(de->d_name, ".conf")) continue;
+        grown = realloc(names, (size_t)(nnames + 1) * sizeof(*names));
+        if (!grown) break;
+        names = grown;
+        names[nnames] = strdup(de->d_name);
+        if (!names[nnames]) break;
+        nnames++;
+    }
+    closedir(d);
+    for (int i = 1; i < nnames; i++)
+        for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
+            char *t = names[j - 1]; names[j - 1] = names[j]; names[j] = t;
+        }
+    for (int i = 0; i < nnames; i++) {
+        char path[4096];
+        if (snprintf(path, sizeof(path), "%s/%s", dir, names[i]) < (int)sizeof(path))
+            var_read_file(path, home, list, &count);
+        free(names[i]);
+    }
+    free(names);
+    return count;
+}
+
+static void var_build(void) {
+    const char *home = getenv("HOME");
+    np_var_t list[NP_VAR_MAX];
+    np_out_t rows = { 0 };
+    int n, wrote = 0;
+
+    g_var_done = 1;
+    if (!home) return;
+    n = var_load(home, list);
+    if (!out_put(&rows, "[", 1)) goto done;
+    for (int i = 0; i < n; i++) {
+        char dirs[16][NP_VAR_STR];
+        int ndirs = var_dirs(list[i].src, "", dirs, 0, 0);
+        int fits = 0;
+
+        if (!ndirs) {
+            NP_WARN("variants: %s holds no files at %s, not offered",
+                    list[i].name, list[i].src);
+            continue;
+        }
+        if (wrote && !out_put(&rows, ",", 1)) goto done;
+        if (!out_put(&rows, "{k:", 3) || !out_jsstr(&rows, list[i].name)) goto done;
+        if (!out_put(&rows, ",l:", 3) || !out_jsstr(&rows, list[i].label)) goto done;
+        if (!out_put(&rows, ",v:", 3) || !out_jsstr(&rows, list[i].variant)) goto done;
+        if (!out_put(&rows, ",t:[", 4)) goto done;
+        for (size_t t = 0; t < g_var_tools; t++) {
+            char runner[2048];
+            int lands = 0, named = 0, matched = 0;
+            np_support_path(runner, sizeof(runner), home, "runners");
+            for (int j = 0; j < ndirs; j++) {
+                char at[2048];
+                const char *arch = var_arch_of(dirs[j]);
+                if (snprintf(at, sizeof(at), "%s/crossover-%s/CrossOver/%s%s%s", runner,
+                             g_var_build[t], list[i].dst, *dirs[j] ? "/" : "", dirs[j])
+                    >= (int)sizeof(at)) continue;
+                if (arch) named = 1;
+                if (!var_is_dir(at)) continue;
+                lands = 1;
+                // A FEX runner holds both slots, so a directory landing is not enough:
+                // arm64 Wine reads the aarch64 one and never looks at the other.
+                if (arch && strcmp(arch, g_var_arch[t]) == 0) matched = 1;
+            }
+            if (!lands || (named && !matched)) continue;
+            if (fits++ && !out_put(&rows, ",", 1)) goto done;
+            if (!out_jsstr(&rows, g_var_tool[t])) goto done;
+        }
+        if (!out_put(&rows, "]}", 2)) goto done;
+        wrote++;
+        if (!fits)
+            NP_LOG("variants: %s fits no installed runner, so it is offered nowhere",
+                   list[i].name);
+    }
+    if (!out_put(&rows, "]", 1)) goto done;
+    if (rows.len < sizeof(g_var_rows))
+        snprintf(g_var_rows, sizeof(g_var_rows), "%.*s", (int)rows.len, rows.buf);
+    else
+        NP_WARN("variants: descriptors are too large to render, ignoring them");
+done:
+    free(rows.buf);
+}
+
+// A check supplies the list rather than reading whatever an install happens to carry
+void np_webpatch_set_variants(const char *rows) {
+    snprintf(g_var_rows, sizeof(g_var_rows), "%s", rows ? rows : "[]");
+    g_var_done = 1;
+}
+
 static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     for (const char *r = replace; *r; r++) {
         const char *text = marker_text(*r);
@@ -545,9 +802,29 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
     "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,s=L.s," \
-    "MSCXReady=" NP_READY ",MSCXFeat=" NP_FEATS "," \
+    "MSCXReady=" NP_READY ",MSCXFeat=" NP_FEATS ",MSCXVar=" NP_VARS "," \
     "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
     "return!!p&&n<32&&MSCXReady[k]!==0&&g(k)===p.on&&(!p.dep||on1(p.dep,n+1))}," \
+    "vav=MSCXVar.filter(v=>v.t.indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0)," \
+    "vcur=g(\"NOTPROTON_RUNNER_VARIANT\").split(\"+\").filter(x=>x)," \
+    "vids=vav.map(v=>v.v).filter((d,i,a)=>a.indexOf(d)===i)," \
+    "vset=(id,val)=>{const keep=vcur.filter(x=>MSCXVar.some(v=>v.k===x&&v.v!==id))," \
+    "all=(val?keep.concat([val]):keep).filter((x,i,a)=>a.indexOf(x)===i).sort();" \
+    "s([[\"NOTPROTON_RUNNER_VARIANT\",all.join(\"+\")]])}," \
+    "V=id=>{const vd=vav.filter(v=>v.v===id)," \
+    "sel=vcur.find(x=>vd.some(v=>v.k===x))||\"\";" \
+    "return(0," RT ".jsx)(" BARREL ".m," \
+    "{label:id+npL(\" Variant\",\" 变体\",\" Variant\")," \
+    "layout:\"inline\"," \
+    "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
+    ".concat(vd.map(v=>({data:v.k,label:v.l})))," \
+    "selectedOption:sel,onChange:x=>vset(id,x.data)},id)}," \
+    "TD=(k,l,on,off,d,dep)=>{const rd=MSCXReady[k]!==0;" \
+    "return(0," RT ".jsx)(" BARREL ".y4," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined,checked:rd&&g(k)===on," \
+    "indentLevel:dep?1:undefined," \
+    "onChange:v=>s([[k,v?on:(off||\"\")]])},k)}," \
     "T=(ks,l,on,off,d,r)=>{const rd=r!==0;" \
     "return(0," RT ".jsx)(" BARREL ".Yh," \
     "{className:\"MSCXRow\"+(d?\" MSCXRowDesc\":\"\")," \
@@ -605,9 +882,10 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),\"1\",\"\")," \
     "T([\"NOTPROTON_DISABLE_HIDRAW\"],npL(\"Disable hidraw\",\"停用 hidraw\",\"Disable hidraw\"),\"1\",\"\")" \
     "]},\"ctl\")," \
-    "(MSCXFeat.length?(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
-    "children:MSCXFeat.filter(f=>!f.dep||on1(f.dep))" \
-    ".map(f=>T([f.k],f.l,f.on,f.off,f.d,MSCXReady[f.k]))},\"dev\"):null)" \
+    "(MSCXFeat.length||vids.length?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
+    "children:vids.map(V).concat(MSCXFeat.filter(f=>!f.dep||on1(f.dep))" \
+    ".map(f=>TD(f.k,f.l,f.on,f.off,f.d,f.dep)))})},\"dev\"):null)" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \

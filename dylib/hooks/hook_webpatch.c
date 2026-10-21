@@ -123,6 +123,10 @@ static int open_patched(const char *path) {
     np_webpatch_set_fallback_tool(np_compat_fallback_tool_name());
     const char *fex[NP_WEBPATCH_FEX_TOOLS_MAX];
     np_webpatch_set_fex_tools(fex, np_compat_fex_tools(fex, NP_WEBPATCH_FEX_TOOLS_MAX));
+    const char *tools[NP_WEBPATCH_FEX_TOOLS_MAX], *builds[NP_WEBPATCH_FEX_TOOLS_MAX];
+    const char *archs[NP_WEBPATCH_FEX_TOOLS_MAX];
+    np_webpatch_set_tool_builds(tools, builds, archs,
+        np_compat_tool_builds(tools, builds, archs, NP_WEBPATCH_FEX_TOOLS_MAX));
     size_t patched_len = 0;
     const char *shape = NULL;
     char *patched = np_webpatch_transform((const uint8_t *)raw, raw_len, &patched_len,
