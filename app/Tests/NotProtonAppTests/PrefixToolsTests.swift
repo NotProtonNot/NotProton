@@ -406,12 +406,89 @@ struct PrefixToolsTests {
         #expect(PrefixTools.buildRecord(of: prefix) == nil)
         #expect(PrefixStore.backups(of: prefix).isEmpty)
         claim.release()
-        let backup = try PrefixTools.recreate(prefix, as: tool, runners: runners, keepBackup: keepBackup)
+        var phases: [RebuildPhase] = []
+        let backup = try PrefixTools.recreate(
+            prefix, as: tool, runners: runners, keepBackup: keepBackup, progress: { phases.append($0) })
+        #expect(phases == [.settingUp, .copying, .finishing])
         #expect((backup != nil) == keepBackup)
         #expect(PrefixStore.backups(of: prefix).count == (keepBackup ? 1 : 0))
         #expect(PrefixTools.buildRecord(of: prefix)?.build == tool.build)
         let save = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/Roaming/game/save.dat")
         #expect(try String(contentsOf: save, encoding: .utf8) == "save")
+    }
+
+    @Test("Rebuild progress lands beside the prefix and nowhere else")
+    func rebuildStatusFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "np-status-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let root = dir.appending(path: "steamapps/compatdata/480")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        #expect(RebuildPrefixCommand.statusFile(root.path(percentEncoded: false))
+            == root.standardizedFileURL.appending(path: "notproton-rebuild"))
+        #expect(RebuildPrefixCommand.statusFile("relative/compatdata/480") == nil)
+        #expect(RebuildPrefixCommand.statusFile(dir.path(percentEncoded: false)) == nil)
+        #expect(RebuildPrefixCommand.statusFile(root.appending(path: "missing").path(percentEncoded: false)) == nil)
+    }
+
+    @Test("A second rebuild of a prefix is refused and leaves the first one's progress alone")
+    func secondRebuildIsRefused() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "np-second-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let root = dir.appending(path: "steamapps/compatdata/480")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let status = try #require(RebuildPrefixCommand.statusFile(root.path(percentEncoded: false)))
+        try Data("copy\n4242\n".utf8).write(to: status)
+
+        let first = try RebuildPrefixCommand.claimRebuild(beside: status)
+        defer { FileLock.release(first) }
+        try FileManager.default.createDirectory(at: root.appending(path: "pfx"), withIntermediateDirectories: true)
+        let tool = InstalledTool(tool: CompatTool(name: "t", flavor: .rosetta, display: "T"), build: "b")
+        #expect(throws: StepFailure.self) {
+            try RebuildPrefixCommand.run([root.path(percentEncoded: false), "t", "b", "rosetta", "keep-backup"], tools: { [tool] })
+        }
+        #expect(try String(contentsOf: status, encoding: .utf8) == "copy\n4242\n")
+    }
+
+    @Test("Invalid rebuild requests create no progress or lock files")
+    func invalidRebuildWritesNothing() throws {
+        let (dir, _, prefix) = try usedPrefixAndRunner()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(throws: StepFailure.self) {
+            try RebuildPrefixCommand.run([prefix.root.path, "missing", "b", "fex", "keep-backup"], tools: { [] })
+        }
+        for name in [RebuildPrefixCommand.statusName, RebuildPrefixCommand.rebuildLockName] {
+            #expect(!FileManager.default.fileExists(atPath: prefix.root.appending(path: name).path))
+        }
+    }
+
+    @Test("A translocated rebuild app is not recorded as a persistent path")
+    func translocatedRebuildAppIsNotRecorded() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "np-helper-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appending(path: "AppTranslocation/id/d/NotProton.app/Contents/MacOS/NotProtonApp")
+        let support = dir.appending(path: "support")
+        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: support.appending(path: RebuildPrefixCommand.executableRecord))
+        try RebuildPrefixCommand.recordExecutable(source, in: support)
+        #expect(!FileManager.default.fileExists(atPath: support.appending(path: RebuildPrefixCommand.executableRecord).path))
+    }
+
+    @Test("A queued installation lock times out without disturbing its holder")
+    func rebuildLockWaitIsBounded() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "np-wait-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let held = try DeploymentContent.acquireInstallationLock(in: dir, steamFolder: nil)
+        defer { held.release() }
+        let start = ProcessInfo.processInfo.systemUptime
+        #expect(throws: StepFailure.self) {
+            try DeploymentContent.acquireInstallationLock(in: dir, steamFolder: nil, waiting: true, waitTimeout: 0.1)
+        }
+        #expect(ProcessInfo.processInfo.systemUptime - start < 2)
+        #expect(throws: StepFailure.self) {
+            try DeploymentContent.acquireInstallationLock(in: dir, steamFolder: nil)
+        }
     }
 
     @Test("The Rosetta flavor takes the x86_64 tree on a runner that has both")

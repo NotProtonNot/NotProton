@@ -4,8 +4,13 @@ import Foundation
 enum Launch {
     static func main() {
         if CommandLine.arguments.dropFirst().first == RebuildPrefixCommand.flag {
+            // Out of the launching process group, so stopping the game in Steam cannot take
+            // the rebuild with it.
+            _ = setsid()
+            let arguments = Array(CommandLine.arguments.dropFirst(2))
+            if RebuildProgressCommand.requested { RebuildProgressCommand.run(arguments) }
             do {
-                try RebuildPrefixCommand.run(Array(CommandLine.arguments.dropFirst(2)))
+                try RebuildPrefixCommand.run(arguments)
                 exit(0)
             } catch {
                 FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
@@ -56,14 +61,84 @@ enum RebuildPrefixCommand {
         )
     }
 
-    static func run(_ arguments: [String]) throws {
-        let lock = try DeploymentContent.acquireInstallationLock()
-        defer { lock.release() }
-        let request = try request(arguments, tools: CompatToolList.installed())
-        try PrefixTools.recreate(request.prefix, as: request.tool, keepBackup: request.keepBackup)
+    // Phase, then this process's pid. The dylib reads it for the Compatibility page and takes
+    // a pid that is gone as a rebuild that died.
+    static let statusName = "notproton-rebuild"
+    static let rebuildLockName = ".notproton-rebuild.lock"
+
+    static func run(
+        _ arguments: [String], tools: () -> [InstalledTool] = { CompatToolList.installed() },
+        observe: (String?, RebuildPhase) -> Void = { _, _ in }
+    ) throws {
+        let name = try request(arguments, tools: tools()).prefix.name
+        let status = arguments.first.flatMap(statusFile)
+        // One rebuild per prefix. A second one exits before it can overwrite the first one's
+        // progress with a failure that is not the first one's.
+        let held = try status.map { try claimRebuild(beside: $0) } ?? -1
+        defer { if held >= 0 { FileLock.release(held) } }
+        func report(_ phase: String) {
+            guard let status else { return }
+            try? atomicReplace(status, with: Data("\(phase)\n\(getpid())\n".utf8), step: "Record rebuild progress")
+        }
+        report(RebuildPhase.settingUp.rawValue)
+        observe(name, .settingUp)
+        do {
+            // Another game's rebuild or an install holds this. Waiting keeps the page on
+            // "Rebuilding prefix" rather than failing a rebuild that only had to queue.
+            let lock = try DeploymentContent.acquireInstallationLock(waiting: true)
+            defer { lock.release() }
+            let request = try request(arguments, tools: tools())
+            let kept = try PrefixTools.recreate(
+                request.prefix, as: request.tool, keepBackup: request.keepBackup,
+                progress: { report($0.rawValue); observe(name, $0) })
+            // A rebuild answers the crash the run script was tracking.
+            try? FileManager.default.removeItem(at: request.prefix.root.appending(path: "notproton-switch"))
+            report(kept != nil ? "done-backup" : "done")
+        } catch {
+            report("failed")
+            throw error
+        }
+    }
+
+    static func claimRebuild(beside status: URL) throws -> Int32 {
+        let path = status.deletingLastPathComponent().appending(path: rebuildLockName)
+        let fd = open(path.path(percentEncoded: false), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        var claimed = fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0
+        let deadline = ProcessInfo.processInfo.systemUptime + 1
+        while fd >= 0 && !claimed && errno == EWOULDBLOCK && ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+            claimed = flock(fd, LOCK_EX | LOCK_NB) == 0
+        }
+        guard claimed else {
+            if fd >= 0 { close(fd) }
+            throw StepFailure(step: "Rebuild prefix", detail: "Another rebuild of this prefix is running.")
+        }
+        return fd
+    }
+
+    static func statusFile(_ path: String) -> URL? {
+        guard path.hasPrefix("/") else { return nil }
+        let root = URL(filePath: path).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard root.deletingLastPathComponent().lastPathComponent == "compatdata",
+            root.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "steamapps",
+            !root.lastPathComponent.isEmpty,
+            root.lastPathComponent.utf8.allSatisfy({ (48...57).contains($0) }),
+            FileManager.default.fileExists(atPath: root.path(percentEncoded: false), isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else { return nil }
+        return root.appending(path: statusName)
     }
 
     static func recordExecutable(_ executable: URL, in support: URL) throws {
+        // A translocated copy or a mounted disk image is gone by the next launch, so nothing
+        // recorded from there would still run.
+        let readOnly = (try? executable.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly == true
+        if readOnly || executable.pathComponents.contains("AppTranslocation") {
+            AppLog.note("install: NotProton runs from \(executable.path), so Steam cannot start rebuilds")
+            try? FileManager.default.removeItem(at: support.appending(path: executableRecord))
+            return
+        }
         try atomicReplace(support.appending(path: executableRecord),
                           with: Data(executable.path(percentEncoded: false).utf8), step: "Record NotProton app")
     }

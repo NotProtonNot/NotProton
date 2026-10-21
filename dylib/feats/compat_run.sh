@@ -300,7 +300,11 @@ tool_name() {
 # CrossOver's previews are versioned by date, which reads as a release without the word.
 preview_name() {
   case "$1" in
-    "CrossOver 20"[0-9][0-9]" "*) printf 'CrossOver Preview %s' "${1#CrossOver }" ;;
+    # The date keeps its spaces and the arch its hyphen, but the dialog may only wrap
+    # before the version, never inside it.
+    "CrossOver 20"[0-9][0-9]" "*)
+      printf 'CrossOver Preview %s' "$(printf '%s' "${1#CrossOver }" \
+        | sed "s/ /$(printf '\302\240')/g; s/-/$(printf '\342\200\221')/g")" ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -338,7 +342,39 @@ on run argv
 end run
 APPLESCRIPT
   ) || answer=""
-  [ "$answer" != "Open Log" ] || open "$log" >/dev/null 2>&1 || true
+  [ "$answer" != "Open Log" ] || { [ -f "$log" ] && [ ! -L "$log" ] && open -t "$log" >/dev/null 2>&1; } || true
+}
+
+# Steam shows the game as running while this waits, and Stop kills the script's process
+# group and children. A rebuild killed between its two renames leaves no pfx at all, so the
+# app runs outside both: the inner subshell is reparented to launchd and the app calls
+# setsid. The script only waits for the exit status the subshell leaves behind.
+run_rebuild() {
+  rebuild_exit="$STEAM_COMPAT_DATA_PATH/notproton-rebuild-exit"
+  rebuild_lock="$STEAM_COMPAT_DATA_PATH/.notproton-rebuild.lock"
+  rm -f "$rebuild_exit"
+  (
+    (
+      env -i HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+        NOTPROTON_REBUILD_WINDOW=1 \
+        "$1" --rebuild-prefix "$STEAM_COMPAT_DATA_PATH" "${np_tool_dir##*/}" \
+        "$np_build" "$np_flavor" "$2" >> "$log" 2>&1 < /dev/null
+      echo "$?" > "$rebuild_exit.$$" && mv -f "$rebuild_exit.$$" "$rebuild_exit"
+    ) &
+  )
+  waited=0
+  while [ ! -f "$rebuild_exit" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    # Nothing holds the lock once the app is gone. The grace covers its startup.
+    if [ "$waited" -gt 30 ] && /usr/bin/lockf -s -t 0 "$rebuild_lock" true 2>/dev/null; then
+      sleep 2
+      [ -f "$rebuild_exit" ] || return 1
+    fi
+  done
+  read -r rebuild_status_code < "$rebuild_exit" || rebuild_status_code=1
+  rm -f "$rebuild_exit"
+  [ "$rebuild_status_code" = 0 ]
 }
 
 # $1 is the title, $2 the message. With $3, that button skips the rebuild and the launch goes on.
@@ -350,9 +386,18 @@ rebuild_prefix() {
     exit 1
   }
   exec 8>&- 9>&-
-  choice=$(osascript - "$1" "$2" "${3:-Cancel}" <<'APPLESCRIPT'
+  # AppleScript run from a shell has no icon of its own, so caution comes badged with a folder.
+  icon=$(cat "$np_support/app-executable" 2>/dev/null) || icon=""
+  icon="${icon%/Contents/MacOS/*}/Contents/Resources/NotProton.icns"
+  [ -f "$icon" ] || icon=""
+  choice=$(osascript - "$1" "$2" "${3:-Cancel}" "$icon" <<'APPLESCRIPT'
 on run argv
-  set answer to display dialog (item 2 of argv) with title (item 1 of argv) buttons {item 3 of argv, "Rebuild Prefix", "Backup & Rebuild Prefix"} default button "Backup & Rebuild Prefix" cancel button (item 3 of argv) with icon caution
+  set choices to {item 3 of argv, "Rebuild Prefix", "Backup & Rebuild Prefix"}
+  if item 4 of argv is "" then
+    set answer to display dialog (item 2 of argv) with title (item 1 of argv) buttons choices default button "Backup & Rebuild Prefix" cancel button (item 3 of argv) with icon caution
+  else
+    set answer to display dialog (item 2 of argv) with title (item 1 of argv) buttons choices default button "Backup & Rebuild Prefix" cancel button (item 3 of argv) with icon ((POSIX file (item 4 of argv)) as alias)
+  end if
   return button returned of answer
 end run
 APPLESCRIPT
@@ -368,18 +413,24 @@ APPLESCRIPT
   esac
   executable=$(cat "$np_support/app-executable" 2>/dev/null) || executable=""
   if [ ! -x "$executable" ]; then
-    show_alert "Couldn't find the NotProton app" "The prefix wasn't rebuilt and the game wasn't launched, because the NotProton app was moved or deleted since it was installed. Open NotProton and click Install again, then launch the game."
+    show_alert "Couldn't find the NotProton app" "The prefix wasn't rebuilt and the game wasn't launched, because the NotProton app was moved or deleted since it was installed, or was installed from a disk image or Downloads. Move NotProton to Applications, open it and click Install again, then launch the game."
     exit 1
   fi
-  if ! "$executable" --rebuild-prefix "$STEAM_COMPAT_DATA_PATH" "${np_tool_dir##*/}" \
-    "$np_build" "$np_flavor" "$backup" >> "$log" 2>&1; then
+  if ! run_rebuild "$executable" "$backup"; then
+    # This dialog says it failed, so the page should not say it again later. A refusal
+    # because another rebuild runs left that rebuild's progress, which stays.
+    rebuild_status="$STEAM_COMPAT_DATA_PATH/notproton-rebuild"
+    [ "$(head -n 1 "$rebuild_status" 2>/dev/null)" != failed ] || rm -f "$rebuild_status"
     show_rebuild_failure
     exit 1
   fi
-  rm -f "$STEAM_COMPAT_DATA_PATH/notproton-switch"
+  rm -f "$STEAM_COMPAT_DATA_PATH/notproton-switch" "$STEAM_COMPAT_DATA_PATH/notproton-rebuild"
   # A competing launch or rebuild may have run while the dialog was open.
   # Retake the normal launch lock and check both mismatches before touching Wine.
-  prepare_prefix_directory || exit 1
+  if ! prepare_prefix_directory; then
+    show_alert "Prefix rebuilt" "Another launch is using this prefix. Wait for it to finish, then launch the game again."
+    exit 1
+  fi
   np_rebuilt=1
   note_other_build
   refuse_foreign_prefix
@@ -448,6 +499,9 @@ note_other_build() {
   fi
   if [ -n "$had_build" ] && [ "$had_build" != "$np_build" ]; then
     echo "=== prefix was last run by build $had_build (${had_display:-unknown}), Wine updates it for $np_build ===" >> "$log" 2>&1 || true
+    case "${wine_unix##*/}:$(prefix_machine)" in
+      aarch64-unix:8664 | aarch64-unix:014c | x86_64-unix:aa64 | x86_64-unix:014c) return 0 ;;
+    esac
     switch="$STEAM_COMPAT_DATA_PATH/notproton-switch"
     rm -f "$switch"
     # Only a build the game is known to have run on can be blamed for a crash after the switch.

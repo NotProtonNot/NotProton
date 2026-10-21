@@ -37,8 +37,8 @@ int np_webui_notify(const char *name, uintptr_t message);
 typedef int (*np_webui_handler_fn)(uintptr_t request, uintptr_t response);
 
 // Serves `name` from `handler`. The vptrs name the client's constructors
-// (vtable slot 3 is no-argument New). `request_vptr` also identifies which route
-// a request belongs to. Returns 1 once the route is live.
+// (vtable slot 3 is no-argument New). Routes may share message types. Returns 1
+// once the route is live.
 int np_webui_register_route(const char *name, uintptr_t request_vptr,
                            uintptr_t response_vptr, np_webui_handler_fn handler);
 
