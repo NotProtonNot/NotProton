@@ -197,7 +197,11 @@ enum SteamInstaller {
         }
 
         if let executable = Bundle.main.executableURL {
-            try RebuildPrefixCommand.recordExecutable(executable, in: support)
+            do {
+                try RebuildPrefixCommand.recordExecutable(executable, in: support)
+            } catch {
+                AppLog.note("install: could not record the rebuild app: \(error.localizedDescription)")
+            }
         }
         report(.finished)
         return InstallOutcome(

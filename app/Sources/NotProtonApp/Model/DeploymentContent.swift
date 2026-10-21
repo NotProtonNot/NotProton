@@ -66,12 +66,15 @@ enum DeploymentContent {
 
     static func acquireInstallationLock(
         in folder: URL = SupportPaths.applicationSupport,
-        steamFolder: URL? = SupportPaths.Steam.app.deletingLastPathComponent()
+        steamFolder: URL? = SupportPaths.Steam.app.deletingLastPathComponent(),
+        waiting: Bool = false,
+        waitTimeout: TimeInterval = 120
     ) throws -> InstallationLock {
-        let own = try lock(folder, required: true)!
+        let deadline = waiting ? ProcessInfo.processInfo.systemUptime + waitTimeout : nil
+        let own = try lock(folder, required: true, deadline: deadline)!
         guard let steamFolder else { return InstallationLock(descriptors: [own]) }
         do {
-            guard let steam = try lock(steamFolder, required: false, unless: own) else {
+            guard let steam = try lock(steamFolder, required: false, unless: own, deadline: deadline) else {
                 return InstallationLock(descriptors: [own])
             }
             return InstallationLock(descriptors: [own, steam])
@@ -86,7 +89,9 @@ enum DeploymentContent {
         return InstallationLock(descriptors: descriptor.map { [$0] } ?? [])
     }
 
-    private static func lock(_ folder: URL, required: Bool, unless held: Int32? = nil) throws -> Int32? {
+    private static func lock(
+        _ folder: URL, required: Bool, unless held: Int32? = nil, deadline: TimeInterval? = nil
+    ) throws -> Int32? {
         let parent = folder.path(percentEncoded: false)
         let fd = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC | (required ? O_NOFOLLOW : 0))
         guard fd >= 0 else {
@@ -100,7 +105,15 @@ enum DeploymentContent {
                 return nil
             }
         }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+        var locked = flock(fd, LOCK_EX | LOCK_NB) == 0
+        var failure = errno
+        while !locked, let deadline, failure == EWOULDBLOCK || failure == EINTR,
+            ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+            locked = flock(fd, LOCK_EX | LOCK_NB) == 0
+            failure = errno
+        }
+        guard locked else {
             close(fd)
             throw StepFailure(step: SteamInstaller.step, detail: String(localized: "Another installation operation is changing files here. Wait for it to finish."))
         }

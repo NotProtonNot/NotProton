@@ -23,7 +23,7 @@ static inline int32_t sign_extend(uint32_t val, int bits) {
 
 #define VT_RUN_MIN 8
 
-#define MAX_ROUTES 4
+#define MAX_ROUTES 8
 
 #define REGISTRY_MAP_OFF   96
 #define MAP_ELEMENTS_OFF   48
@@ -55,10 +55,12 @@ typedef uintptr_t (*np_job_factory_fn)(uintptr_t dispatcher, uintptr_t arg);
 typedef void      (*np_send_response_fn)(uintptr_t job, uintptr_t ctx);
 typedef int       (*np_register_fn)(uintptr_t registry, void *record);
 
+// Routes can share request types, so each gets its own job vtable and the job's
+// vptr says which route it belongs to.
 typedef struct {
     uintptr_t           descriptor[DESC_QWORDS];
-    uintptr_t           request_vptr;
     np_webui_handler_fn handler;
+    uintptr_t           vtable[2 + VT_SLOTS];
 } np_route_t;
 
 static uintptr_t g_registry;
@@ -78,7 +80,7 @@ static int        g_route_count;
 
 static uintptr_t g_stock_factory;
 static uintptr_t g_clone[2 + VT_SLOTS];
-static uintptr_t g_clone_vptr;
+static size_t    g_clone_words;
 static uintptr_t g_route_flags;
 
 static int bl_target(uint32_t insn, uintptr_t pc, uintptr_t *out) {
@@ -419,11 +421,11 @@ static uintptr_t vtable_from_factory(uintptr_t factory, int *slot_out, int *run_
 static int64_t job_handler(uintptr_t job, uintptr_t ctx) {
     uintptr_t request  = *(const uintptr_t *)(ctx + 8);
     uintptr_t response = *(const uintptr_t *)(ctx + 16);
-    uintptr_t vptr     = np_plausible_ptr(request) ? *(const uintptr_t *)request : 0;
+    uintptr_t job_vptr = *(const uintptr_t *)job;
 
     int result = RESULT_FAIL;
     for (int i = 0; i < g_route_count; i++) {
-        if (g_routes[i].request_vptr != vptr) continue;
+        if ((uintptr_t)&g_routes[i].vtable[2] != job_vptr) continue;
         result = g_routes[i].handler(request, response);
         break;
     }
@@ -457,7 +459,7 @@ static int borrow_from_served_route(void) {
         // information, and code that asks a job what it is reads them.
         memcpy(g_clone, (const void *)(vptr - 16), 16 + 8 * (size_t)run);
         g_clone[2 + slot] = (uintptr_t)job_handler;
-        g_clone_vptr    = (uintptr_t)&g_clone[2];
+        g_clone_words   = 2 + (size_t)run;
         g_stock_factory = factory;
         g_route_flags   = *(const uintptr_t *)(elem + ELEM_FLAGS_OFF);
 
@@ -472,12 +474,22 @@ static int borrow_from_served_route(void) {
     return 0;
 }
 
-static uintptr_t job_factory(uintptr_t dispatcher, uintptr_t arg) {
+static uintptr_t build_job(int route, uintptr_t dispatcher, uintptr_t arg) {
     uintptr_t job = ((np_job_factory_fn)g_stock_factory)(dispatcher, arg);
-    if (job && g_clone_vptr)
-        *(uintptr_t *)job = g_clone_vptr;
+    if (job)
+        *(uintptr_t *)job = (uintptr_t)&g_routes[route].vtable[2];
     return job;
 }
+
+// The dispatcher calls a factory with no route, so each route needs a factory of its own.
+#define JOB_FACTORY(i) \
+    static uintptr_t job_factory_##i(uintptr_t d, uintptr_t a) { return build_job(i, d, a); }
+JOB_FACTORY(0) JOB_FACTORY(1) JOB_FACTORY(2) JOB_FACTORY(3)
+JOB_FACTORY(4) JOB_FACTORY(5) JOB_FACTORY(6) JOB_FACTORY(7)
+static const np_job_factory_fn g_job_factories[MAX_ROUTES] = {
+    job_factory_0, job_factory_1, job_factory_2, job_factory_3,
+    job_factory_4, job_factory_5, job_factory_6, job_factory_7,
+};
 
 int np_webui_register_route(const char *name, uintptr_t request_vptr,
                            uintptr_t response_vptr, np_webui_handler_fn handler) {
@@ -491,7 +503,7 @@ int np_webui_register_route(const char *name, uintptr_t request_vptr,
         return 0;
     }
 
-    if (!g_clone_vptr && !borrow_from_served_route())
+    if (!g_clone_words && !borrow_from_served_route())
         return 0;
 
     uintptr_t request_new  = *(const uintptr_t *)(request_vptr + MSG_NEW_OFF);
@@ -504,9 +516,9 @@ int np_webui_register_route(const char *name, uintptr_t request_vptr,
     np_route_t *route = &g_routes[g_route_count];
     route->descriptor[DESC_NAME]     = (uintptr_t)name;
     route->descriptor[DESC_CONSTANT] = DESC_CONSTANT_VALUE;
-    route->descriptor[DESC_FACTORY]  = (uintptr_t)job_factory;
-    route->request_vptr              = request_vptr;
+    route->descriptor[DESC_FACTORY]  = (uintptr_t)g_job_factories[g_route_count];
     route->handler                   = handler;
+    memcpy(route->vtable, g_clone, sizeof(uintptr_t) * g_clone_words);
 
     uintptr_t record[4] = {
         (uintptr_t)route->descriptor,

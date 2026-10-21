@@ -6,7 +6,7 @@ SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 
 extract() { sed -n "/^$1() {\$/,/^}\$/p" "$SRC"; }
 functions=""
-for name in last_wine_build note_other_build claim_prefix; do
+for name in prefix_machine last_wine_build note_other_build claim_prefix; do
 	body=$(extract "$name")
 	[ -n "$body" ] || { echo "FAIL: $name not found in $SRC"; exit 1; }
 	functions="$functions
@@ -138,21 +138,27 @@ arch_case() {
 }
 is "an architecture mismatch offers rebuilding" 'rebuild: This game needs its prefix rebuilt: Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
 
-Do you want to rebuild the prefix for CrossOver Preview 2026 10 15-ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix)"
+Do you want to rebuild the prefix for CrossOver Preview 2026 10 15‑ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix)"
 is "the build that set up the prefix is named" 'rebuild: This game needs its prefix rebuilt: This game'"'"'s prefix was last used by CrossOver 26.3, running through Rosetta. Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
 
-Do you want to rebuild the prefix for CrossOver Preview 2026 10 15-ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix 'CrossOver 26.3')"
-is "a tool name's own arch suffix is not repeated" 'rebuild: This game needs its prefix rebuilt: This game'"'"'s prefix was last used by CrossOver Preview 2026 10 15-ARM64, running through Rosetta. Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
+Do you want to rebuild the prefix for CrossOver Preview 2026 10 15‑ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix 'CrossOver 26.3')"
+is "a tool name's own arch suffix is not repeated" 'rebuild: This game needs its prefix rebuilt: This game'"'"'s prefix was last used by CrossOver Preview 2026 10 15‑ARM64, running through Rosetta. Rosetta prefixes cannot be used with versions of CrossOver that run through FEX unless they are rebuilt.
 
-Do you want to rebuild the prefix for CrossOver Preview 2026 10 15-ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix 'CrossOver 2026 10 15-ARM64 - Rosetta')"
+Do you want to rebuild the prefix for CrossOver Preview 2026 10 15‑ARM64, running through FEX? Your save games will be preserved and not lost.' "$(arch_case aarch64-unix 'CrossOver 2026 10 15-ARM64 - Rosetta')"
 is "a matching architecture needs no rebuild" "" "$(arch_case x86_64-unix)"
-rebuild=$(extract rebuild_prefix)
+rebuild="$(extract run_rebuild)
+$(extract rebuild_prefix)"
 mkdir -p "$work/app with spaces"
 cat > "$work/app with spaces/NotProtonApp" <<'SH'
 #!/bin/sh
-printf '%s\n' "$@" > "$TEST_DATA/arguments"
-/usr/bin/lockf -s -t 0 "$TEST_DATA/.notproton-prefix.lock" true || exit 66
-exit "$TEST_STATUS"
+data=$2
+[ -z "$DYLD_INSERT_LIBRARIES$TEST_LEAK" ] || exit 65
+printf '%s\n' "$@" > "$data/arguments"
+printf '%s' "$NOTPROTON_REBUILD_WINDOW" > "$data/window"
+/usr/bin/lockf -s -t 0 "$data/.notproton-prefix.lock" true || exit 66
+[ ! -f "$data/slow" ] || sleep 3
+echo finished > "$data/finished"
+exit "$(cat "$data/status")"
 SH
 chmod +x "$work/app with spaces/NotProtonApp"
 printf '%s' "$work/app with spaces/NotProtonApp" > "$np_support/app-executable"
@@ -161,7 +167,8 @@ rebuild_case() {
 	choice=$1 command_status=$2 launch_verb=$3 skip=${4:-}
 	data=$(mktemp -d "$work/compat data.XXXXXX")
 	(
-		export TEST_DATA="$data" TEST_STATUS="$command_status"
+		export TEST_LEAK=1
+		printf '%s' "$command_status" > "$data/status"
 		STEAM_COMPAT_DATA_PATH=$data np_tool_dir=/tools/chosen np_build=selected-build np_flavor=rosetta
 		np_display='Selected "tool" with \ and a newline
 in its name'
@@ -173,7 +180,7 @@ in its name'
 		# shellcheck disable=SC2329
 		show_rebuild_failure() { echo "rebuild failed" >> "$data/alerts"; }
 		# shellcheck disable=SC2329
-		prepare_prefix_directory() { exec 8>> "$data/.notproton-prefix.lock"; /usr/bin/lockf -s -t 0 8; echo locked >> "$data/checks"; }
+		prepare_prefix_directory() { [ -z "${relock_fails:-}" ] || [ ! -f "$data/arguments" ] || return 1; exec 8>> "$data/.notproton-prefix.lock"; /usr/bin/lockf -s -t 0 8; echo locked >> "$data/checks"; }
 		# shellcheck disable=SC2329
 		note_other_build() { echo build >> "$data/checks"; }
 		# shellcheck disable=SC2329
@@ -217,19 +224,42 @@ is "skipping an offered rebuild goes on with the launch" 0 "$status"
 is "a skipped rebuild retakes the lock and launches" "locked
 launched" "$(cat "$data/checks")"
 is "a skipped rebuild never calls the app" no "$([ -f "$data/arguments" ] && echo yes || echo no)"
-is "the skip button is labelled as asked" "Launch Without Rebuilding" "$(tail -1 "$data/prompt-args")"
+is "the skip button is labelled as asked" "Launch Without Rebuilding" "$(tail -2 "$data/prompt-args" | head -1)"
+is "a missing NotProton icon falls back to caution" "" "$(tail -1 "$data/prompt-args")"
 rebuild_case 'Rebuild Prefix' 0 run 'Launch Without Rebuilding'
 is "install helpers skip an offered rebuild silently" 0 "$status"
 rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
+is "the app gets none of Steam's environment" 0 "$status"
+is "a rebuild from Play asks the app for its progress window" 1 "$(cat "$data/window")"
 is "a finished rebuild clears the switch record" no "$([ -f "$data/notproton-switch" ] && echo yes || echo no)"
+relock_fails=1
+rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
+relock_fails=
+is "a launch that cannot retake its lock after a rebuild stops" 1 "$status"
+is "and says another launch has the prefix" "Prefix rebuilt" "$(cat "$data/alerts")"
 printf '%s' "$work/missing" > "$np_support/app-executable"
 rebuild_case 'Rebuild Prefix' 0 waitforexitandrun
 is "a moved or missing app stops the launch" 1 "$status"
 is "a missing app explains how to repair" "Couldn't find the NotProton app" "$(cat "$data/alerts")"
 
+data=$(mktemp -d "$work/stopped.XXXXXX")
+printf 0 > "$data/status"
+: > "$data/slow"
+(
+	STEAM_COMPAT_DATA_PATH=$data np_tool_dir=/tools/chosen np_build=b np_flavor=rosetta log="$data/log"
+	eval "$rebuild"
+	run_rebuild "$work/app with spaces/NotProtonApp" keep-backup
+) &
+waiter=$!
+sleep 1
+pkill -KILL -P "$waiter" 2>/dev/null || true
+kill -KILL "$waiter" 2>/dev/null || true
+sleep 4
+is "Stop kills the launch but not the rebuild under it" finished "$(cat "$data/finished" 2>/dev/null)"
 
 echo "== crashes after a switch =="
-health_functions="$(extract note_other_build)
+health_functions="$(extract prefix_machine)
+$(extract note_other_build)
 $(extract preview_name)
 $(extract running_name)
 $(extract tool_name)

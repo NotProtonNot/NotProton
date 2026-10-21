@@ -1,17 +1,35 @@
 // CompatManager WebUI service.
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <signal.h>
+#include <spawn.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 #include "compatsvc.h"
 #include "compat.h"
+#include "prefixstate.h"
 #include "webui.h"
 #include "../resolver/anchor.h"
+#include "../util/file.h"
 #include "../util/log.h"
 
 // Route names carry the interface version the page asks for.
 #define ROUTE_GET_COMPAT_TOOLS     "CompatManager.GetCompatTools#1"
 #define ROUTE_SPECIFY_COMPAT_TOOL  "CompatManager.SpecifyCompatTool#1"
 #define ROUTE_NOTIFY_STATE_CHANGED "CompatManager.NotifyStateChanged#1"
+// Our own route. It borrows the GetCompatTools types, and the answer is JSON in
+// default_tool_identifier, so the page needs no message class of its own.
+#define ROUTE_PREFIX_STATE         "NotProton.PrefixState#1"
+#define ROUTE_REBUILD              "NotProton.RebuildPrefix#1"
+#define ROUTE_BACKUP_REBUILD       "NotProton.BackupAndRebuildPrefix#1"
+#define ROUTE_OPEN_LOG             "NotProton.OpenPrefixLog#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -290,6 +308,179 @@ static int specify_compat_tool(uintptr_t request, uintptr_t response) {
     return RESULT_OK;
 }
 
+#define STATE_JSON_MAX 2048
+
+// Every path and tool is worked out here from the appid alone, since any page can call
+// these routes and two of them start processes.
+static int read_state(uint32_t appid, np_prefix_state_t *st) {
+    const char *home = np_home_dir();
+    uint8_t *mgr     = (uint8_t *)np_compat_manager();
+    if (!appid || !home || !mgr) {
+        NP_WARN("compatsvc: no prefix state for app %u without %s", appid,
+                !appid ? "an appid" : !home ? "a home folder" : "a manager");
+        return 0;
+    }
+    char steam[PATH_MAX], support[PATH_MAX], server[PATH_MAX];
+    snprintf(steam, sizeof steam, "%s/Library/Application Support/Steam", home);
+    snprintf(support, sizeof support, "%s/Library/Application Support/notproton", home);
+    snprintf(server, sizeof server, "/tmp/.wine-%u", (unsigned)getuid());
+    np_prefix_roots_t roots = { steam, support, server };
+    np_prefix_state(appid, tool_name(np_compat_tool_for_app(mgr, appid)), &roots, st);
+    return 1;
+}
+
+static uint32_t request_appid(uintptr_t request) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    return (has_bits & REQ_HAS_APPID) ? *(const uint32_t *)(request + REQ_APPID_OFF) : 0;
+}
+
+static int answer_json(uintptr_t response, uint32_t appid, const char *json) {
+    uint8_t body[STATE_JSON_MAX + 8];
+    np_pb_t w = { body, sizeof body, 0, 1 };
+    pb_string(&w, RESP_DEFAULT, json);
+    if (!w.ok || !np_webui_parse_into(response, body, (uint32_t)w.len)) {
+        NP_ERR("compatsvc: the client rejected the answer for app %u", appid);
+        return RESULT_FAIL;
+    }
+    return RESULT_OK;
+}
+
+// JSON for the CrossOver panel, in default_tool_identifier.
+static int prefix_state(uintptr_t request, uintptr_t response) {
+    uint32_t appid = request_appid(request);
+    np_prefix_state_t st;
+    if (!read_state(appid, &st)) return RESULT_FAIL;
+
+    char json[STATE_JSON_MAX];
+    if (np_prefix_state_json(appid, &st, json, sizeof json) < 0) {
+        NP_ERR("compatsvc: the prefix state for app %u does not fit %d bytes", appid,
+               STATE_JSON_MAX);
+        return RESULT_FAIL;
+    }
+    NP_DBG("compatsvc: app %u prefix state %s", appid, json);
+    return answer_json(response, appid, json);
+}
+
+// Runs argv with nothing of Steam's environment, so neither the insert nor Steam's own
+// variables reach the child. Waits for it, which is short for everything started here.
+static int run_detached(char *const argv[]) {
+    const char *home = np_home_dir();
+    char env_home[PATH_MAX + 8], env_tmp[PATH_MAX + 8];
+    snprintf(env_home, sizeof env_home, "HOME=%s", home ? home : "/");
+    snprintf(env_tmp, sizeof env_tmp, "TMPDIR=%s", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+    char *envp[] = { env_home, env_tmp, "PATH=/usr/bin:/bin:/usr/sbin:/sbin", NULL };
+
+    posix_spawn_file_actions_t actions;
+    posix_spawnattr_t attr;
+    sigset_t none, all;
+    sigemptyset(&none);
+    sigfillset(&all);
+    if (posix_spawn_file_actions_init(&actions) != 0) return 0;
+    if (posix_spawnattr_init(&attr) != 0) {
+        posix_spawn_file_actions_destroy(&actions);
+        return 0;
+    }
+    posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawnattr_setsigmask(&attr, &none);
+    posix_spawnattr_setsigdefault(&attr, &all);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF |
+                                    POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETPGROUP);
+    posix_spawnattr_setpgroup(&attr, 0);
+    pid_t pid;
+    int rc = posix_spawn(&pid, argv[0], &actions, &attr, argv, envp);
+    posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&actions);
+    if (rc != 0) {
+        NP_WARN("compatsvc: cannot run %s (%d)", argv[0], rc);
+        return 0;
+    }
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+// The shell backgrounds the app and exits, so the rebuild belongs to launchd and outlives
+// both the page and Steam.
+#define REBUILD_SCRIPT \
+    "log=$1; shift; \"$0\" --rebuild-prefix \"$@\" >> \"$log\" 2>&1 < /dev/null &"
+
+static int start_rebuild(uintptr_t request, uintptr_t response, int keep_backup) {
+    uint32_t appid = request_appid(request);
+    np_prefix_state_t st;
+    if (!read_state(appid, &st)) return RESULT_FAIL;
+
+    const char *refused = !st.needs_rebuild ? "none"
+                        : np_prefix_rebuilding(&st) ? "busy"
+                        : st.running ? "running"
+                        : !st.app[0] ? "app" : NULL;
+    if (!refused) {
+        char status[PATH_MAX], log[PATH_MAX], lock_path[PATH_MAX];
+        snprintf(lock_path, sizeof lock_path, "%s/.notproton-rebuild.lock", st.compatdata);
+        int claim = open(lock_path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+        // A page polling the state holds this for a moment to see whether a rebuild runs.
+        int claimed = claim >= 0 && flock(claim, LOCK_EX | LOCK_NB) == 0;
+        for (int i = 0; claim >= 0 && !claimed && errno == EWOULDBLOCK && i < 10; i++) {
+            usleep(10000);
+            claimed = flock(claim, LOCK_EX | LOCK_NB) == 0;
+        }
+        if (!claimed) {
+            if (claim >= 0) close(claim);
+            return answer_json(response, appid, "{\"error\":\"busy\"}");
+        }
+        snprintf(status, sizeof status, "%s/notproton-rebuild", st.compatdata);
+        snprintf(log, sizeof log, "%s/notproton-run.log", st.compatdata);
+        int fd = open(status, O_WRONLY | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600);
+        struct stat info;
+        int recorded = fd >= 0 && fstat(fd, &info) == 0 && S_ISREG(info.st_mode)
+            && ftruncate(fd, 0) == 0 && write(fd, "setup\n0\n", 8) == 8;
+        if (fd >= 0) close(fd);
+        char *argv[] = { "/bin/sh", "-c", REBUILD_SCRIPT, st.app, log, st.compatdata,
+                         st.tool, st.tool_build, st.tool_flavor,
+                         keep_backup ? "keep-backup" : "discard-backup", NULL };
+        if (!recorded) {
+            refused = "spawn";
+        } else if (!run_detached(argv)) {
+            unlink(status);
+            refused = "spawn";
+        }
+        close(claim);
+    }
+    if (refused)
+        NP_WARN("compatsvc: app %u was not rebuilt (%s)", appid, refused);
+    else
+        NP_LOG("compatsvc: rebuilding app %u for %s, %s the original", appid, st.tool,
+               keep_backup ? "keeping" : "discarding");
+
+    char json[64];
+    snprintf(json, sizeof json, refused ? "{\"error\":\"%s\"}" : "{\"started\":true}",
+             refused ? refused : "");
+    return answer_json(response, appid, json);
+}
+
+static int rebuild_prefix(uintptr_t request, uintptr_t response) {
+    return start_rebuild(request, response, 0);
+}
+
+static int backup_and_rebuild_prefix(uintptr_t request, uintptr_t response) {
+    return start_rebuild(request, response, 1);
+}
+
+static int open_prefix_log(uintptr_t request, uintptr_t response) {
+    uint32_t appid = request_appid(request);
+    np_prefix_state_t st;
+    if (!read_state(appid, &st) || !st.compatdata[0]) return RESULT_FAIL;
+    char log[PATH_MAX];
+    snprintf(log, sizeof log, "%s/notproton-run.log", st.compatdata);
+    // open waits on LaunchServices, which is not something Steam's WebUI thread should do.
+    char *argv[] = { "/bin/sh", "-c", "/usr/bin/open -t \"$0\" &", log, NULL };
+    struct stat info;
+    int opened = lstat(log, &info) == 0 && S_ISREG(info.st_mode)
+        && access(log, R_OK) == 0 && run_detached(argv);
+    return answer_json(response, appid, opened ? "{\"opened\":true}" : "{\"error\":\"log\"}");
+}
+
 static uintptr_t g_state_changed;
 static int g_routes = NP_COMPATSVC_UNTRIED;
 
@@ -334,6 +525,13 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
                             specify_response, specify_compat_tool);
 
     g_routes = NP_COMPATSVC_READY;
+
+    if (!np_webui_register_route(ROUTE_PREFIX_STATE, request, response, prefix_state)
+        || !np_webui_register_route(ROUTE_REBUILD, request, response, rebuild_prefix)
+        || !np_webui_register_route(ROUTE_BACKUP_REBUILD, request, response,
+                                    backup_and_rebuild_prefix)
+        || !np_webui_register_route(ROUTE_OPEN_LOG, request, response, open_prefix_log))
+        NP_WARN("compatsvc: the Compatibility page cannot rebuild prefixes");
 
     uintptr_t notification = np_rtti_vptr(mh, slide, text_base, text_size,
                                           TYPE_STATE_CHANGED);

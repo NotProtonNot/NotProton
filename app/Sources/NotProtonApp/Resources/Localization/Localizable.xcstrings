@@ -2092,6 +2092,22 @@
         }
       }
     },
+    "Copying your files…" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copying your files…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copying your files…"
+          }
+        }
+      }
+    },
     "Could not check installed files." : {
       "localizations" : {
         "it" : {
@@ -2795,6 +2811,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在完成收尾工作"
+          }
+        }
+      }
+    },
+    "Finishing…" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Finishing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Finishing…"
           }
         }
       }
@@ -3714,6 +3746,38 @@
         }
       }
     },
+    "NotProton is rebuilding the prefix for %@." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "NotProton is rebuilding the prefix for %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "NotProton is rebuilding the prefix for %@."
+          }
+        }
+      }
+    },
+    "NotProton is rebuilding this game's prefix." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "NotProton is rebuilding this game's prefix."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "NotProton is rebuilding this game's prefix."
+          }
+        }
+      }
+    },
     "NotProton needs the App Management permission." : {
       "localizations" : {
         "it" : {
@@ -4190,6 +4254,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重建“%@”的游戏容器%@？"
+          }
+        }
+      }
+    },
+    "Rebuilding the prefix" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rebuilding the prefix"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rebuilding the prefix"
+          }
+        }
+      }
+    },
+    "Rebuilding…" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rebuilding…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rebuilding…"
           }
         }
       }

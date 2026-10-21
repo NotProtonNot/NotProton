@@ -145,6 +145,47 @@ int np_log_first_hit(const void *anchor, unsigned long tag) {
     return 1;
 }
 
+// The prefix state has its own check, so here it is whatever the test sets.
+#include "../feats/prefixstate.h"
+#include <spawn.h>
+#include <sys/wait.h>
+const char *np_home_dir(void) { return "/home"; }
+static np_prefix_state_t stub_state;
+static int stub_rebuilding;
+void np_prefix_state(uint32_t appid, const char *tool, const np_prefix_roots_t *roots,
+                     np_prefix_state_t *st) {
+    (void)appid; (void)roots;
+    *st = stub_state;
+    snprintf(st->tool, sizeof st->tool, "%s", tool ? tool : "");
+}
+int np_prefix_rebuilding(const np_prefix_state_t *st) { (void)st; return stub_rebuilding; }
+int np_prefix_state_json(uint32_t appid, const np_prefix_state_t *st, char *out, size_t cap) {
+    return snprintf(out, cap, "{\"appid\":%u,\"tool\":\"%s\"}", appid, st->tool);
+}
+
+// Spawns are recorded instead of run, so the routes that start processes are checked by
+// what they would have started.
+#define SPAWN_ARGS_MAX 16
+static char spawned[SPAWN_ARGS_MAX][1024];
+static int spawned_count;
+static int spawn_result;
+static int stub_posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *fa,
+                            const posix_spawnattr_t *attr, char *const argv[], char *const envp[]) {
+    (void)path; (void)fa; (void)attr; (void)envp;
+    spawned_count = 0;
+    for (; argv[spawned_count] && spawned_count < SPAWN_ARGS_MAX; spawned_count++)
+        snprintf(spawned[spawned_count], sizeof spawned[0], "%s", argv[spawned_count]);
+    *pid = 4242;
+    return spawn_result;
+}
+static pid_t stub_waitpid(pid_t pid, int *status, int options) {
+    (void)options;
+    *status = 0;
+    return pid;
+}
+#define posix_spawn stub_posix_spawn
+#define waitpid stub_waitpid
+
 #include "../feats/compatsvc.c"
 
 // Minimal protobuf decoder for the captured reply. Enough to find field values.
@@ -664,6 +705,147 @@ static void routes_state_cases(void) {
     stub_absent_type = NULL;
 }
 
+static char scratch[PATH_MAX];
+
+static const char *answer(void) {
+    static char json[256];
+    json[0] = '\0';
+    pb_copy_string(captured_pb, captured_pb_len, RESP_DEFAULT, json, sizeof json);
+    return json;
+}
+
+static int exists(const char *name) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof path, "%s/%s", scratch, name);
+    return access(path, F_OK) == 0;
+}
+
+static void put(const char *name, const char *text) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof path, "%s/%s", scratch, name);
+    FILE *f = fopen(path, "w");
+    fputs(text, f);
+    fclose(f);
+}
+
+static void ready_to_rebuild(void) {
+    reset();
+    memset(&stub_state, 0, sizeof stub_state);
+    stub_rebuilding = 0;
+    spawned_count = 0;
+    spawn_result = 0;
+    stub_state.has_prefix = 1;
+    stub_state.needs_rebuild = 1;
+    snprintf(stub_state.compatdata, sizeof stub_state.compatdata, "%s", scratch);
+    snprintf(stub_state.tool_build, sizeof stub_state.tool_build, "27.0.0.41073-fex");
+    snprintf(stub_state.tool_flavor, sizeof stub_state.tool_flavor, "fex");
+    snprintf(stub_state.app, sizeof stub_state.app, "/Applications/NotProton.app/Contents/MacOS/NotProtonApp");
+    stub_tool_for_app_name = "notproton-fex-41073";
+    char status[PATH_MAX];
+    snprintf(status, sizeof status, "%s/notproton-rebuild", scratch);
+    unlink(status);
+}
+
+// Any page can call these, and two of them start the app, so each refusal is checked.
+static void rebuild_route_cases(void) {
+    snprintf(scratch, sizeof scratch, "%s/compatsvc.XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+    if (!mkdtemp(scratch)) { check(0, "a scratch compatdata exists"); return; }
+
+    struct { const char *why; void (*set)(void); const char *want; } refusals[] = {
+        { "a prefix that needs no rebuild is not rebuilt", NULL, "{\"error\":\"none\"}" },
+        { "a rebuild already under way is not started twice", NULL, "{\"error\":\"busy\"}" },
+        { "a running game is not rebuilt under it", NULL, "{\"error\":\"running\"}" },
+        { "a missing app is reported, not started", NULL, "{\"error\":\"app\"}" },
+    };
+    for (int i = 0; i < 4; i++) {
+        ready_to_rebuild();
+        if (i == 0) stub_state.needs_rebuild = 0;
+        if (i == 1) stub_rebuilding = 1;
+        if (i == 2) stub_state.running = 1;
+        if (i == 3) stub_state.app[0] = '\0';
+        int rc = rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+        check(rc == RESULT_OK && strcmp(answer(), refusals[i].want) == 0, refusals[i].why);
+        check(spawned_count == 0, "a refused rebuild starts nothing");
+        check(!exists("notproton-rebuild"), "a refused rebuild writes no progress");
+    }
+
+    ready_to_rebuild();
+    int rc = backup_and_rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(rc == RESULT_OK && strcmp(answer(), "{\"started\":true}") == 0, "a rebuild starts");
+    char log[PATH_MAX];
+    snprintf(log, sizeof log, "%s/notproton-run.log", scratch);
+    const char *want[] = { "/bin/sh", "-c", REBUILD_SCRIPT, stub_state.app, log, scratch,
+                           "notproton-fex-41073", "27.0.0.41073-fex", "fex", "keep-backup" };
+    int same = spawned_count == 10;
+    for (int i = 0; same && i < 10; i++) same = strcmp(spawned[i], want[i]) == 0;
+    check(same, "the app gets the prefix, the tool Steam would run, and the backup choice");
+    check(exists("notproton-rebuild"), "a started rebuild reads as under way before the app reports");
+
+    ready_to_rebuild();
+    char status_path[PATH_MAX], victim[PATH_MAX], lock_path[PATH_MAX];
+    snprintf(status_path, sizeof status_path, "%s/notproton-rebuild", scratch);
+    snprintf(victim, sizeof victim, "%s/keep", scratch);
+    snprintf(lock_path, sizeof lock_path, "%s/.notproton-rebuild.lock", scratch);
+    put("keep", "untouched");
+    symlink(victim, status_path);
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    struct stat info;
+    check(spawned_count == 0 && stat(victim, &info) == 0 && info.st_size == 9,
+          "a symlinked status neither truncates its target nor starts a rebuild");
+    ready_to_rebuild();
+    int claim = open(lock_path, O_RDWR);
+    if (claim < 0 || flock(claim, LOCK_EX | LOCK_NB) != 0) abort();
+    put("notproton-rebuild", "copy\n4242\n");
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(spawned_count == 0 && strcmp(answer(), "{\"error\":\"busy\"}") == 0,
+          "the actual rebuild lock refuses a launch even when the state snapshot is stale");
+    close(claim);
+
+    ready_to_rebuild();
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(spawned_count == 10 && strcmp(spawned[9], "discard-backup") == 0,
+          "a plain rebuild discards the original");
+
+    ready_to_rebuild();
+    spawn_result = 1;
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(strcmp(answer(), "{\"error\":\"spawn\"}") == 0, "a rebuild that cannot start says so");
+    check(!exists("notproton-rebuild"), "a rebuild that cannot start leaves no progress behind");
+
+    ready_to_rebuild();
+    rc = rebuild_prefix(build_request(0, 0), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && spawned_count == 0, "a request with no appid starts nothing");
+
+    ready_to_rebuild();
+    open_prefix_log(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(strcmp(answer(), "{\"error\":\"log\"}") == 0 && spawned_count == 0,
+          "a missing log is not opened");
+    put("notproton-run.log", "x\n");
+    open_prefix_log(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(strcmp(answer(), "{\"opened\":true}") == 0 && spawned_count == 4
+          && strcmp(spawned[0], "/bin/sh") == 0 && strcmp(spawned[3], log) == 0
+          && strcmp(spawned[2], "/usr/bin/open -t \"$0\" &") == 0,
+          "the log opens in the background, so Steam does not wait on LaunchServices");
+    unlink(log);
+    symlink(victim, log);
+    spawned_count = 0;
+    open_prefix_log(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(spawned_count == 0, "a symlinked log is not opened");
+
+    ready_to_rebuild();
+    put("notproton-rebuild", "done\n1\n");
+    prefix_state(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(exists("notproton-rebuild"), "a finished rebuild remains available to other pages");
+    put("notproton-rebuild", "copy\n1\n");
+    stub_rebuilding = 1;
+    prefix_state(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(exists("notproton-rebuild"), "a rebuild under way keeps its progress");
+
+    char cmd[PATH_MAX + 16];
+    snprintf(cmd, sizeof cmd, "rm -rf '%s'", scratch);
+    if (system(cmd) != 0) fprintf(stderr, "could not remove %s\n", scratch);
+}
+
 static void string_field_cases(void) {
     // string_field reads an arena-tagged pointer. Low bit set = arena, cleared before
     // deref. A long string (byte[23] < 0) dereferences the first qword as a pointer to
@@ -716,12 +898,13 @@ int main(void) {
     no_manager_cases();
     routes_state_cases();
     string_field_cases();
+    rebuild_route_cases();
 
     if (failures) {
         printf("==> compatsvc: %d check(s) failed\n", failures);
         return 1;
     }
     printf("==> compatsvc: the tool list, the none entry, the priorities, the specify "
-           "handler, and the route states all answer\n");
+           "handler, the route states and the rebuild routes all answer\n");
     return 0;
 }
