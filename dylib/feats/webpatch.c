@@ -1,5 +1,6 @@
 // Enables Steam Play in the UI/enables the Compatibility tab in game properties
 #include "webpatch.h"
+#include "conf.c"
 #include "nativeplatform.h"
 #include "../util/file.h"
 #include "../util/log.h"
@@ -95,6 +96,11 @@ void np_webpatch_set_fex_tools(const char *const *names, size_t count) {
 
 static int has_suffix(const char *s, const char *suf);
 
+static void feat_trim_tail(char *v) {
+    size_t n = strlen(v);
+    while (n && (v[n - 1] == ' ' || v[n - 1] == '\t')) v[--n] = 0;
+}
+
 // "Developer" section rows are declared in ~/Library/Application Support/notproton/plugins/*.conf,
 // one "key = value" per line, applied at launch by compat_run.sh.
 #define NP_FEAT_DIR      "Library/Application Support/notproton/plugins"
@@ -134,240 +140,83 @@ static int feat_exists(const char *home, const char *rel) {
 }
 
 // isspace() without the locale, to match [[:space:]] in compat_run.sh.
-static int feat_space(char c) {
-    return c == ' ' || (c >= '\t' && c <= '\r');
-}
-
-static void feat_trim(char *v) {
-    size_t n = strlen(v);
-    while (n && feat_space(v[n - 1])) v[--n] = 0;
-}
-
-// compat_run.sh ignores keys that aren't valid shell variable names, so the compatibility panel does the same thing
-static int feat_key_ok(const char *k) {
-    if (strncmp(k, "NOTPROTON_", 10) != 0 || !k[10]) return 0;
-    for (k += 10; *k; k++)
-        if (!((*k >= 'A' && *k <= 'Z') || (*k >= '0' && *k <= '9') || *k == '_')) return 0;
-    return 1;
-}
-
-// Takes the first value when a setting appears twice so as to match compat_run.sh.
-static void feat_set(char *dst, size_t size, const char *v, int *bad) {
-    if (*dst) return;
-    if (strlen(v) >= size) *bad = 1;
-    snprintf(dst, size, "%s", v);
-}
-
-// Appends to a field that may be given more than once, as "requires" is.
-static void feat_add(char *dst, size_t size, const char *v, int *bad) {
-    size_t used = strlen(dst);
-    if (used + strlen(v) + 2 > size) { *bad = 1; return; }
-    snprintf(dst + used, size - used, "%s%s", used ? "\n" : "", v);
-}
-
-// A field that has to reach the page as a JS number. Trailing text is refused rather
-// than emitted, so a typo cannot break the panel it renders into.
-static int feat_num(const char *v, double *out) {
-    char *end;
-    double d;
-    if (!*v) return 0;
-    d = strtod(v, &end);
-    while (feat_space(*end)) end++;
-    if (*end || d != d || d - d != 0) return 0;
-    *out = d;
-    return 1;
-}
-
-static int feat_has_choice(const np_feat_t *f, const char *want) {
-    const char *p = f->ch;
-    for (int c = 0; c < f->nch; c++) {
-        const char *val = p;
-        p += strlen(p) + 1;
-        p += strlen(p) + 1;
-        if (strcmp(val, want) == 0) return 1;
-    }
-    return 0;
-}
-
 static np_feat_t *feat_find(np_feat_t *list, int n, const char *key) {
     for (int i = 0; i < n; i++)
         if (strcmp(list[i].key, key) == 0) return &list[i];
     return NULL;
 }
 
-// Unknown fields are ignored so a plugin file written for a later version still loads.
-static void feat_read_file(const char *path, np_feat_t *list, int *count) {
-    char line[2048];
+typedef struct { np_feat_t *list; int count; const char *where; } feat_ctx_t;
+
+// What the grammar in conf.c does not know: where each field lands in np_feat_t. The
+// record has already been checked against the plugin schema by the time this runs.
+static const char *feat_take(const np_conf_rec_t *rec, void *ctx, const char **detail) {
+    feat_ctx_t *fc = ctx;
     np_feat_t f;
-    int bad = 0;
-    FILE *fp = fopen(path, "r");
-    if (!fp) return;
+    const char *n, *v;
+    int it = 0;
+
+    (void)detail;
+    if (feat_find(fc->list, fc->count, rec->id)) return NP_CONF_DUP_ID;
+    if (fc->count >= NP_FEAT_MAX) return NP_CONF_LIMIT;
     memset(&f, 0, sizeof(f));
-    while (fgets(line, sizeof(line), fp)) {
-        char *eq, *v, *k = line;
-        size_t len = strcspn(line, "\n");
-        if (len >= sizeof(line) - 1) {
-            NP_WARN("plugins: %s has a line over %zu bytes, ignored", path, sizeof(line) - 2);
-            fclose(fp);
-            return;
-        }
-        line[len] = 0;
-        while (feat_space(*k)) k++;
-        if (*k == '#' || !(eq = strchr(k, '='))) continue;
-        *eq = 0;
-        v = eq + 1;
-        feat_trim(k);
-        while (feat_space(*v)) v++;
-        feat_trim(v);
-        if (!*v) continue;
-        if (strcmp(k, "key") == 0) feat_set(f.key, sizeof(f.key), v, &bad);
-        else if (strcmp(k, "label") == 0) feat_set(f.label, sizeof(f.label), v, &bad);
-        else if (strcmp(k, "description") == 0) feat_set(f.desc, sizeof(f.desc), v, &bad);
-        else if (strcmp(k, "section") == 0) feat_set(f.section, sizeof(f.section), v, &bad);
-        else if (strcmp(k, "on") == 0) feat_set(f.on, sizeof(f.on), v, &bad);
-        else if (strcmp(k, "off") == 0) feat_set(f.off, sizeof(f.off), v, &bad);
-        else if (strcmp(k, "depends") == 0) feat_set(f.depends, sizeof(f.depends), v, &bad);
-        else if (strcmp(k, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
-            feat_set(f.req[f.nreq++], NP_FEAT_STR, v, &bad);
-        else if (strcmp(k, "type") == 0) feat_set(f.type, sizeof(f.type), v, &bad);
-        else if (strcmp(k, "min") == 0) feat_set(f.min, sizeof(f.min), v, &bad);
-        else if (strcmp(k, "max") == 0) feat_set(f.max, sizeof(f.max), v, &bad);
-        else if (strcmp(k, "step") == 0) feat_set(f.step, sizeof(f.step), v, &bad);
-        else if (strcmp(k, "default") == 0) feat_set(f.dflt, sizeof(f.dflt), v, &bad);
-        else if (strcmp(k, "suffix") == 0) feat_set(f.suffix, sizeof(f.suffix), v, &bad);
-        else if (strcmp(k, "description_on") == 0)
-            feat_add(f.don, sizeof(f.don), v, &bad);
-        else if (strcmp(k, "choice") == 0 && f.nch < NP_FEAT_CH_MAX) {
-            // "value = label", split on the first = as "env = NAME=VALUE" already is.
-            char *ceq = strchr(v, '=');
-            char *lab = v;
-            if (ceq) {
-                *ceq = 0;
-                lab = ceq + 1;
-                feat_trim(v);
-                while (feat_space(*lab)) lab++;
+    snprintf(f.key, sizeof(f.key), "%s", rec->id);
+    while (np_conf_next(rec, &it, &n, &v)) {
+        if (strcmp(n, "label") == 0) snprintf(f.label, sizeof(f.label), "%s", v);
+        else if (strcmp(n, "description") == 0) snprintf(f.desc, sizeof(f.desc), "%s", v);
+        else if (strcmp(n, "section") == 0) snprintf(f.section, sizeof(f.section), "%s", v);
+        else if (strcmp(n, "on") == 0) snprintf(f.on, sizeof(f.on), "%s", v);
+        else if (strcmp(n, "off") == 0) snprintf(f.off, sizeof(f.off), "%s", v);
+        else if (strcmp(n, "depends") == 0) snprintf(f.depends, sizeof(f.depends), "%s", v);
+        else if (strcmp(n, "type") == 0) snprintf(f.type, sizeof(f.type), "%s", v);
+        else if (strcmp(n, "min") == 0) snprintf(f.min, sizeof(f.min), "%s", v);
+        else if (strcmp(n, "max") == 0) snprintf(f.max, sizeof(f.max), "%s", v);
+        else if (strcmp(n, "step") == 0) snprintf(f.step, sizeof(f.step), "%s", v);
+        else if (strcmp(n, "default") == 0) snprintf(f.dflt, sizeof(f.dflt), "%s", v);
+        else if (strcmp(n, "suffix") == 0) snprintf(f.suffix, sizeof(f.suffix), "%s", v);
+        else if (strcmp(n, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
+            snprintf(f.req[f.nreq++], NP_FEAT_STR, "%s", v);
+        else if (strcmp(n, "description_on") == 0) {
+            size_t used = strlen(f.don);
+            snprintf(f.don + used, sizeof(f.don) - used, "%s%s", used ? "\n" : "", v);
+        } else if (strcmp(n, "choice") == 0 && f.nch < NP_FEAT_CH_MAX) {
+            // "value = label", split at the first = as "env = NAME=VALUE" is.
+            char val[NP_FEAT_STR], *lab = val, *eq;
+            snprintf(val, sizeof(val), "%s", v);
+            if ((eq = strchr(val, '='))) {
+                *eq = 0;
+                lab = eq + 1;
+                feat_trim_tail(val);
+                while (*lab == ' ' || *lab == '\t') lab++;
             }
-            if (*v) {
-                size_t need = strlen(v) + strlen(lab) + 2;
-                if ((size_t)f.chlen + need > sizeof(f.ch)) {
-                    bad = 1;
-                } else {
-                    memcpy(f.ch + f.chlen, v, strlen(v) + 1);
-                    f.chlen += (int)strlen(v) + 1;
-                    memcpy(f.ch + f.chlen, lab, strlen(lab) + 1);
-                    f.chlen += (int)strlen(lab) + 1;
-                    f.nch++;
-                }
+            if (f.chlen + (int)strlen(val) + (int)strlen(lab) + 2 <= NP_FEAT_CH_BUF) {
+                memcpy(f.ch + f.chlen, val, strlen(val) + 1);
+                f.chlen += (int)strlen(val) + 1;
+                memcpy(f.ch + f.chlen, lab, strlen(lab) + 1);
+                f.chlen += (int)strlen(lab) + 1;
+                f.nch++;
             }
         }
-    }
-    fclose(fp);
-    if (bad) {
-        NP_WARN("plugins: %s has a value that's too long, ignored", path);
-        return;
     }
     if (!*f.on) snprintf(f.on, sizeof(f.on), "1");
     if (!*f.section) snprintf(f.section, sizeof(f.section), "dev");
-    if (!*f.key) {
-        NP_WARN("plugins: %s has no key, ignored", path);
-        return;
-    }
-    if (!feat_key_ok(f.key)) {
-        NP_WARN("plugins: %s has an invalid key %s, ignored", path, f.key);
-        return;
-    }
-    if (!*f.label) {
-        NP_WARN("plugins: %s has no label, ignored", path);
-        return;
-    }
-    if (strcmp(f.section, "dev") != 0) {
-        NP_WARN("plugins: %s is not in the dev section, ignored", path);
-        return;
-    }
-    // A slider is either a min/max range or a ladder of declared values; either way it
-    // needs enough to draw, since a half-declared one renders as a dead control.
-    if (strcmp(f.type, "slider") == 0 && f.nch) {
-        if (*f.min || *f.max) {
-            NP_WARN("plugins: %s is a slider with both values and a range, ignored", path);
-            return;
-        }
-        if (f.nch < 2) {
-            NP_WARN("plugins: %s is a slider with one value, ignored", path);
-            return;
-        }
-        // The control logs an error of its own and jumps to the first value when handed
-        // one it cannot find, so a default that is not on the ladder is refused.
-        if (*f.dflt && !feat_has_choice(&f, f.dflt)) {
-            NP_WARN("plugins: %s has default %s, which is not one of its values, ignored",
-                    path, f.dflt);
-            return;
-        }
-    } else if (strcmp(f.type, "slider") == 0) {
-        double mn, mx, ignored;
-        if (!feat_num(f.min, &mn) || !feat_num(f.max, &mx) || mx <= mn) {
-            NP_WARN("plugins: %s is a slider with no usable min/max range, ignored", path);
-            return;
-        }
-        if ((*f.step && !feat_num(f.step, &ignored)) ||
-            (*f.dflt && !feat_num(f.dflt, &ignored))) {
-            NP_WARN("plugins: %s has a step or default that is not a number, ignored", path);
-            return;
-        }
-    } else if (*f.type && strcmp(f.type, "choice") != 0) {
-        NP_WARN("plugins: %s has type %s, which does not exist, ignored", path, f.type);
-        return;
-    }
-    if (strcmp(f.type, "choice") == 0 && !f.nch) {
-        NP_WARN("plugins: %s is a choice with no values, ignored", path);
-        return;
-    }
-    if (feat_find(list, *count, f.key)) {
-        NP_WARN("plugins: %s repeats key %s, ignored", path, f.key);
-        return;
-    }
-    if (*count >= NP_FEAT_MAX) {
-        NP_WARN("plugins: %s is over the %d plugin limit, ignored", path, NP_FEAT_MAX);
-        return;
-    }
-    list[(*count)++] = f;
+    fc->list[fc->count++] = f;
+    return NULL;
+}
+
+static void feat_refused(const char *scope, const char *code, const char *detail, void *ctx) {
+    (void)ctx;
+    NP_WARN("plugins: %s refused, %s%s%s", scope, code, detail ? ":" : "", detail ? detail : "");
 }
 
 static int feat_load(const char *home, np_feat_t *list) {
+    const np_conf_sink_t sink = { feat_take, feat_refused, NULL };
+    feat_ctx_t fc = { list, 0, NULL };
     char dir[2048];
-    struct dirent *de;
-    DIR *d;
-    int count = 0;
-    char **names = NULL;
-    int nnames = 0;
 
     if (snprintf(dir, sizeof(dir), "%s/" NP_FEAT_DIR, home) >= (int)sizeof(dir)) return 0;
-    if ((d = opendir(dir))) {
-        while ((de = readdir(d))) {
-            char **grown;
-            if (de->d_name[0] == '.' || strchr(de->d_name, '\n')) continue;
-            if (!has_suffix(de->d_name, ".conf")) continue;
-            grown = realloc(names, (size_t)(nnames + 1) * sizeof(*names));
-            if (!grown) break;
-            names = grown;
-            names[nnames] = strdup(de->d_name);
-            if (!names[nnames]) break;
-            nnames++;
-        }
-        closedir(d);
-        for (int i = 1; i < nnames; i++)
-            for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
-                char *t = names[j - 1]; names[j - 1] = names[j]; names[j] = t;
-            }
-        for (int i = 0; i < nnames; i++) {
-            char path[4096];
-            if (snprintf(path, sizeof(path), "%s/%s", dir, names[i]) < (int)sizeof(path))
-                feat_read_file(path, list, &count);
-            free(names[i]);
-        }
-        free(names);
-    }
-
-    return count;
+    np_conf_read_dir(dir, NULL, NP_CONF_PLUGIN, &sink, &fc);
+    return fc.count;
 }
 
 static _Thread_local char g_feat_ready[NP_FEAT_MAX * (NP_FEAT_STR + 8) + 4] = "{}";
@@ -563,16 +412,16 @@ static void feat_build(void) {
             double mn = 0, mx = 0, step = 0, dflt = 0;
             char nums[128];
             int nlen;
-            feat_num(list[i].min, &mn);
-            feat_num(list[i].max, &mx);
+            mn = conf_dbl(list[i].min);
+            mx = conf_dbl(list[i].max);
             nlen = snprintf(nums, sizeof(nums), ",mn:%g,mx:%g", mn, mx);
             if (nlen < 0 || nlen >= (int)sizeof(nums) || !out_put(&rows, nums, (size_t)nlen))
                 goto done;
-            if (feat_num(list[i].step, &step)) {
+            if (conf_num(list[i].step) && (step = conf_dbl(list[i].step), 1)) {
                 nlen = snprintf(nums, sizeof(nums), ",st:%g", step);
                 if (nlen < 0 || !out_put(&rows, nums, (size_t)nlen)) goto done;
             }
-            if (feat_num(list[i].dflt, &dflt)) {
+            if (conf_num(list[i].dflt) && (dflt = conf_dbl(list[i].dflt), 1)) {
                 nlen = snprintf(nums, sizeof(nums), ",df:%g", dflt);
                 if (nlen < 0 || !out_put(&rows, nums, (size_t)nlen)) goto done;
             }
@@ -678,107 +527,51 @@ static int var_dirs(const char *root, const char *rel, char dirs[][NP_VAR_STR], 
     return n;
 }
 
-static void var_read_file(const char *path, const char *home, np_var_t *list, int *count) {
-    char line[2048];
+typedef struct { np_var_t *list; int count; const char *home; } var_ctx_t;
+
+static const char *var_take(const np_conf_rec_t *rec, void *ctx, const char **detail) {
+    var_ctx_t *vc = ctx;
     np_var_t v;
-    const char *base = strrchr(path, '/');
-    FILE *fp;
-    size_t len;
+    const char *n, *val;
+    int it = 0;
 
+    (void)detail;
+    for (int i = 0; i < vc->count; i++)
+        if (strcmp(vc->list[i].name, rec->id) == 0) return NP_CONF_DUP_ID;
+    if (vc->count >= NP_VAR_MAX) return NP_CONF_LIMIT;
     memset(&v, 0, sizeof(v));
-    base = base ? base + 1 : path;
-    snprintf(v.name, sizeof(v.name), "%s", base);
-    len = strlen(v.name);
-    if (len > 5) v.name[len - 5] = 0;          // drop .conf
-    for (const char *p = v.name; *p; p++)
-        if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
-              (*p >= '0' && *p <= '9') || *p == '.' || *p == '-')) {
-            NP_WARN("variants: %s is not a usable variant name, ignored", base);
-            return;
-        }
-
-    if (!(fp = fopen(path, "r"))) return;
-    while (fgets(line, sizeof(line), fp)) {
-        char *eq, *val, *k = line;
-        while (*k == ' ' || *k == '\t') k++;
-        if (*k == '#' || !(eq = strchr(k, '='))) continue;
-        *eq = 0;
-        val = eq + 1;
-        feat_trim(k);
-        while (*val == ' ' || *val == '\t') val++;
-        feat_trim(val);
-        if (!*val) continue;
-        if (strcmp(k, "label") == 0) snprintf(v.label, sizeof(v.label), "%s", val);
-        else if (strcmp(k, "variant") == 0) snprintf(v.variant, sizeof(v.variant), "%s", val);
-        else if (strcmp(k, "src") == 0) snprintf(v.src, sizeof(v.src), "%s", val);
-        else if (strcmp(k, "dst") == 0) snprintf(v.dst, sizeof(v.dst), "%s", val);
-        else {
-            // Refused rather than ignored, as a plugin is: a typo that looks like it
-            // worked is worse than a variant that does not appear.
-            NP_WARN("variants: %s declares '%s', which is not a variant field; "
-                    "the fields are label, variant, src and dst", path, k);
-            fclose(fp);
-            return;
-        }
-    }
-    fclose(fp);
-
-    if (!*v.src || !*v.dst) {
-        NP_WARN("variants: %s needs both src and dst, ignored", path);
-        return;
-    }
-    if (v.dst[0] == '/' || strstr(v.dst, "..")) {
-        NP_WARN("variants: %s dst must be a relative path inside the runner, ignored", path);
-        return;
-    }
-    if (v.src[0] != '/') {
-        char abs[1024];
-        if (snprintf(abs, sizeof(abs), "%s/%s", home, v.src) >= (int)sizeof(abs)) return;
-        snprintf(v.src, sizeof(v.src), "%s", abs);
+    snprintf(v.name, sizeof(v.name), "%s", rec->id);
+    while (np_conf_next(rec, &it, &n, &val)) {
+        if (strcmp(n, "label") == 0) snprintf(v.label, sizeof(v.label), "%s", val);
+        else if (strcmp(n, "variant") == 0) snprintf(v.variant, sizeof(v.variant), "%s", val);
+        else if (strcmp(n, "src") == 0) snprintf(v.src, sizeof(v.src), "%s", val);
+        else if (strcmp(n, "dst") == 0) snprintf(v.dst, sizeof(v.dst), "%s", val);
     }
     if (!*v.label) snprintf(v.label, sizeof(v.label), "%s", v.name);
-    if (!*v.variant) snprintf(v.variant, sizeof(v.variant), "Runner");
-    if (*count >= NP_VAR_MAX) {
-        NP_WARN("variants: more than %d descriptors, %s ignored", NP_VAR_MAX, path);
-        return;
+    if (!*v.variant) snprintf(v.variant, sizeof(v.variant), "%s", v.name);
+    if (v.src[0] != '/') {
+        char abs[1024];
+        if (snprintf(abs, sizeof(abs), "%s/%s", vc->home, v.src) >= (int)sizeof(abs))
+            return NP_CONF_LIMIT;
+        snprintf(v.src, sizeof(v.src), "%s", abs);
     }
-    list[(*count)++] = v;
+    vc->list[vc->count++] = v;
+    return NULL;
+}
+
+static void var_refused(const char *scope, const char *code, const char *detail, void *ctx) {
+    (void)ctx;
+    NP_WARN("variants: %s refused, %s%s%s", scope, code, detail ? ":" : "", detail ? detail : "");
 }
 
 static int var_load(const char *home, np_var_t *list) {
+    const np_conf_sink_t sink = { var_take, var_refused, NULL };
+    var_ctx_t vc = { list, 0, home };
     char dir[2048];
-    struct dirent *de;
-    DIR *d;
-    int count = 0;
-    char **names = NULL;
-    int nnames = 0;
 
     np_support_path(dir, sizeof(dir), home, "variants");
-    if (!(d = opendir(dir))) return 0;
-    while ((de = readdir(d))) {
-        char **grown;
-        if (de->d_name[0] == '.') continue;
-        if (!has_suffix(de->d_name, ".conf")) continue;
-        grown = realloc(names, (size_t)(nnames + 1) * sizeof(*names));
-        if (!grown) break;
-        names = grown;
-        names[nnames] = strdup(de->d_name);
-        if (!names[nnames]) break;
-        nnames++;
-    }
-    closedir(d);
-    for (int i = 1; i < nnames; i++)
-        for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
-            char *t = names[j - 1]; names[j - 1] = names[j]; names[j] = t;
-        }
-    for (int i = 0; i < nnames; i++) {
-        char path[4096];
-        if (snprintf(path, sizeof(path), "%s/%s", dir, names[i]) < (int)sizeof(path))
-            var_read_file(path, home, list, &count);
-        free(names[i]);
-    }
-    free(names);
-    return count;
+    np_conf_read_dir(dir, NULL, NP_CONF_VARIANT, &sink, &vc);
+    return vc.count;
 }
 
 static void var_build(void) {

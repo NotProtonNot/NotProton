@@ -6,9 +6,10 @@ set -e
 SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "runnervariantcheck: $SRC not present, skipped"; exit 0; }
 
-block=$(sed -n '/^np_variant_conf_dir=/,/^export CX_ROOT$/p' "$SRC")
+# The reader comes along: the variant block reads descriptors through it now.
+block=$(sed -n '/^np_conf_normalise() (/,/^export CX_ROOT$/p' "$SRC")
 case "$block" in
-  *np_variant_overlay*np_variant_resolve*) ;;
+  *np_conf_normalise*np_variant_overlay*np_variant_resolve*) ;;
   *) echo "FAIL: the variant block was not found in $SRC"; exit 1 ;;
 esac
 
@@ -31,7 +32,7 @@ native_dll() {
 }
 
 desc() {
-  cat > "$work/variants/$1.conf"
+  { printf '[%s]\n' "$1"; cat; } > "$work/variants/$1.conf"
 }
 
 resolve() {
@@ -104,6 +105,8 @@ echo "== trees that would fail silently are refused"
 mkdir -p "$work/trees/native/x86_64-windows"
 native_dll "$work/trees/native/x86_64-windows/d3d11.dll"
 desc unmarked <<CONF
+label = Unmarked
+variant = Backend
 src = trees/native
 dst = lib/dxmt
 CONF
@@ -114,6 +117,8 @@ logged "and says why" "is not marked as a Wine builtin"
 mkdir -p "$work/trees/arm/aarch64-windows"
 dll "$work/trees/arm/aarch64-windows/d3d11.dll"
 desc otherarch <<CONF
+label = Otherarch
+variant = Backend
 src = trees/arm
 dst = lib/dxmt
 CONF
@@ -122,23 +127,29 @@ logged "and says so" "otherarch has nothing for x86_64"
 
 : > "$work/log"
 desc typo <<CONF
+label = Typo
+variant = Backend
 src  = trees/one
 dst  = lib/dxmt
 srcc = trees/elsewhere
 CONF
 ok "an unknown key falls back" "$(resolve 'typo')" "$base"
-logged "and names the key" "unknown keys (srcc )"
+logged "and names the field" "typo refused, unknown-field:srcc"
 
 : > "$work/log"
 desc escape <<CONF
+label = Escape
+variant = Backend
 src = trees/one
 dst = ../../../etc
 CONF
 ok "a dst that leaves the runner falls back" "$(resolve 'escape')" "$base"
-logged "and says why" "dst must be a relative path inside the runner"
+logged "and says why" "escape refused, bad-value:dst"
 
 : > "$work/log"
 desc gone <<CONF
+label = Gone
+variant = Backend
 src = trees/not-there
 dst = lib/dxmt
 CONF
@@ -150,6 +161,8 @@ mkdir -p "$work/trees/both/x86_64-windows" "$work/trees/both/aarch64-windows"
 dll "$work/trees/both/x86_64-windows/d3d11.dll" bothbothboth
 dll "$work/trees/both/aarch64-windows/d3d11.dll" armarmarm
 desc bothslots <<CONF
+label = Bothslots
+variant = Backend
 src = trees/both
 dst = lib/dxmt
 CONF
@@ -184,6 +197,8 @@ logged "and says so again" "has nothing for aarch64"
 mkdir -p "$work/trees/flat"
 dll "$work/trees/flat/plain.dll" flat
 desc flat <<CONF
+label = Flat
+variant = Backend
 src = trees/flat
 dst = lib/dxmt
 CONF
@@ -196,6 +211,8 @@ ok "a tree naming no architecture is left alone" \
 mkdir -p "$work/trees/nowhere/sub"
 dll "$work/trees/nowhere/sub/plain.dll" nowhere
 desc nowhere <<CONF
+label = Nowhere
+variant = Backend
 src = trees/nowhere
 dst = lib/dxmt
 CONF
@@ -206,6 +223,8 @@ echo "== combinations"
 mkdir -p "$work/trees/other/x86_64-windows"
 dll "$work/trees/other/x86_64-windows/dxgi.dll" other
 desc other <<CONF
+label = Other
+variant = Backend
 src = trees/other
 dst = lib/dxmt
 CONF

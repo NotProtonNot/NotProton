@@ -67,7 +67,7 @@ DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib dylib-install sigcheck fonts fonts-install app-payload app app-zip \
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
-        featcheck featstagecheck runnervariantcheck \
+        featcheck featstagecheck runnervariantcheck conf-fixtures confcheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
@@ -228,6 +228,33 @@ callscheck:
 	@if [ ! -f dylib/tests/callscheck.c ]; then $(call SKIP,callscheck,dylib/tests/callscheck.c); exit 0; fi; \
 	$(MAKE) -s $(CALLSCHECK) && $(CALLSCHECK)
 
+CONF_FIXTURES := dylib/tests/conf-fixtures
+CONFDUMP      := $(OUT_DIR)/confdump
+
+$(CONFDUMP): dylib/tests/confdump.c dylib/feats/conf.c dylib/feats/conf.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -O1 -o $@ dylib/tests/confdump.c
+
+# One corpus, both readers: webpatch.c through confdump, compat_run.sh through its own
+# normaliser. A difference between them is a difference between the panel and the launch.
+conf-fixtures:
+	@if [ ! -d $(CONF_FIXTURES) ] || [ ! -f dylib/tests/confdump.c ]; then \
+		$(call SKIP,conf-fixtures,$(CONF_FIXTURES)); exit 0; fi; \
+	$(MAKE) -s $(CONFDUMP) || exit 1; \
+	tmp=$$(mktemp -d); \
+	grep -v '^\#' $(CONF_FIXTURES)/EXPECTED | grep -v '^$$' > $$tmp/want; \
+	$(CONFDUMP) $(CONF_FIXTURES) > $$tmp/got || { rm -rf $$tmp; exit 1; }; \
+	if ! diff -u $$tmp/want $$tmp/got > $$tmp/diff; then \
+		echo "FAIL: webpatch.c's reader does not read the corpus as EXPECTED says"; \
+		head -40 $$tmp/diff; rm -rf $$tmp; exit 1; fi; \
+	n=$$(grep -c . $$tmp/got); rm -rf $$tmp; \
+	echo "==> conf fixtures: $$n normalised lines match EXPECTED"
+
+confcheck:
+	@if [ ! -f dylib/tests/confcheck.sh ]; then \
+		$(call SKIP,confcheck,dylib/tests/confcheck.sh); exit 0; fi; \
+	sh dylib/tests/confcheck.sh dylib/feats/compat_run.sh $(CONF_FIXTURES)
+
 SIGDB_FIXTURES := dylib/tests/sigdb-fixtures
 
 sigdb-fixtures:
@@ -284,6 +311,7 @@ $(NATIVEPLATFORMCHECK): dylib/tests/nativeplatformcheck.c dylib/feats/nativeplat
 	$(TEST_CC) -O1 -DHELPER_TIMEOUT_MS=1000 -o $@ dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/util/file.c
 
 $(FEATCHECK): dylib/tests/featcheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h \
+              dylib/feats/conf.c dylib/feats/conf.h \
               dylib/util/file.c
 	@mkdir -p $(dir $@)
 	$(TEST_CC) -O1 -o $@ dylib/tests/featcheck.c dylib/util/file.c

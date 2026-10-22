@@ -148,6 +148,20 @@ remove_variant() {
     [ "$gone" -eq 1 ] || die "nothing to remove for $name"
 }
 
+# DXMT writes its own version into d3d11.dll as a string that is nothing else: the
+# toolchain's own "v14.0.0" only ever appears inside a longer path, so an anchored match
+# picks the right one. Empty when there is nothing to find, and the label then falls back
+# to the id.
+dxmt_version() {
+    for ver_dll in "$1"/*-windows/d3d11.dll; do
+        [ -f "$ver_dll" ] || continue
+        LC_ALL=C tr -c '[:print:]' '\n' < "$ver_dll" \
+            | grep -xE 'v[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9]+-g[0-9a-f]{6,})?' \
+            | sort -u | head -1
+        return 0
+    done
+}
+
 write_descriptor() {
     src=$1
     name=${2:-}
@@ -162,7 +176,11 @@ write_descriptor() {
     fi
 
     if [ -z "$name" ]; then
-        name="dxmt-$(basename "$src")"
+        name=$(basename "$src")
+        case "$name" in
+            (dxmt-*) ;;
+            (*) name="dxmt-$name" ;;
+        esac
     fi
     name=$(printf '%s' "$name" | tr -c 'A-Za-z0-9.-' '-')
 
@@ -175,16 +193,22 @@ write_descriptor() {
         "$HOME"/*) stored=${src#"$HOME"/} ;;
     esac
 
+    version=$(dxmt_version "$src")
+
     mkdir -p "$conf_dir"
     conf="$conf_dir/$name.conf"
     cat > "$conf" <<CONF
 # Written by install-dxmt.sh. The runner is assembled from src at launch, whenever src has
-# changed, so rebuilding DXMT is all that is needed between launches.
-label   = $name
+# changed, so rebuilding DXMT is all that is needed between launches. The header is the id,
+# which is what a launch option names; "variant" is the group these share.
+[$name]
 variant = DXMT
 src     = $stored
 dst     = $dst
 CONF
+    # The build's own version reads better in the dropdown than the id does. Without one
+    # the line is left out, and the label falls back to the id.
+    [ -n "$version" ] && printf 'label   = %s\n' "$version" >> "$conf"
     say "wrote $conf"
     say "add this to a game's launch options, with the backend set to dxmt:"
     say "    NOTPROTON_RUNNER_VARIANT=$name CX_GRAPHICS_BACKEND=dxmt %command%"

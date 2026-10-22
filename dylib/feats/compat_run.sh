@@ -161,6 +161,185 @@ else
 fi
 [ "$(stat -f %z "$log" 2>/dev/null || echo 0)" -gt 262144 ] \
   && : > "$log" || true
+# Plugin and variant descriptors, normalised exactly as dylib/feats/conf.c does, so the
+# panel and the launch agree on every file: one "id<TAB>field<TAB>value" line per field
+# in the order read, "!<TAB>scope<TAB>code[:detail]" where one was refused, and a
+# "== <path>" line as each file is opened.
+np_conf_normalise() (
+  np_conf_dir=$1
+  np_conf_shown=$2
+  np_conf_kind=$3
+  # Byte order, which is the order webpatch.c reads them in. A name carrying a tab or a
+  # newline is skipped rather than normalised: either would break the lines below.
+  np_conf_names=$(
+    for np_conf_file in "$np_conf_dir"/*.conf; do
+      if [ -f "$np_conf_file" ] && [ ! -r "$np_conf_file" ]; then
+        printf '!\t%s\tunreadable\n' "${np_conf_file##*/}" >&2
+      fi
+      [ -f "$np_conf_file" ] && [ -r "$np_conf_file" ] || continue
+      case ${np_conf_file##*/} in
+        (*'	'*) continue ;;
+      esac
+      printf '%s\n' "${np_conf_file##*/}"
+    done | LC_ALL=C sort
+  )
+  [ -n "$np_conf_names" ] || return 0
+  set --
+  while IFS= read -r np_conf_name; do
+    [ -f "$np_conf_dir/$np_conf_name" ] || continue
+    set -- "$@" "$np_conf_dir/$np_conf_name"
+  done <<NP_CONF_NAMES
+$np_conf_names
+NP_CONF_NAMES
+  [ "$#" -gt 0 ] || return 0
+  LC_ALL=C awk -v kind="$np_conf_kind" -v shown="$np_conf_shown" '
+  function trim(s) { gsub(/^[ \t\r\n\v\f]+|[ \t\r\n\v\f]+$/, "", s); return s }
+  function isnum(s) { return s ~ /^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$/ }
+  function idok(s,   i, c) {
+    if (length(s) >= 192 || s == "") return 0
+    if (kind == "plugin") {
+      if (substr(s, 1, 10) != "NOTPROTON_" || length(s) == 10) return 0
+      return substr(s, 11) ~ /^[A-Z0-9_]+$/
+    }
+    return length(s) <= 64 && s ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+  }
+  function choiceval(s,   eq) {
+    eq = index(s, "=")
+    return eq ? trim(substr(s, 1, eq - 1)) : s
+  }
+  function envok(s,   eq) {
+    eq = index(s, "=")
+    return eq > 1 && substr(s, 1, eq - 1) ~ /^[A-Z_][A-Z0-9_]*$/
+  }
+  function refuse(scope, c, d) { printf "!\t%s\t%s%s%s\n", scope, c, (d == "" ? "" : ":"), d }
+  function schema(   i, f, t, values, mn, mx, st, df) {
+    for (i = 1; i <= nreq; i++)
+      if (!(req[i] in cnt)) { detail = req[i]; return "missing-required" }
+    if (kind == "variant") {
+      if (substr(first["dst"], 1, 1) == "/" || index(first["dst"], "..")) {
+        detail = "dst"; return "bad-value"
+      }
+      return ""
+    }
+    for (i = 1; i <= nkv; i++)
+      if (names[i] == "env" && !envok(vals[i])) { detail = "env"; return "bad-value" }
+    if (("section" in cnt) && first["section"] != "dev") { detail = "section"; return "bad-value" }
+    if (!("type" in cnt)) return ""
+    t = first["type"]
+    values = ("choice" in cnt) ? cnt["choice"] : 0
+    mn = ("min" in cnt); mx = ("max" in cnt); st = ("step" in cnt); df = ("default" in cnt)
+    if (t == "choice") {
+      if (!values) { detail = "choice"; return "missing-required" }
+      return ""
+    }
+    if (t != "slider") { detail = t; return "bad-type" }
+    if ((values && (mn || mx)) || (!values && !(mn && mx)) || values == 1) return "slider-shape"
+    if (values) {
+      if (df) { for (i = 1; i <= nkv; i++)
+                  if (names[i] == "choice" && choiceval(vals[i]) == first["default"]) return ""
+                return "bad-default" }
+      return ""
+    }
+    if (!isnum(first["min"])) { detail = "min"; return "bad-value" }
+    if (!isnum(first["max"]) || first["max"] + 0 <= first["min"] + 0) { detail = "max"; return "bad-value" }
+    if (st && !isnum(first["step"])) { detail = "step"; return "bad-value" }
+    if (df && !isnum(first["default"])) return "bad-default"
+    return ""
+  }
+  function flush(   i, c) {
+    if (id == "") return
+    c = code
+    if (c == "") { detail = ""; c = schema() }
+    if (c == "") {
+      if (id in seen) { c = "duplicate-id"; detail = "" }
+      else if (records >= 32) { c = "limit"; detail = "" }
+      else { seen[id] = 1; records++ }
+    }
+    if (c != "") refuse(id, c, detail)
+    else for (i = 1; i <= nkv; i++) printf "%s\t%s\t%s\n", id, names[i], vals[i]
+    id = ""; code = ""; detail = ""; nkv = 0; bytes = 0
+    split("", cnt); split("", first)
+  }
+  function startfile(   base) {
+    base = FILENAME
+    sub(/^.*\//, "", base)
+    printf "== %s%s%s\n", shown, (shown == "" ? "" : "/"), base
+    path = shown (shown == "" ? "" : "/") base
+    header = 0; dropped = 0
+  }
+  BEGIN {
+    nkv = 0; records = 0; id = ""; code = ""; detail = ""
+    if (kind == "plugin") {
+      split("label description description_on section on off depends requires inject env overrides stage type choice min max step default suffix", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 1 16 1 1 1 1 1", m, " ")
+      split("label", req, " "); nreq = 1
+    } else {
+      split("label variant src dst", f, " ")
+      split("1 1 1 1", m, " ")
+      split("src dst", req, " "); nreq = 2
+    }
+    for (i in f) most[f[i]] = m[i] + 0
+  }
+  FNR == 1 { flush(); startfile() }
+  dropped { next }
+  {
+    if (length($0) >= 2048) { id = ""; refuse(path, "line-too-long", ""); dropped = 1; next }
+    k = $0
+    sub(/^[ \t\r\n\v\f]+/, "", k)
+    if (k == "" || substr(k, 1, 1) == "#") next
+    if (substr(k, 1, 1) == "[") {
+      cl = 0
+      for (i = length(k); i > 1; i--) if (substr(k, i, 1) == "]") { cl = i; break }
+      if (!cl) next
+      flush()
+      header = 1
+      id = trim(substr(k, 2, cl - 2))
+      if (!idok(id)) { code = "bad-id"; detail = "" }
+      next
+    }
+    eq = index(k, "=")
+    if (!eq) next
+    if (!header) { id = ""; refuse(path, "no-header", ""); dropped = 1; next }
+    if (code != "") next
+    name = trim(substr(k, 1, eq - 1))
+    val = trim(substr(k, eq + 1))
+    if (!(name in most)) { code = "unknown-field"; detail = name; next }
+    if (val == "") { code = "empty-value"; detail = name; next }
+    if (index(val, "\t")) { code = "tab-in-value"; detail = name; next }
+    if ((name in cnt ? cnt[name] : 0) >= most[name]) {
+      code = (most[name] == 1 ? "duplicate-field" : "limit"); detail = name; next
+    }
+    if (bytes + length(name) + length(val) + 2 > 4096) { code = "limit"; detail = name; next }
+    nkv++; names[nkv] = name; vals[nkv] = val
+    bytes += length(name) + length(val) + 2
+    if (!(name in cnt)) { cnt[name] = 0; first[name] = val }
+    cnt[name]++
+  }
+  END { flush() }
+  ' "$@"
+)
+
+# The normalised table is built once per directory and read with these, so nothing below
+# parses a descriptor itself.
+np_conf_value() {
+  printf '%s\n' "$1" | awk -F'\t' -v i="$2" -v f="$3" '$1 == i && $2 == f { print $3; exit }'
+}
+np_conf_values() {
+  printf '%s\n' "$1" | awk -F'\t' -v i="$2" -v f="$3" '$1 == i && $2 == f { print $3 }'
+}
+np_conf_ids() {
+  printf '%s\n' "$1" | awk -F'\t' '$1 != "!" && $1 !~ /^== / && !seen[$1]++ { print $1 }'
+}
+np_conf_has() {
+  printf '%s\n' "$1" | awk -F'\t' -v i="$2" '$1 == i { found = 1 } END { exit !found }'
+}
+# Every refusal the reader found, logged the way the panel logs its own.
+np_conf_log() {
+  printf '%s\n' "$1" | awk -F'\t' -v k="$2" '$1 == "!" {
+    printf "=== %s: %s refused, %s ===\n", k, $2, $3
+  }' >> "${log:-/dev/null}" 2>&1 || true
+}
+
 # A runner variant carries a different build of something that has to be builtin, which is
 # the only reason to replace a whole runner rather than drop a DLL in the prefix. Each one
 # is a descriptor naming a tree and where that tree lands in the runner, so nothing here
@@ -168,9 +347,8 @@ fi
 # means two games can use different ones at once.
 np_variant_conf_dir="$np_support/variants"
 np_variant_used=""
-np_variant_field() {
-  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*\)\$/\1/p" "$1"
-}
+np_conf_var_table=$(np_conf_normalise "$np_variant_conf_dir" "" variant)
+np_conf_log "$np_conf_var_table" variants
 np_variant_say() {
   echo "=== variants: $* ===" >> "${log:-/dev/null}" 2>&1 || true
 }
@@ -228,31 +406,16 @@ np_variant_dir_name() {
 # cannot quietly mean something else, and a descriptor that cannot be used drops the
 # variant rather than stopping the game.
 np_variant_read() {
-  np_v_src=""
-  np_v_dst=""
-  np_v_conf="$np_variant_conf_dir/$1.conf"
-  [ -r "$np_v_conf" ] || { np_variant_say "$1 has no descriptor at $np_v_conf"; return 1; }
-  np_v_bad=$(sed -n 's/^[[:space:]]*\([A-Za-z][A-Za-z-]*\)[[:space:]]*=.*/\1/p' "$np_v_conf" \
-    | grep -vx -e label -e variant -e src -e dst | LC_ALL=C sort -u | tr '\n' ' ') || true
-  if [ -n "$np_v_bad" ]; then
-    np_variant_say "$np_v_conf has unknown keys ($np_v_bad), so $1 is refused"
-    return 1
-  fi
-  np_v_src=$(np_variant_field "$np_v_conf" src | head -1)
-  np_v_dst=$(np_variant_field "$np_v_conf" dst | head -1)
+  np_v_src=$(np_conf_value "$np_conf_var_table" "$1" src)
+  np_v_dst=$(np_conf_value "$np_conf_var_table" "$1" dst)
   if [ -z "$np_v_src" ] || [ -z "$np_v_dst" ]; then
-    np_variant_say "$np_v_conf needs both src and dst, so $1 is refused"
+    np_variant_say "$1 has no usable descriptor"
     return 1
   fi
   # Leading parens: a case pattern's ) can otherwise close a $( ) around this.
   case "$np_v_src" in
     (/*) ;;
     (*) np_v_src="$HOME/$np_v_src" ;;
-  esac
-  case "$np_v_dst" in
-    (/*|*..*)
-      np_variant_say "$np_v_conf dst must be a relative path inside the runner, so $1 is refused"
-      return 1 ;;
   esac
   if [ ! -d "$np_v_src" ]; then
     np_variant_say "$1 builds from $np_v_src, which is not there"
@@ -1927,121 +2090,58 @@ np_feat_dir="$np_support/plugins"
 np_feat_log() {
   echo "=== $* ===" >> "$log" 2>&1 || true
 }
-np_feat_field() {
-  LC_ALL=C sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p" "$1"
-}
+# One reader for plugins and variants alike: the grammar, the limits and every refusal
+# are in np_conf_normalise, and webpatch.c is checked against the same corpus.
+np_conf_feat_table=$(np_conf_normalise "$np_feat_dir" "" plugin)
+np_conf_log "$np_conf_feat_table" plugins
+
 np_feat_first() {
-  np_feat_field "$1" "$2" | head -1
+  np_conf_value "$np_conf_feat_table" "$1" "$2"
 }
+# The first file a plugin names that is actually there; relative ones hang off $HOME.
 np_feat_requires() {
-  np_feat_field "$1" requires | head -n 4 | while IFS= read -r np_feat_req; do
+  np_conf_values "$np_conf_feat_table" "$1" requires | while IFS= read -r np_feat_req; do
     case "$np_feat_req" in
       (/*) ;;
       (*) np_feat_req="$HOME/$np_feat_req" ;;
     esac
     [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; }
   done
-  return 0
 }
 np_feat_installed() {
   [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]
 }
-np_feat_file_of() {
-  printf '%s\n' "$np_feat_list" | while IFS= read -r np_feat_entry; do
-    [ "${np_feat_entry%% *}" = "$1" ] && { printf '%s' "${np_feat_entry#* }"; break; }
-  done
-  return 0
-}
-# webpatch.c skips files with overlong lines or values, so they're skipped here too.
-np_feat_too_long() {
-  LC_ALL=C awk 'length($0) >= 2047 { f = 1 } END { exit !f }' "$1" && return 0
-  for np_feat_spec in key:192:1 label:192:1 description:512:1 section:32:1 on:32:1 \
-                      off:32:1 depends:192:1 requires:192:4; do
-    np_feat_max=${np_feat_spec#*:}
-    np_feat_field "$1" "${np_feat_spec%%:*}" | head -n "${np_feat_spec##*:}" |
-      LC_ALL=C awk -v m="${np_feat_max%:*}" 'length($0) >= m { f = 1 } END { exit !f }' &&
-      return 0
-  done
-  return 1
-}
 np_feat_switched() {
   eval "np_feat_sv=\${$1-}"
-  np_feat_son=$(np_feat_first "$2" on)
+  np_feat_son=$(np_feat_first "$1" on)
   # shellcheck disable=SC2154 # eval assigns np_feat_sv above
   [ "$np_feat_sv" = "${np_feat_son:-1}" ]
 }
-# Same rules as the panel.
+# A row is on only if everything it hangs off is, so a sub-option cannot outlive its parent.
 np_feat_active() {
   [ "$2" -le 32 ] || return 1
-  np_feat_af=$(np_feat_file_of "$1")
-  [ -n "$np_feat_af" ] || return 1
-  np_feat_switched "$1" "$np_feat_af" || return 1
-  np_feat_installed "$np_feat_af" || return 1
-  np_feat_adep=$(np_feat_first "$np_feat_af" depends)
+  np_conf_has "$np_conf_feat_table" "$1" || return 1
+  np_feat_switched "$1" || return 1
+  np_feat_installed "$1" || return 1
+  np_feat_adep=$(np_feat_first "$1" depends)
   [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
 }
 
-np_feat_list=""
-np_feat_count=0
-# Same order as webpatch.c.
-np_feat_files=$(printf '%s\n' "$np_feat_dir"/*.conf | LC_ALL=C sort)
-while IFS= read -r np_feat_file; do
-  case "$np_feat_file" in
-    ("$np_feat_dir"/*.conf) ;;
-    (*) continue ;;
-  esac
-  [ -f "$np_feat_file" ] && [ -r "$np_feat_file" ] || continue
-  if np_feat_too_long "$np_feat_file"; then
-    np_feat_log "plugins: $np_feat_file has a line or value that's too long, ignored"
-    continue
-  fi
-  np_feat_key=$(np_feat_first "$np_feat_file" key)
-  if [ -z "$np_feat_key" ]; then
-    np_feat_log "plugins: $np_feat_file has no key, ignored"
-    continue
-  fi
-  if ! printf '%s\n' "$np_feat_key" | LC_ALL=C grep -qx 'NOTPROTON_[A-Z0-9_]\{1,\}'; then
-    np_feat_log "plugins: $np_feat_file has an invalid key $np_feat_key, ignored"
-    continue
-  fi
-  if [ -z "$(np_feat_first "$np_feat_file" label)" ]; then
-    np_feat_log "plugins: $np_feat_file has no label, ignored"
-    continue
-  fi
-  case "$(np_feat_first "$np_feat_file" section)" in
-    ("" | dev) ;;
-    (*) np_feat_log "plugins: $np_feat_file is not in the dev section, ignored"; continue ;;
-  esac
-  if [ -n "$(np_feat_file_of "$np_feat_key")" ]; then
-    np_feat_log "plugins: $np_feat_file repeats key $np_feat_key, ignored"
-    continue
-  fi
-  if [ "$np_feat_count" -ge 32 ]; then
-    np_feat_log "plugins: $np_feat_file is over the 32 plugin limit, ignored"
-    continue
-  fi
-  np_feat_count=$((np_feat_count + 1))
-  np_feat_list="$np_feat_list
-$np_feat_key $np_feat_file"
-done <<NP_FEAT_FILES
-$np_feat_files
-NP_FEAT_FILES
+np_feat_list=$(np_conf_ids "$np_conf_feat_table")
 
 np_feat_dylibs=""
 np_feat_envs=""
-while IFS= read -r np_feat_entry; do
-  [ -n "$np_feat_entry" ] || continue
-  np_feat_key=${np_feat_entry%% *}
-  np_feat_file=${np_feat_entry#* }
-  if ! np_feat_installed "$np_feat_file"; then
-    np_feat_switched "$np_feat_key" "$np_feat_file" &&
+while IFS= read -r np_feat_key; do
+  [ -n "$np_feat_key" ] || continue
+  if ! np_feat_installed "$np_feat_key"; then
+    np_feat_switched "$np_feat_key" &&
       np_feat_log "$np_feat_key is on but is skipped as $np_feat_key's required files are missing"
     continue
   fi
   np_feat_active "$np_feat_key" 0 || continue
 
-  if [ "$(np_feat_first "$np_feat_file" inject)" = 1 ]; then
-    np_feat_lib=$(np_feat_requires "$np_feat_file")
+  if [ "$(np_feat_first "$np_feat_key" inject)" = 1 ]; then
+    np_feat_lib=$(np_feat_requires "$np_feat_key")
     if [ ! -f "$np_feat_lib" ]; then
       np_feat_log "$np_feat_key is skipped as it asks to load a dylib but doesn't name one"
     elif [ "${np_feat_lib#*:}" != "$np_feat_lib" ]; then
@@ -2055,7 +2155,7 @@ while IFS= read -r np_feat_entry; do
     fi
   fi
 
-  np_feat_stage=$(np_feat_first "$np_feat_file" stage)
+  np_feat_stage=$(np_feat_first "$np_feat_key" stage)
   if [ -n "$np_feat_stage" ]; then
     case "$np_feat_stage" in
       (/*) ;;
@@ -2088,7 +2188,7 @@ while IFS= read -r np_feat_entry; do
     fi
   fi
 
-  np_feat_over=$(np_feat_first "$np_feat_file" overrides)
+  np_feat_over=$(np_feat_first "$np_feat_key" overrides)
   if [ -n "$np_feat_over" ]; then
     export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$np_feat_over"
     np_feat_log "$np_feat_key adds overrides $np_feat_over"
@@ -2115,7 +2215,7 @@ while IFS= read -r np_feat_entry; do
 $np_feat_envs"
     np_feat_log "$np_feat_key sets $np_feat_env"
   done <<NP_FEAT_ENV
-$(np_feat_field "$np_feat_file" env)
+$(np_conf_values "$np_conf_feat_table" "$np_feat_key" env)
 NP_FEAT_ENV
 done <<NP_FEAT_LIST
 $np_feat_list
