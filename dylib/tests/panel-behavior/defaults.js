@@ -81,19 +81,13 @@ function oneKindCases(form) {
   const t = runner(form + ' one kind');
   if (form === 'component') return t.failed;
   const label = ns => (ns.find(x => x.type === 'Field' && /^Apply as defaults/.test(x.props.label)) || {}).props;
-  const pick = ns => field(ns, 'Select default settings for');
 
   let { r } = openPage(form, BUILDS.filter(x => x.runner === 'rosetta'));
   t.ok(label(r()).label === 'Apply as defaults for all CrossOver Compatibility Tools',
        `only Rosetta installed says CrossOver (${label(r()).label})`);
-  pick(r()).props.onChange({ data: 1 });
-  const ver = field(r(), 'CrossOver version');
-  t.ok(ver.props.selectedOption === '' && ver.props.rgOptions[0].label === 'None installed',
-       'picking FEX with no FEX installed says none is installed');
-  t.ok(!label(r()), 'and there is nothing to apply to');
 
   ({ r } = openPage(form, BUILDS.filter(x => x.runner === 'fex')));
-  t.ok(pick(r()).props.selectedOption === 1, 'only FEX installed opens on FEX');
+  t.ok(row(r(), X87), 'only FEX installed opens on FEX');
   t.ok(label(r()).label === 'Apply as defaults for all CrossOver Compatibility Tools', 'and says CrossOver');
 
   ({ r } = openPage(form, BUILDS));
@@ -105,7 +99,7 @@ function defaultToolCases(form) {
   const t = runner(form + ' default tool');
   if (form === 'component') return t.failed;
   const ver = ns => field(ns, 'CrossOver version').props.selectedOption;
-  const kind = ns => field(ns, 'Select default settings for').props.selectedOption;
+  const kind = ns => (row(ns, X87) ? 1 : 0);
   const told = (g, tool) => g.dispatchEvent(new CustomEvent('mscxdefaulttool', { detail: tool }));
 
   let o = openPage(form, BUILDS, { tool: 'notproton-25.0' });
@@ -156,27 +150,22 @@ async function buildCases(form) {
   let reply = () => OK;
   const sent = connect(g, h, route => reply(route));
   let p = h.render(page);
-  t.ok(field(p, 'Select default settings for'), 'the page mounts once its gates show up');
+  t.ok(field(p, 'CrossOver version'), 'the page mounts once its gates show up');
+  t.ok(!field(p, 'Select default settings for'), 'there is no Rosetta or FEX picker, the version picks the runner');
 
   const version = () => field(h.render(page), 'CrossOver version');
   const applyRow = () => settingsRow(h.render(page), /^Apply as defaults for all Rosetta Compatibility Tools$/);
   const apply = () => fieldButton(h.render(page), /^Apply as defaults for all Rosetta Compatibility Tools$/);
   const last = () => sent[sent.length - 1];
-  t.ok(version().props.selectedOption === 'notproton-26.1' && field(p, 'Select default settings for').props.selectedOption === 0,
+  t.ok(version().props.selectedOption === 'notproton-26.1' && !row(p, X87),
        'the page opens on the first installed version and its runner');
   t.ok(version().props.rgOptions.map(o => o.data).join(',') === 'notproton-26.1,notproton-26.1-fex,notproton-25.0',
        `version lists every build and nothing else (${version().props.rgOptions.map(o => o.label)})`);
   t.ok(apply() && !apply().props.disabled && !applyRow().props.disabled, 'the apply row is on from the start');
   t.ok(applyRow().props.description === undefined, 'nothing says it was applied before it is');
 
-  field(h.render(page), 'Select default settings for').props.onChange({ data: 1 });
-  t.ok(version().props.selectedOption === 'notproton-26.1-fex', 'picking FEX jumps to the first FEX version');
-  field(h.render(page), 'Select default settings for').props.onChange({ data: 0 });
-  t.ok(version().props.selectedOption === 'notproton-26.1', 'and Rosetta back to the first Rosetta one');
-
   version().props.onChange({ data: 'notproton-26.1-fex' });
-  t.ok(field(h.render(page), 'Select default settings for').props.selectedOption === 1,
-       'picking a FEX build switches the runner to FEX');
+  t.ok(row(h.render(page), X87), 'picking a FEX build switches the runner to FEX');
 
   version().props.onChange({ data: 'notproton-26.1' });
   p = h.render(page);
@@ -251,13 +240,13 @@ async function buildCases(form) {
   reply = route => route === 'NotProton.ApplyToolDefaults#1' ? new Promise(res => { release = () => res(OK); }) : OK;
   apply().props.onClick();
   await settle();
-  field(h.render(page), 'Select default settings for').props.onChange({ data: 1 });
+  version().props.onChange({ data: 'notproton-26.1-fex' });
   release();
   await settle(); await settle();
   const fexRow = settingsRow(h.render(page), /^Apply as defaults for all FEX Compatibility Tools$/);
   t.ok(fexRow && fexRow.props.description === undefined,
        `switching runner while it is on its way keeps the note off the other runner (${fexRow && fexRow.props.description})`);
-  field(h.render(page), 'Select default settings for').props.onChange({ data: 0 });
+  version().props.onChange({ data: 'notproton-26.1' });
   apply().props.onClick();
   await settle();
   row(h.render(page), 'MSync').props.onChange(false);
@@ -397,10 +386,6 @@ for (const form of Object.keys(FORMS)) {
     let p = h.render(page);
     t.ok(p.some(x => x.type === 'Section' && x.props.label === 'Default Compatibility Settings'),
          'the page is headed Default Compatibility Settings');
-    const pick = () => field(h.render(page), 'Select default settings for');
-    t.ok(pick().props.rgOptions.map(o => o.label).join(',') === 'Rosetta,FEX', 'it picks Rosetta or FEX');
-    t.ok(/^Changes apply to the CrossOver version selected below\./.test(pick().props.description),
-         'it says changes go to the version shown');
     t.ok(row(p, 'Metal HUD').props.checked === true && row(p, AVX).props.checked === false,
          'Rosetta shows its saved defaults');
     t.ok(!p.some(x => x.props && x.type === 'Button' && x.props.children === 'Reset to defaults'),
@@ -439,7 +424,8 @@ for (const form of Object.keys(FORMS)) {
     t.ok(JSON.stringify(g.MSCXDefaultsData) === before, 'a failed save changes nothing');
     t.ok(/not saved, result 2/.test(logged), `a failed save is logged (${logged})`);
 
-    pick().props.onChange({ data: 1 });
+    g.MSCXBuilds = [{ id: 'notproton-fex', build: '26.1', runner: 'fex', label: 'CrossOver 26.1 (FEX)', override: null }];
+    field(h.render(page), 'CrossOver version').props.onChange({ data: 'notproton-fex' });
     p = h.render(page);
     t.ok(row(p, X87) && !row(p, AVX), 'FEX shows the FEX rows');
     t.ok(row(p, 'MSync').props.checked === true && row(p, X87).props.checked === false,
@@ -448,8 +434,11 @@ for (const form of Object.keys(FORMS)) {
     reply = OK;
     row(p, X87).props.onChange(true);
     await settle();
-    t.ok(sent[sent.length - 1].appid === 1 && runnerLines(sent.length - 1) === 'FEX_X87REDUCEDPRECISION=1;WINEMSYNC=1',
-         `FEX sends its own lines (${JSON.stringify(sent[sent.length - 1])})`);
+    const toolLines = i => sent[i].text.split('\n').slice(1).sort().join(';');
+    t.ok(sent[sent.length - 1].route === 'NotProton.SetToolDefaults#1' &&
+         sent[sent.length - 1].text.split('\n')[0] === 'notproton-fex' &&
+         toolLines(sent.length - 1) === 'FEX_X87REDUCEDPRECISION=1;WINEMSYNC=1',
+         `a FEX version starts from the FEX defaults (${JSON.stringify(sent[sent.length - 1])})`);
     t.ok(g.MSCXDefaultsData.rosetta.MTL_HUD_ENABLED === '1', 'saving FEX leaves Rosetta alone');
 
     p = h.render(page);
@@ -457,9 +446,9 @@ for (const form of Object.keys(FORMS)) {
     row(p, 'High Resolution').props.onChange(true);
     await settle();
     await settle();
-    t.ok(runnerLines(sent.length - 1) === 'FEX_X87REDUCEDPRECISION=1;MTL_HUD_ENABLED=1;NOTPROTON_RETINA=1;WINEMSYNC=1',
+    t.ok(toolLines(sent.length - 1) === 'FEX_X87REDUCEDPRECISION=1;MTL_HUD_ENABLED=1;NOTPROTON_RETINA=1;WINEMSYNC=1',
          `two quick changes both get saved (${JSON.stringify(sent[sent.length - 1].text)})`);
-    t.ok(g.MSCXDefaultsData.fex.MTL_HUD_ENABLED === '1' && g.MSCXDefaultsData.fex.NOTPROTON_RETINA === '1',
+    t.ok(g.MSCXBuilds[0].override.MTL_HUD_ENABLED === '1' && g.MSCXBuilds[0].override.NOTPROTON_RETINA === '1',
          'and both reach the game panels');
     console.error = quiet;
     t.ok(!/renamed/.test(warned), 'nothing says a component is missing while Steam has them all');

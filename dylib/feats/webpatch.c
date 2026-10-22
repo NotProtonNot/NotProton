@@ -654,13 +654,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "eff(()=>{const on=e=>pickTool(e.detail);globalThis.addEventListener?.(\"mscxdefaulttool\",on);" \
     "return()=>globalThis.removeEventListener?.(\"mscxdefaulttool\",on)},[]);if(lost)return null;" \
     "return MSCXPanel({fex,get:G,saved:G,set:s,head:(0," RT ".jsxs)(" BARREL ".XY,{label:\"Default Compatibility Settings\",children:[" \
-    "(0," RT ".jsx)(" BARREL ".Vb,{label:\"Select default settings for\",description:\"Changes apply to the CrossOver version selected below. " \
-    "You can override these settings on a per-game basis in the game's Properties > Compatibility page.\",bMatchWidth:!1,rgOptions:[{data:0,label:\"Rosetta\"}," \
-    "{data:1,label:\"FEX\"}],selectedOption:r,onChange:v=>{const p=BL.find(x=>x.runner===(v.data?\"fex\":\"rosetta\"));" \
-    "sr(v.data);si(p?p.id:\"\");clr()}},\"for\")," \
     "BL.length?(0," RT ".jsx)(" BARREL ".Vb,{label:\"CrossOver version\"," \
-    "bMatchWidth:!1,rgOptions:(b?[]:[{data:\"\",label:\"None installed\"}]).concat(BL.map(x=>({data:x.id," \
-    "label:x.label})))," \
+    "bMatchWidth:!1,rgOptions:BL.map(x=>({data:x.id,label:x.label}))," \
     "selectedOption:b?b.id:\"\",onChange:v=>{const p=BL.find(x=>x.id===v.data);if(!p)return;" \
     "si(p.id);sr(p.runner===\"fex\"?1:0);clr()}},\"version\"):null," \
     "b?btn(\"apply\",\"Apply as defaults for all \"+kind+\" Compatibility Tools\",\"Apply\",apply,ok||void 0):null" \
