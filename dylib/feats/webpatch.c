@@ -102,6 +102,8 @@ static int has_suffix(const char *s, const char *suf);
 #define NP_FEAT_REQ_MAX  4
 #define NP_FEAT_STR      192
 #define NP_FEAT_DESC     512
+#define NP_FEAT_CH_MAX   16
+#define NP_FEAT_CH_BUF   512
 
 typedef struct {
     char key[NP_FEAT_STR];
@@ -113,6 +115,13 @@ typedef struct {
     char depends[NP_FEAT_STR];
     char req[NP_FEAT_REQ_MAX][NP_FEAT_STR];
     int  nreq;
+    // A row is a toggle unless it says otherwise: "choice" is a dropdown, "slider" is a
+    // slider over a min/max range or over the values below.
+    char type[12];
+    char ch[NP_FEAT_CH_BUF];   // "value\0label\0" repeated
+    int  nch, chlen;
+    char min[24], max[24], step[24], dflt[24], suffix[24];
+    char don[NP_FEAT_DESC];    // lines shown only while the row is on, newline-separated
 } np_feat_t;
 
 static int feat_exists(const char *home, const char *rel) {
@@ -147,6 +156,37 @@ static void feat_set(char *dst, size_t size, const char *v, int *bad) {
     if (*dst) return;
     if (strlen(v) >= size) *bad = 1;
     snprintf(dst, size, "%s", v);
+}
+
+// Appends to a field that may be given more than once, as "requires" is.
+static void feat_add(char *dst, size_t size, const char *v, int *bad) {
+    size_t used = strlen(dst);
+    if (used + strlen(v) + 2 > size) { *bad = 1; return; }
+    snprintf(dst + used, size - used, "%s%s", used ? "\n" : "", v);
+}
+
+// A field that has to reach the page as a JS number. Trailing text is refused rather
+// than emitted, so a typo cannot break the panel it renders into.
+static int feat_num(const char *v, double *out) {
+    char *end;
+    double d;
+    if (!*v) return 0;
+    d = strtod(v, &end);
+    while (feat_space(*end)) end++;
+    if (*end || d != d || d - d != 0) return 0;
+    *out = d;
+    return 1;
+}
+
+static int feat_has_choice(const np_feat_t *f, const char *want) {
+    const char *p = f->ch;
+    for (int c = 0; c < f->nch; c++) {
+        const char *val = p;
+        p += strlen(p) + 1;
+        p += strlen(p) + 1;
+        if (strcmp(val, want) == 0) return 1;
+    }
+    return 0;
 }
 
 static np_feat_t *feat_find(np_feat_t *list, int n, const char *key) {
@@ -189,6 +229,37 @@ static void feat_read_file(const char *path, np_feat_t *list, int *count) {
         else if (strcmp(k, "depends") == 0) feat_set(f.depends, sizeof(f.depends), v, &bad);
         else if (strcmp(k, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
             feat_set(f.req[f.nreq++], NP_FEAT_STR, v, &bad);
+        else if (strcmp(k, "type") == 0) feat_set(f.type, sizeof(f.type), v, &bad);
+        else if (strcmp(k, "min") == 0) feat_set(f.min, sizeof(f.min), v, &bad);
+        else if (strcmp(k, "max") == 0) feat_set(f.max, sizeof(f.max), v, &bad);
+        else if (strcmp(k, "step") == 0) feat_set(f.step, sizeof(f.step), v, &bad);
+        else if (strcmp(k, "default") == 0) feat_set(f.dflt, sizeof(f.dflt), v, &bad);
+        else if (strcmp(k, "suffix") == 0) feat_set(f.suffix, sizeof(f.suffix), v, &bad);
+        else if (strcmp(k, "description_on") == 0)
+            feat_add(f.don, sizeof(f.don), v, &bad);
+        else if (strcmp(k, "choice") == 0 && f.nch < NP_FEAT_CH_MAX) {
+            // "value = label", split on the first = as "env = NAME=VALUE" already is.
+            char *ceq = strchr(v, '=');
+            char *lab = v;
+            if (ceq) {
+                *ceq = 0;
+                lab = ceq + 1;
+                feat_trim(v);
+                while (feat_space(*lab)) lab++;
+            }
+            if (*v) {
+                size_t need = strlen(v) + strlen(lab) + 2;
+                if ((size_t)f.chlen + need > sizeof(f.ch)) {
+                    bad = 1;
+                } else {
+                    memcpy(f.ch + f.chlen, v, strlen(v) + 1);
+                    f.chlen += (int)strlen(v) + 1;
+                    memcpy(f.ch + f.chlen, lab, strlen(lab) + 1);
+                    f.chlen += (int)strlen(lab) + 1;
+                    f.nch++;
+                }
+            }
+        }
     }
     fclose(fp);
     if (bad) {
@@ -211,6 +282,43 @@ static void feat_read_file(const char *path, np_feat_t *list, int *count) {
     }
     if (strcmp(f.section, "dev") != 0) {
         NP_WARN("plugins: %s is not in the dev section, ignored", path);
+        return;
+    }
+    // A slider is either a min/max range or a ladder of declared values; either way it
+    // needs enough to draw, since a half-declared one renders as a dead control.
+    if (strcmp(f.type, "slider") == 0 && f.nch) {
+        if (*f.min || *f.max) {
+            NP_WARN("plugins: %s is a slider with both values and a range, ignored", path);
+            return;
+        }
+        if (f.nch < 2) {
+            NP_WARN("plugins: %s is a slider with one value, ignored", path);
+            return;
+        }
+        // The control logs an error of its own and jumps to the first value when handed
+        // one it cannot find, so a default that is not on the ladder is refused.
+        if (*f.dflt && !feat_has_choice(&f, f.dflt)) {
+            NP_WARN("plugins: %s has default %s, which is not one of its values, ignored",
+                    path, f.dflt);
+            return;
+        }
+    } else if (strcmp(f.type, "slider") == 0) {
+        double mn, mx, ignored;
+        if (!feat_num(f.min, &mn) || !feat_num(f.max, &mx) || mx <= mn) {
+            NP_WARN("plugins: %s is a slider with no usable min/max range, ignored", path);
+            return;
+        }
+        if ((*f.step && !feat_num(f.step, &ignored)) ||
+            (*f.dflt && !feat_num(f.dflt, &ignored))) {
+            NP_WARN("plugins: %s has a step or default that is not a number, ignored", path);
+            return;
+        }
+    } else if (*f.type && strcmp(f.type, "choice") != 0) {
+        NP_WARN("plugins: %s has type %s, which does not exist, ignored", path, f.type);
+        return;
+    }
+    if (strcmp(f.type, "choice") == 0 && !f.nch) {
+        NP_WARN("plugins: %s is a choice with no values, ignored", path);
         return;
     }
     if (feat_find(list, *count, f.key)) {
@@ -263,7 +371,8 @@ static int feat_load(const char *home, np_feat_t *list) {
 }
 
 static _Thread_local char g_feat_ready[NP_FEAT_MAX * (NP_FEAT_STR + 8) + 4] = "{}";
-static _Thread_local char g_feat_rows[NP_FEAT_MAX * (2 * (3 * NP_FEAT_STR + NP_FEAT_DESC + 64) + 32) + 4] = "[]";
+static _Thread_local char g_feat_rows[NP_FEAT_MAX *
+    (2 * (3 * NP_FEAT_STR + 2 * NP_FEAT_DESC + NP_FEAT_CH_BUF + 192) + 32) + 4] = "[]";
 static _Thread_local int  g_feat_ready_done;
 static _Thread_local int  g_feat_pinned;
 static _Thread_local char g_var_rows[8192] = "[]";
@@ -412,6 +521,65 @@ static void feat_build(void) {
         if (!out_put(&rows, ",off:", 5) || !out_jsstr(&rows, list[i].off)) goto done;
         if (!out_put(&rows, ",dep:", 5) || !out_jsstr(&rows, list[i].depends)) goto done;
         if (!out_put(&rows, ",d:", 3) || !out_jsstr(&rows, list[i].desc)) goto done;
+        if (*list[i].don) {
+            char line[NP_FEAT_DESC];
+            const char *p = list[i].don;
+            int wrotel = 0;
+            if (!out_put(&rows, ",dn:[", 5)) goto done;
+            while (*p) {
+                const char *nl = strchr(p, '\n');
+                size_t len = nl ? (size_t)(nl - p) : strlen(p);
+                if (len >= sizeof(line)) len = sizeof(line) - 1;
+                memcpy(line, p, len);
+                line[len] = 0;
+                if (wrotel++ && !out_put(&rows, ",", 1)) goto done;
+                if (!out_jsstr(&rows, line)) goto done;
+                p = nl ? nl + 1 : p + strlen(p);
+            }
+            if (!out_put(&rows, "]", 1)) goto done;
+        }
+        if (*list[i].type) {
+            if (!out_put(&rows, ",ty:", 4) || !out_jsstr(&rows, list[i].type)) goto done;
+        }
+        // Declared values serve a dropdown and a snapping slider alike.
+        if (list[i].nch) {
+            const char *p = list[i].ch;
+            if (!out_put(&rows, ",ch:[", 5)) goto done;
+            for (int c = 0; c < list[i].nch; c++) {
+                const char *val = p; p += strlen(p) + 1;
+                const char *lab = p; p += strlen(p) + 1;
+                if (c && !out_put(&rows, ",", 1)) goto done;
+                if (!out_put(&rows, "{v:", 3) || !out_jsstr(&rows, val)) goto done;
+                if (!out_put(&rows, ",l:", 3) || !out_jsstr(&rows, *lab ? lab : val)) goto done;
+                if (!out_put(&rows, "}", 1)) goto done;
+            }
+            if (!out_put(&rows, "]", 1)) goto done;
+            // One of the declared values, so it stays a string the slider can match.
+            if (*list[i].dflt) {
+                if (!out_put(&rows, ",df:", 4) || !out_jsstr(&rows, list[i].dflt)) goto done;
+            }
+        } else if (strcmp(list[i].type, "slider") == 0) {
+            // Validated at load, so %g here only reformats numbers already parsed.
+            double mn = 0, mx = 0, step = 0, dflt = 0;
+            char nums[128];
+            int nlen;
+            feat_num(list[i].min, &mn);
+            feat_num(list[i].max, &mx);
+            nlen = snprintf(nums, sizeof(nums), ",mn:%g,mx:%g", mn, mx);
+            if (nlen < 0 || nlen >= (int)sizeof(nums) || !out_put(&rows, nums, (size_t)nlen))
+                goto done;
+            if (feat_num(list[i].step, &step)) {
+                nlen = snprintf(nums, sizeof(nums), ",st:%g", step);
+                if (nlen < 0 || !out_put(&rows, nums, (size_t)nlen)) goto done;
+            }
+            if (feat_num(list[i].dflt, &dflt)) {
+                nlen = snprintf(nums, sizeof(nums), ",df:%g", dflt);
+                if (nlen < 0 || !out_put(&rows, nums, (size_t)nlen)) goto done;
+            }
+            if (*list[i].suffix) {
+                if (!out_put(&rows, ",sf:", 4) || !out_jsstr(&rows, list[i].suffix)) goto done;
+            }
+        }
         if (!out_put(&rows, "}", 1)) goto done;
     }
     if (!out_put(&ready, "}", 1) || !out_put(&rows, "]", 1)) goto done;
@@ -545,7 +713,7 @@ static void var_read_file(const char *path, const char *home, np_var_t *list, in
         else if (strcmp(k, "src") == 0) snprintf(v.src, sizeof(v.src), "%s", val);
         else if (strcmp(k, "dst") == 0) snprintf(v.dst, sizeof(v.dst), "%s", val);
         else {
-            // Refused rather than ignored, as in features.d: a typo that looks like it
+            // Refused rather than ignored, as a plugin is: a typo that looks like it
             // worked is worse than a variant that does not appear.
             NP_WARN("variants: %s declares '%s', which is not a variant field; "
                     "the fields are label, variant, src and dst", path, k);
@@ -793,7 +961,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXPanel .MSCXRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
     ".MSCXPanel .MSCXRowDesc{flex-wrap:wrap;align-items:center}" \
     ".MSCXPanel .MSCXRowDesc>:last-child{flex-basis:100%}" \
-    ".MSCXNoBottomGap{margin-bottom:0}\""
+    ".MSCXNoBottomGap{margin-bottom:0}" \
+    ".MSCXKeys{margin-top:5px;opacity:.75}\""
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
@@ -803,8 +972,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,s=L.s," \
     "MSCXReady=" NP_READY ",MSCXFeat=" NP_FEATS ",MSCXVar=" NP_VARS "," \
+    /* A toggle parent is satisfied by its on value; one that holds a value, such as a
+       dropdown or a slider, by holding one at all rather than sitting on Default. */ \
     "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
-    "return!!p&&n<32&&MSCXReady[k]!==0&&g(k)===p.on&&(!p.dep||on1(p.dep,n+1))}," \
+    "return!!p&&n<32&&MSCXReady[k]!==0&&(p.ty?\"\"!==g(k):g(k)===p.on)" \
+    "&&(!p.dep||on1(p.dep,n+1))}," \
+    /* How deep the chain of parents runs, so a sub-option of a sub-option indents twice. */ \
+    "dl=(k,n)=>{const p=MSCXFeat.find(x=>x.k===k);" \
+    "return n<32&&p&&p.dep?dl(p.dep,n+1):n}," \
     "vav=MSCXVar.filter(v=>v.t.indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0)," \
     "vcur=g(\"NOTPROTON_RUNNER_VARIANT\").split(\"+\").filter(x=>x)," \
     "vids=vav.map(v=>v.v).filter((d,i,a)=>a.indexOf(d)===i)," \
@@ -819,12 +994,47 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
     ".concat(vd.map(v=>({data:v.k,label:v.l})))," \
     "selectedOption:sel,onChange:x=>vset(id,x.data)},id)}," \
-    "TD=(k,l,on,off,d,dep)=>{const rd=MSCXReady[k]!==0;" \
+    "TD=(k,l,on,off,d,lv)=>{const rd=MSCXReady[k]!==0;" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
     "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&g(k)===on," \
-    "indentLevel:dep?1:undefined," \
+    "indentLevel:lv||undefined," \
     "onChange:v=>s([[k,v?on:(off||\"\")]])},k)}," \
+    /* A row that holds one of its declared values, with Default for none of them. */ \
+    "TC=(k,l,d,lv,ch)=>{const rd=MSCXReady[k]!==0;" \
+    "return(0," RT ".jsx)(" BARREL ".m," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined,layout:\"inline\"," \
+    "indentLevel:lv||undefined," \
+    "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
+    ".concat(ch.map(c=>({data:c.v,label:c.l})))," \
+    "selectedOption:g(k),onChange:x=>s([[k,x.data]])},k)}," \
+    /* The handle follows the drag on its own; only the finished value is written, and
+       the declared default is written as no value at all so launch options stay clean. */ \
+    "TS=(k,l,d,lv,mn,mx,st,df,sf)=>{const rd=MSCXReady[k]!==0,v=g(k)," \
+    "n=\"\"===v||isNaN(+v)?(undefined===df?mn:df):+v;" \
+    "return(0," RT ".jsx)(" BARREL ".d3," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined," \
+    "indentLevel:lv||undefined," \
+    "value:n,min:mn,max:mx,step:st||undefined,showValue:true," \
+    "valueSuffix:sf||undefined," \
+    "onChangeComplete:x=>{const r=+(+x).toFixed(4);" \
+    "s([[k,r===df?\"\":String(r)]])}},k)}," \
+    /* The same slider snapped to declared values: the control steps by notch and hands
+       back the value itself, so a key holding none of them starts at the default. Its
+       own notches are two unlabelled bookends, and ours are spread after them. */ \
+    "TL=(k,l,d,lv,ch,df)=>{const rd=MSCXReady[k]!==0,V=ch.map(c=>c.v),v=g(k)," \
+    "n=V.indexOf(v)>=0?v:(undefined===df?V[0]:df);" \
+    "return(0," RT ".jsx)(" BARREL ".gz," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined," \
+    "indentLevel:lv||undefined," \
+    "rValues:V,value:n,showValue:true," \
+    "notchCount:V.length,notchTicksVisible:true," \
+    "notchLabels:ch.map((c,i)=>({notchIndex:i,label:c.l}))," \
+    "renderValue:x=>{const c=ch.find(y=>y.v===x);return c?c.l:String(x)}," \
+    "onChangeComplete:x=>s([[k,x===df?\"\":x]])},k)}," \
     "T=(ks,l,on,off,d,r)=>{const rd=r!==0;" \
     "return(0," RT ".jsx)(" BARREL ".Yh," \
     "{className:\"MSCXRow\"+(d?\" MSCXRowDesc\":\"\")," \
@@ -885,7 +1095,16 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "(MSCXFeat.length||vids.length?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
     "children:vids.map(V).concat(MSCXFeat.filter(f=>!f.dep||on1(f.dep))" \
-    ".map(f=>TD(f.k,f.l,f.on,f.off,f.d,f.dep)))})},\"dev\"):null)" \
+    /* Lines a plugin only wants read once the row is on, such as the keys that
+       change the rest of a feature in game, sit under its description while it is. */ \
+    ".map(f=>{const lv=f.dep?dl(f.dep,1):0," \
+    "d=f.dn&&on1(f.k)?(0," RT ".jsxs)(\"div\",{children:[f.d]" \
+    ".concat(f.dn.map((x,i)=>(0," RT ".jsx)(\"div\"," \
+    "{className:\"MSCXKeys\",children:x},i)))}):f.d;" \
+    "return\"choice\"===f.ty?TC(f.k,f.l,d,lv,f.ch)" \
+    ":\"slider\"===f.ty?(f.ch?TL(f.k,f.l,d,lv,f.ch,f.df)" \
+    ":TS(f.k,f.l,d,lv,f.mn,f.mx,f.st,f.df,f.sf))" \
+    ":TD(f.k,f.l,f.on,f.off,d,lv)}))})},\"dev\"):null)" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \

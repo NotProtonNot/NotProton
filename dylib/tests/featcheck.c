@@ -239,6 +239,110 @@ int main(void) {
     ok(strstr(feats_json(), "d:\"\"") != NULL,
        "is empty when the plugin omits it");
 
+    puts("== a choice row");
+    clear_descs();
+    write_desc("10-ch.conf",
+               "key = NOTPROTON_ENV_HUD_POS\nlabel = HUD position\nsection = dev\n"
+               "type = choice\n"
+               "choice = tl = Top left\nchoice = tr = Top right\nchoice = br\n");
+    {
+        const char *j = feats_json();
+        // The whole tail, so a mis-counted literal cannot drop a bracket and still pass.
+        ok(strstr(j, ",ty:\"choice\",ch:[{v:\"tl\",l:\"Top left\"},"
+                     "{v:\"tr\",l:\"Top right\"},{v:\"br\",l:\"br\"}]}") != NULL,
+           "is marked as a choice, splits value from label, and defaults a missing label");
+    }
+
+    puts("== a slider snapped to declared values");
+    clear_descs();
+    write_desc("10-ld.conf",
+               "key = NOTPROTON_ENV_HZ\nlabel = Target\nsection = dev\n"
+               "type = slider\ndefault = off\n"
+               "choice = off = Off\nchoice = 60 = 60 Hz\n");
+    ok(strstr(feats_json(),
+              ",ty:\"slider\",ch:[{v:\"off\",l:\"Off\"},{v:\"60\",l:\"60 Hz\"}],"
+              "df:\"off\"") != NULL,
+       "carries its values and a default that stays one of them");
+    clear_descs();
+    write_desc("10-e1.conf", "key = NOTPROTON_E1\nlabel = Ee\nsection = dev\n"
+                             "type = slider\nchoice = 30\n");
+    write_desc("10-e2.conf", "key = NOTPROTON_E2\nlabel = Ee\nsection = dev\n"
+                             "type = slider\nmin = 0\nmax = 1\nchoice = 30\n"
+                             "choice = 60\n");
+    write_desc("10-e3.conf", "key = NOTPROTON_E3\nlabel = Ee\nsection = dev\n"
+                             "type = slider\ndefault = 45\nchoice = 30\nchoice = 60\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "NOTPROTON_E1") == NULL, "one value cannot be moved, so it is refused");
+        ok(strstr(j, "NOTPROTON_E2") == NULL, "values and a range together are refused");
+        ok(strstr(j, "NOTPROTON_E3") == NULL,
+           "and a default that is not one of the values is refused");
+    }
+
+    puts("== a slider that could not be drawn");
+    clear_descs();
+    write_desc("10-a.conf", "key = NOTPROTON_A\nlabel = Ay\nsection = dev\n"
+                            "type = slider\nmax = 1\n");
+    write_desc("10-b.conf", "key = NOTPROTON_B\nlabel = Bee\nsection = dev\n"
+                            "type = slider\nmin = 1\nmax = 1\n");
+    write_desc("10-c.conf", "key = NOTPROTON_C\nlabel = Cee\nsection = dev\n"
+                            "type = slider\nmin = 0\nmax = 1\nstep = fast\n");
+    write_desc("10-d2.conf", "key = NOTPROTON_D2\nlabel = Dee\nsection = dev\n"
+                             "type = slider\nmin = 0\nmax = 1px\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "NOTPROTON_A") == NULL, "no min is refused");
+        ok(strstr(j, "NOTPROTON_B") == NULL, "an empty range is refused");
+        ok(strstr(j, "NOTPROTON_C") == NULL, "a step that is not a number is refused");
+        ok(strstr(j, "NOTPROTON_D2") == NULL, "and so is a bound with trailing text");
+    }
+
+    puts("== a slider row");
+    clear_descs();
+    write_desc("10-sl.conf",
+               "key = NOTPROTON_ENV_HUD_SCALE\nlabel = HUD size\nsection = dev\n"
+               "type = slider\nmin = 0.5\nmax = 2\nstep = 0.25\ndefault = 1\n"
+               "suffix = x\n");
+    ok(strstr(feats_json(),
+              ",ty:\"slider\",mn:0.5,mx:2,st:0.25,df:1,sf:\"x\"") != NULL,
+       "carries its range, step, default and suffix as numbers");
+    clear_descs();
+    write_desc("10-sl.conf",
+               "key = NOTPROTON_ENV_HUD_SCALE\nlabel = HUD size\nsection = dev\n"
+               "type = slider\nmin = 0\nmax = 1\n");
+    ok(strstr(feats_json(), ",ty:\"slider\",mn:0,mx:1}") != NULL,
+       "and leaves out a step, default and suffix it was not given");
+
+    puts("== a row with no type, or one that does not exist");
+    clear_descs();
+    write_desc("10-t.conf", "key = NOTPROTON_T\nlabel = T\nsection = dev\n");
+    write_desc("10-t2.conf", "key = NOTPROTON_T2\nlabel = T2\nsection = dev\n"
+                             "type = dial\n");
+    write_desc("10-t3.conf", "key = NOTPROTON_T3\nlabel = T3\nsection = dev\n"
+                             "type = choice\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "ty:") == NULL,
+           "no type at all stays the toggle it has always been");
+        ok(strstr(j, "NOTPROTON_T2") == NULL, "a type that does not exist is refused");
+        ok(strstr(j, "NOTPROTON_T3") == NULL, "and so is a choice with no values");
+    }
+
+    puts("== lines for when a row is on");
+    clear_descs();
+    write_desc("10-dn.conf",
+               "key = NOTPROTON_DN\nlabel = Dee\nsection = dev\n"
+               "description = What it does.\n"
+               "description_on = Ctrl+Opt+H hides it.\n"
+               "description_on = Ctrl+Opt+G draws the graph.\n");
+    ok(strstr(feats_json(),
+              "d:\"What it does.\",dn:[\"Ctrl+Opt+H hides it.\","
+              "\"Ctrl+Opt+G draws the graph.\"]") != NULL,
+       "each line is carried separately, in the order it was read");
+    clear_descs();
+    write_desc("10-dn.conf", "key = NOTPROTON_DN\nlabel = Dee\nsection = dev\n");
+    ok(strstr(feats_json(), "dn:") == NULL, "a row with none carries none");
+
     puts("== a label cannot break the page it renders into");
     clear_descs();
     write_desc("10-q.conf",

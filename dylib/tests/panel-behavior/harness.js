@@ -16,7 +16,7 @@ const expand = (s, caps) => s.replace(/[\u0001-\u0008\u0013-\u0016]/g, c => {
 const mk = (type, props) => ({ type, props });
 const react = { jsx: mk, jsxs: mk, Fragment: 'Fragment' };
 const barrel = { XY: 'Section', m: 'Dropdown', y4: 'Toggle', Yh: 'Checkbox',
-                 J1: 'FieldProvider' };
+                 d3: 'Slider', gz: 'SnapSlider', J1: 'FieldProvider' };
 
 // The two shapes take the payload in different forms and bind different names, which
 // is the whole of the difference between them.

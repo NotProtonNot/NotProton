@@ -121,6 +121,89 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!hasZero(P({ details: details('') })),
        'no plugins renders nothing rather than a literal 0');
 
+  // Lines that only appear once the row is on.
+  const KEYS = JSON.stringify([
+    { k: 'NOTPROTON_HUD', l: 'Hud', on: '1', off: '', dep: '', d: 'Draws a HUD.',
+      dn: ['Ctrl+Opt+H hides it.', 'Ctrl+Opt+G draws the graph.'] },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PK } = panel(emit, form, undefined, { feats: KEYS });
+  const hud = opts => walk(PK({ details: details(opts) }))
+    .find(x => x.props && x.props.label === 'Hud');
+  const text = n => typeof n === 'string' ? n
+    : !n || typeof n !== 'object' ? ''
+    : [].concat(n.props && n.props.children).map(text).join('|');
+
+  t.ok(hud('').props.description === 'Draws a HUD.',
+       'an off row shows its description alone');
+  t.ok(text(hud('NOTPROTON_HUD=1 %command%').props.description)
+       === 'Draws a HUD.|Ctrl+Opt+H hides it.|Ctrl+Opt+G draws the graph.',
+       'and an on row shows the extra lines under it, in order');
+
+  // A slider given values instead of a range snaps to them, and a row can hang off one
+  // holding a value at all -- which is what makes a sub-option of a dropdown or slider work.
+  const LADDER = JSON.stringify([
+    { k: 'NOTPROTON_ENV_HZ', l: 'Target', on: '1', off: '', dep: '', d: 'Rate.',
+      ty: 'slider', df: 'off',
+      ch: [{ v: 'off', l: 'Off' }, { v: '30', l: '30 Hz' }, { v: '60', l: '60 Hz' }] },
+    { k: 'NOTPROTON_ENV_MODE', l: 'Mode', on: '1', off: '', dep: 'NOTPROTON_ENV_HZ', d: '',
+      ty: 'choice', ch: [{ v: 'attime', l: 'Scheduled' }] },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PL, written: lwritten } = panel(emit, form, undefined, { feats: LADDER });
+  const lnodes = opts => walk(PL({ details: details(opts) }));
+  const snap = opts => lnodes(opts).find(x => x.type === 'SnapSlider');
+
+  t.ok(snap('') !== undefined, 'a slider with values renders as a snapping slider');
+  t.ok(snap('').props.rValues.join(',') === 'off,30,60',
+       'stepping through the declared values');
+  t.ok(snap('').props.value === 'off', 'an unset key sits at the declared default');
+  t.ok(snap('NOTPROTON_ENV_HZ=60 %command%').props.value === '60',
+       'a launch option picks its notch');
+  // vr() logs an error of its own and jumps to the first value when it cannot find one.
+  t.ok(snap('NOTPROTON_ENV_HZ=57 %command%').props.value === 'off',
+       'a value that is not on the ladder falls back to the default');
+  t.ok(snap('').props.renderValue('30') === '30 Hz', 'the notch reads as its label');
+  t.ok(snap('').props.notchCount === 3 && snap('').props.notchTicksVisible === true,
+       'a tick is drawn for every value');
+  t.ok(snap('').props.notchLabels.map(n => n.notchIndex + ':' + n.label).join(',')
+       === '0:Off,1:30 Hz,2:60 Hz',
+       'each tick carries its own label, matched by notch index');
+  lwritten.length = 0;
+  snap('').props.onChangeComplete('30');
+  t.ok(lwritten[0].opts === 'NOTPROTON_ENV_HZ=30 %command%', 'moving it writes the value');
+  lwritten.length = 0;
+  snap('NOTPROTON_ENV_HZ=30 %command%').props.onChangeComplete('off');
+  t.ok(lwritten[0].opts === '', 'and sliding back to the default clears the key');
+
+  const labels = opts => lnodes(opts).filter(x => x.props && x.props.label)
+                                     .map(x => x.props.label);
+  t.ok(!labels('').includes('Mode'),
+       'a row under a value-holding parent is hidden while that parent is on Default');
+  t.ok(labels('NOTPROTON_ENV_HZ=30 %command%').includes('Mode'),
+       'and appears once the parent holds a value');
+  t.ok(lnodes('NOTPROTON_ENV_HZ=30 %command%')
+         .find(x => x.props.label === 'Mode').props.indentLevel === 1,
+       'indented under it');
+  // The parent is itself hidden with FrameScope off, so the child cannot outlive it.
+  const DEEP = JSON.stringify([
+    { k: 'NOTPROTON_HUD', l: 'Hud', on: '1', off: '', dep: '', d: '' },
+    { k: 'NOTPROTON_ENV_HZ', l: 'Target', on: '1', off: '', dep: 'NOTPROTON_HUD', d: '',
+      ty: 'slider', df: 'off',
+      ch: [{ v: 'off', l: 'Off' }, { v: '30', l: '30 Hz' }] },
+    { k: 'NOTPROTON_ENV_MODE', l: 'Mode', on: '1', off: '', dep: 'NOTPROTON_ENV_HZ', d: '',
+      ty: 'choice', ch: [{ v: 'attime', l: 'Scheduled' }] },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PD } = panel(emit, form, undefined, { feats: DEEP });
+  const dlabels = opts => walk(PD({ details: details(opts) }))
+    .filter(x => x.props && x.props.label).map(x => x.props.label);
+  t.ok(!dlabels('NOTPROTON_ENV_HZ=30 %command%').includes('Target')
+       && !dlabels('NOTPROTON_ENV_HZ=30 %command%').includes('Mode'),
+       'a whole chain stays hidden while the row at the top of it is off');
+  t.ok(dlabels('NOTPROTON_HUD=1 NOTPROTON_ENV_HZ=30 %command%').includes('Mode'),
+       'and the chain appears once the top is on');
+  t.ok(walk(PD({ details: details('NOTPROTON_HUD=1 NOTPROTON_ENV_HZ=30 %command%') }))
+         .find(x => x.props.label === 'Mode').props.indentLevel === 2,
+       'a sub-option of a sub-option indents twice');
+
   const { render: PF } = panel(emit, form, undefined,
                               { ready: '{"NOTPROTON_ALPHA":0}', feats: FEATS });
   const fnodes = opts => walk(PF({ details: details(opts) }));
