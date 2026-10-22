@@ -493,7 +493,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "l(r).then(j=>{j.error==='spawn'&&(term='failed')},()=>0).finally(()=>{busy=0;refresh()})},pair=off=>{const r=el('div','MSCXBtns');r.app" \
     "end(btn(T.backup,1,off,()=>start('NotProton.BackupAndRebuildPrefix#1')),btn(T.rebuild,0,off,()=>" \
     "start('NotProton.RebuildPrefix#1')));return r},draw=s=>{if(stopped||!e.isConnected||e.npApp!==id)return;clearTimeout(timer);live=0;const ph=s?s.rebuild" \
-    ":'',k=[];if(ph==='done'||ph==='done-backup'||ph==='failed')term=ph;if(busy||ph==='setup'||ph==='" \
+    ":'',k=[];if(ph==='done'||ph==='done-backup'||ph==='failed')term=ph;s&&s.needsRebuild&&term!=='failed'&&(term='');if(busy||ph==='setup'||ph==='" \
     "copy'||ph==='finish'){k.push(el('div','',ph==='copy'?T.copy:ph==='finish'?T.finish:T.setup));con" \
     "st b=el('div','MSCXBar');t0||(t0=Date.now());const m=el('div','');m.style.animationDelay=-((Date.now()-t0)%1200)+'ms';b.append(m);k.push(b);live=1;timer=setTimeout(refresh,500)}else if((t0=0)||" \
     "term==='failed'){k.push(el('div','',T.failed));const r=el('div','MSCXBtns');r.append(btn(T.log,0" \

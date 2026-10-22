@@ -104,6 +104,18 @@ const need = { needsRebuild: true, app: true, running: false, rebuild: '' };
     assert.deepEqual(w.texts(), ["Prefix rebuilt. A backup of the original is in NotProton's Prefixes view."]);
   }
   {
+    const w = world([need, { ...need, rebuild: 'setup' }, { needsRebuild: false, app: true, rebuild: 'done' },
+      { ...need, rebuild: 'done' }]);
+    w.g.MSCXPrefixRow(w.row, 480); await w.settle(); await w.settle();
+    w.buttons()[1].onclick(); await w.settle(); await w.settle(); await w.settle();
+    await w.tick();
+    assert.deepEqual(w.texts(), ['Prefix rebuilt.']);
+    w.listeners.mscxstate({ detail: 480 }); await w.settle(); await w.settle();
+    assert.deepEqual(w.texts(), ['Switching to this compatibility tool requires a prefix rebuild. Rebuild now?'],
+      'switching away again right after a rebuild offers another one');
+    assert.deepEqual(w.buttons().map(b => b.textContent), ['Backup & Rebuild Prefix', 'Rebuild Prefix']);
+  }
+  {
     const w = world([need, { ...need, rebuild: 'failed' }, need]);
     w.g.MSCXPrefixRow(w.row, 480); await w.settle(); await w.settle();
     w.buttons()[1].onclick(); await w.settle(); await w.settle(); await w.settle();
