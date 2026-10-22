@@ -97,7 +97,8 @@ function agrees(t, v, env, what) {
     const on = key in ON_UNLESS_0 ? env[key] !== '0' : env[key] === '1';
     t.ok(node.props.checked === on, `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
   }
-  t.ok(v.backend.props.selectedOption === (env.CX_GRAPHICS_BACKEND || ''),
+  const backend = env.CX_GRAPHICS_BACKEND === 'auto' ? '' : env.CX_GRAPHICS_BACKEND || '';
+  t.ok(v.backend.props.selectedOption === backend,
        `${what}: backend shows "${v.backend.props.selectedOption}", game gets ${env.CX_GRAPHICS_BACKEND}`);
 }
 

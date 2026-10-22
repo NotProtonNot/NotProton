@@ -97,6 +97,15 @@ for (const form of Object.keys(FORMS)) {
   t.ok(css.length === 1 && css[0].props.children.includes('.MSCXPanel .MSCXRow{'),
        'the panel carries one stylesheet defining the row rule');
 
+  const rowless = nodes('').filter(x => x.type === 'div' && typeof x.props.ref === 'function');
+  t.ok(rowless.length === 0, 'no prefix row before the page defines one');
+  const rowsFor = [];
+  global.MSCXPrefixRow = (e, id) => rowsFor.push(id);
+  const prefix = nodes('').filter(x => x.type === 'div' && typeof x.props.ref === 'function');
+  if (prefix.length === 1) prefix[0].props.ref({});
+  delete global.MSCXPrefixRow;
+  t.ok(prefix.length === 1 && rowsFor[0] === 287700, 'the panel hosts the prefix row for its game');
+
   const { render: S } = panel(emit, form, undefined, { names: ['o', 't'] });
   const shadowed = walk(S({ details: details('CX_GRAPHICS_BACKEND=dxmt %command%') }));
   t.ok(JSON.stringify(shadowed) === JSON.stringify(nodes('CX_GRAPHICS_BACKEND=dxmt')),

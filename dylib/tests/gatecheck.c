@@ -57,7 +57,8 @@ static void check_fallback(void) {
                                          &length, NULL);
         int ok = out && !memchr(out, '\0', length)
             && strstr(out, "A.some(e=>e.data===\"notproton-fex\")")
-            && strstr(out, "selectedOption:t||\"notproton-fex\"");
+            && strstr(out, "selectedOption:t||\"notproton-fex\"")
+            && strstr(out, "globalThis.MSCXDefaultTool=t||\"notproton-fex\"");
         free(out);
         if (!ok) {
             wrong("concurrent fallback writes changed a chunk's tool name");
@@ -72,11 +73,11 @@ static void check_fallback(void) {
 static void check_fex_tools(void) {
     np_webpatch_set_fex_tools((const char *[]){ "notproton-fex", "bad name", NULL, "",
                                                 "x\"y", "notproton-fex-41069" }, 6);
-    if (strcmp(g_fex_tools, "[\"notproton-fex\",\"notproton-fex-41069\"]") != 0)
-        wrong("the FEX tool array is %s", g_fex_tools);
+    if (strcmp(marker_text(NP_FEX_TOOLS[0]), "[\"notproton-fex\",\"notproton-fex-41069\"]") != 0)
+        wrong("the FEX tool array is %s", marker_text(NP_FEX_TOOLS[0]));
 
     np_webpatch_set_fex_tools(NULL, 0);
-    if (strcmp(g_fex_tools, "[]") != 0) wrong("no FEX tools gives %s", g_fex_tools);
+    if (strcmp(marker_text(NP_FEX_TOOLS[0]), "[]") != 0) wrong("no FEX tools gives %s", marker_text(NP_FEX_TOOLS[0]));
 
     char names[NP_WEBPATCH_FEX_TOOLS_MAX + 1][NP_TOOL_NAME_MAX];
     const char *list[NP_WEBPATCH_FEX_TOOLS_MAX + 1];
@@ -88,9 +89,117 @@ static void check_fex_tools(void) {
     }
     np_webpatch_set_fex_tools(list, NP_WEBPATCH_FEX_TOOLS_MAX + 1);
     size_t want = 2 + NP_WEBPATCH_FEX_TOOLS_MAX * (NP_TOOL_NAME_MAX + 2) - 1;
-    if (strlen(g_fex_tools) != want || strchr(g_fex_tools, 'A' + NP_WEBPATCH_FEX_TOOLS_MAX))
-        wrong("the longest FEX tool array is %zu bytes, not %zu", strlen(g_fex_tools), want);
+    if (strlen(marker_text(NP_FEX_TOOLS[0])) != want || strchr(marker_text(NP_FEX_TOOLS[0]), 'A' + NP_WEBPATCH_FEX_TOOLS_MAX))
+        wrong("the longest FEX tool array is %zu bytes, not %zu", strlen(marker_text(NP_FEX_TOOLS[0])), want);
     np_webpatch_set_fex_tools(NULL, 0);
+}
+
+static void *fresh_defaults(void *arg) {
+    *(int *)arg = strcmp(marker_text(NP_DEFAULTS[0]), NP_UNREAD_DEFAULTS) == 0
+               && strcmp(marker_text(NP_BUILDS[0]), "[]") == 0;
+    return NULL;
+}
+
+static void check_defaults(void) {
+    int fresh = 0;
+    pthread_t other;
+    np_webpatch_set_defaults("WINEMSYNC=1", "");
+    if (pthread_create(&other, NULL, fresh_defaults, &fresh) != 0 || pthread_join(other, NULL) != 0)
+        wrong("the fresh thread did not run");
+    else if (!fresh)
+        wrong("a thread that set nothing sees another thread's defaults, or reads them as empty");
+    np_webpatch_set_defaults("WINEMSYNC=1\nDXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5\n", "MTL_HUD_ENABLED=0");
+    if (strcmp(marker_text(NP_DEFAULTS[0]), "{rosetta:{\"WINEMSYNC\":\"1\","
+                           "\"DXMT_CONFIG\":\"d3d11.metalSpatialUpscaleFactor=1.5\"},"
+                           "fex:{\"MTL_HUD_ENABLED\":\"0\"}}") != 0)
+        wrong("the defaults are %s", marker_text(NP_DEFAULTS[0]));
+    np_webpatch_set_defaults("FOO=\"});alert(1);({\nwinemsync=1\nWINEMSYNC=1\nNOEQUALS\n=1", "");
+    if (strcmp(marker_text(NP_DEFAULTS[0]), "{rosetta:{\"WINEMSYNC\":\"1\"},fex:{}}") != 0)
+        wrong("lines the page cannot take give %s", marker_text(NP_DEFAULTS[0]));
+    np_webpatch_set_defaults("", "");
+    if (strcmp(marker_text(NP_DEFAULTS[0]), "{rosetta:{},fex:{}}") != 0) wrong("no defaults gives %s", marker_text(NP_DEFAULTS[0]));
+    np_webpatch_set_defaults("WINEMSYNC=1", NULL);
+    if (strcmp(marker_text(NP_DEFAULTS[0]), "{rosetta:{\"WINEMSYNC\":\"1\"},fex:null}") != 0)
+        wrong("a set that could not be read gives %s", marker_text(NP_DEFAULTS[0]));
+    static char big[3 * 2000 + 1];
+    for (int i = 0; i < 2000; i++) memcpy(big + 3 * i, "A=\n", 3);
+    np_webpatch_set_defaults(big, big);
+    const char *dj = marker_text(NP_DEFAULTS[0]);
+    if (strncmp(dj, "{rosetta:{\"A\":\"\",", 17) != 0 || strcmp(dj + strlen(dj) - 8, "\"A\":\"\"}}") != 0)
+        wrong("the most the defaults can grow does not fit: %.40s", dj);
+    np_webpatch_set_defaults("", "");
+
+    const np_webpatch_build_t builds[] = {
+        { "notproton-26.1-fex", "26.1", "CrossOver 26.1 (FEX)", 1, "WINEMSYNC=0\nBAD\"=1" },
+        { "notproton-26.1", "26.1", "CrossOver 26.1 (Preview)", 0, NULL },
+        { "notproton-25.0", "25.0", "CrossOver 25", 0, "" },
+        { "notproton-evil", "26.2", "Evil\"});alert(1);({", 0, NULL },
+        { "notproton-slash", "26.2", "Back\\slash", 0, NULL },
+        { "notproton-nl", "26.2", "Line\nbreak", 0, NULL },
+        { "notproton-path", "../x", "Path", 0, NULL },
+        { "bad name", "26.2", "Name", 0, NULL },
+        { NULL, "26.2", "No name", 0, NULL },
+        { "notproton-nolabel", "26.2", "", 0, NULL },
+    };
+    int saved = np_log_level;
+    np_log_level = -1;
+    np_webpatch_set_builds(builds, sizeof builds / sizeof builds[0]);
+    const char *want =
+        "[{id:\"notproton-26.1-fex\",build:\"26.1\",runner:\"fex\",label:\"CrossOver 26.1 (FEX)\","
+        "override:{\"WINEMSYNC\":\"0\"}},"
+        "{id:\"notproton-26.1\",build:\"26.1\",runner:\"rosetta\",label:\"CrossOver 26.1 (Preview)\",override:null},"
+        "{id:\"notproton-25.0\",build:\"25.0\",runner:\"rosetta\",label:\"CrossOver 25\",override:{}}]";
+    if (strcmp(marker_text(NP_BUILDS[0]), want) != 0)
+        wrong("the builds are %s", marker_text(NP_BUILDS[0]));
+
+    np_webpatch_set_builds(builds + 3, 7);
+    if (strcmp(marker_text(NP_BUILDS[0]), "[]") != 0) wrong("only refused builds give %s", marker_text(NP_BUILDS[0]));
+    np_webpatch_set_builds(NULL, 4);
+    if (strcmp(marker_text(NP_BUILDS[0]), "[]") != 0) wrong("no builds give %s", marker_text(NP_BUILDS[0]));
+
+    enum { MOST = NP_WEBPATCH_BUILDS_MAX };
+    static char ids[MOST][64], tools[MOST][NP_TOOL_NAME_MAX], labels[MOST][96];
+    const char *full = "CX_GRAPHICS_BACKEND=d3dmetal\nMTL_HUD_ENABLED=1\nD3DM_ENABLE_METALFX=1\n"
+        "DXMT_ENABLE_NVEXT=1\nROSETTA_ADVERTISE_AVX=1\nWINEMSYNC=1\nNOTPROTON_RETINA=1\n"
+        "DXMT_METALFX_SPATIAL_SWAPCHAIN=1\nDXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.72\n"
+        "NOTPROTON_RAW_CONTROLLERS=1\nNOTPROTON_DISABLE_HIDRAW=1\n";
+    np_webpatch_build_t most[MOST];
+    for (int i = 0; i < MOST; i++) {
+        snprintf(ids[i], sizeof ids[i], "%02d%061d", i, 0);
+        memset(tools[i], 't', sizeof tools[i] - 1);
+        tools[i][sizeof tools[i] - 1] = '\0';
+        tools[i][0] = (char)('0' + i / 10);
+        tools[i][1] = (char)('0' + i % 10);
+        memset(labels[i], 'L', sizeof labels[i] - 1);
+        labels[i][sizeof labels[i] - 1] = '\0';
+        most[i] = (np_webpatch_build_t){ tools[i], ids[i], labels[i], 0, full };
+    }
+    np_webpatch_set_builds(most, MOST);
+    const char *js = marker_text(NP_BUILDS[0]);
+    if (strcmp(js, "[]") == 0 || !strstr(js, "\"NOTPROTON_DISABLE_HIDRAW\":\"1\"}}]"))
+        wrong("every tool with the longest names and a full set does not fit the page");
+    np_webpatch_set_builds(NULL, 0);
+    np_log_level = saved;
+}
+
+static void check_barrel(void) {
+    static const struct { const char *src; int want; } cases[] = {
+        { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,D0:()=>g})",            1 },
+        { "e.d(t,{Vb:()=>f,D0:()=>g,XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,zz:()=>h})",   1 },
+        { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f})",                     0 },
+        { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,xD0:()=>g})",           0 },
+        { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c}),e.d(u,{$n:()=>d,Vb:()=>f,D0:()=>g})",   0 },
+        { "e.d(t,{Vb:()=>f})e.d(u,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,D0:()=>g})", 1 },
+        { "Vb:()=>f,D0:()=>g,XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d}",                    0 },
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++)
+        if ((find_barrel(cases[i].src, strlen(cases[i].src), NULL) != NULL) != cases[i].want)
+            wrong("barrel case %zu reads as %d", i, !cases[i].want);
+    const char *src = cases[5].src;
+    size_t span = 0;
+    const char *at = find_barrel(src, strlen(src), &span);
+    if (at != strrchr(src, '{') || at + span != strrchr(src, '}') + 1)
+        wrong("the barrel span is %zu bytes at %td", span, at ? at - src : -1);
 }
 
 static void check_captures(void) {
@@ -324,6 +433,12 @@ static int extract(const char *chunk, const char *out_path) {
             return 1;
         }
     }
+    size_t span = 0;
+    const char *barrel = find_barrel((const char *)buf, len, &span);
+    if (barrel) {
+        fwrite(barrel, 1, span, o);
+        fputs("\n", o);
+    }
     fclose(o);
     free(buf);
     printf("extracted fixture to %s\n", out_path);
@@ -374,6 +489,13 @@ static int extract_library(const char *chunk, const char *out_path) {
     return 0;
 }
 
+static void page_gates_out(const np_ui_shape_t *S, const char *why, const int *gates, const char *what) {
+    if (!why) wrong("[%s] %s and the page was not left out", S->name, what);
+    for (size_t g = 0; g < S->count; g++)
+        if (S->gates[g].optional == NP_GATE_PAGE && gates[g])
+            wrong("[%s] %s and page gate %zu stayed in", S->name, what, g);
+}
+
 static void check_optional_drift(const np_ui_shape_t *S, size_t g, const uint8_t *buf,
                                  size_t len, const int *applied) {
     char *copy = malloc(len + 1);
@@ -389,6 +511,8 @@ static void check_optional_drift(const np_ui_shape_t *S, size_t g, const uint8_t
     int without[NP_GATE_MAX];
     memcpy(without, applied, sizeof(without));
     without[g] = 0;
+    const char *why = settle_page(S, copy, len, without, NULL);
+    if (S->gates[g].optional == NP_GATE_PAGE) page_gates_out(S, why, without, "a page gate drifted");
 
     int saved = np_log_level;
     np_log_level = -1;
@@ -400,6 +524,38 @@ static void check_optional_drift(const np_ui_shape_t *S, size_t g, const uint8_t
         free(out);
     } else {
         wrong("[%s] drift in optional gate %zu left the whole shape unpatched", S->name, g);
+    }
+    free(copy);
+}
+
+static void check_barrel_drift(const np_ui_shape_t *S, const uint8_t *buf, size_t len,
+                               const int *applied) {
+    size_t span = 0;
+    const char *at = find_barrel((const char *)buf, len, &span);
+    if (!at) return;
+    char *copy = malloc(len + 1);
+    if (!copy) { wrong("out of memory"); return; }
+    memcpy(copy, buf, len + 1);
+    static const char *const names[] = NP_CX_BARREL_NAMES;
+    char export[16];
+    snprintf(export, sizeof export, "%s:()=>", names[sizeof names / sizeof names[0] - 1]);
+    const char *name = find_in(at, span, export);
+    if (!name) { wrong("[%s] the barrel has no %s", S->name, export); free(copy); return; }
+    copy[name - (const char *)buf] = '_';
+    int without[NP_GATE_MAX];
+    memcpy(without, applied, sizeof(without));
+    page_gates_out(S, settle_page(S, copy, len, without, NULL), without, "the barrel lost a name");
+
+    int saved = np_log_level;
+    np_log_level = -1;
+    size_t out_len = 0;
+    char *out = np_webpatch_transform((const uint8_t *)copy, len, &out_len, NULL);
+    np_log_level = saved;
+    if (out) {
+        check_output(out, out_len, without);
+        free(out);
+    } else {
+        wrong("[%s] a missing barrel left the whole shape unpatched", S->name);
     }
     free(copy);
 }
@@ -478,6 +634,7 @@ static void check_library(const char *path, const char *out_path, int literal_ve
     free(out);
 
     g_platform_js = g_test_lists;
+    if (np_webpatch_has_shape(buf, len)) wrong("%s reads as a compat UI", path);
     np_cap_t caps[NP_CAP_MAX];
     for (size_t g = 0; g < NP_LIBRARY_FILTER_COUNT; g++) {
         if (!present[g]) continue;
@@ -532,7 +689,7 @@ int main(int argc, char **argv) {
     }
 
     if (argc < 2) {
-        selfcheck(); check_captures(); check_fallback(); check_fex_tools();
+        selfcheck(); check_captures(); check_fallback(); check_fex_tools(); check_defaults(); check_barrel();
         return g_wrong;
     }
 
@@ -545,10 +702,12 @@ int main(int argc, char **argv) {
         if (!buf) { wrong("cannot read %s", argv[i]); continue; }
 
         const np_ui_shape_t *S = shape_of((const char *)buf, len);
+        if (!S != !np_webpatch_has_shape(buf, len)) wrong("%s reads as having a shape: %d", argv[i], !S);
         int applied[NP_GATE_MAX] = {0};
         for (size_t g = 0; S && g < S->count; g++)
             applied[g] = count_matches((const char *)buf, len, S->gates[g].find)
                          == (size_t)S->gates[g].expect;
+        if (S) settle_page(S, (const char *)buf, len, applied, NULL);
 
         size_t out_len = 0;
         char *out = np_webpatch_transform(buf, len, &out_len, NULL);
@@ -559,6 +718,7 @@ int main(int argc, char **argv) {
             for (size_t g = 0; S && g < S->count; g++)
                 if (S->gates[g].optional && applied[g])
                     check_optional_drift(S, g, buf, len, applied);
+            if (S) check_barrel_drift(S, buf, len, applied);
         } else {
             printf("REJECTED %s\n", argv[i]);
         }

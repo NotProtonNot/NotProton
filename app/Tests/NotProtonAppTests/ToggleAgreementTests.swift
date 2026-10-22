@@ -19,8 +19,8 @@ struct ToggleAgreementTests {
     static func toggleNames(in webpatch: String) throws -> Set<String> {
         var names: Set<String> = []
         for pattern in [
-            #"g\(\\"([A-Z0-9_]+)\\"\)"#,
-            #"T\(\[\\"([A-Z0-9_]+)\\""#,
+            #"[gG]\(\\"([A-Z0-9_]+)\\"\)"#,
+            #"[TD]\(\[?\\"([A-Z0-9_]+)\\""#,
             #"\[\\"([A-Z0-9_]+)\\","#,
         ] {
             for match in webpatch.matches(of: try Regex(pattern)) {

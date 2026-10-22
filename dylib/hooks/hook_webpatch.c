@@ -3,8 +3,8 @@
 // not modified, to keep the Steam bootstrap happy.
 
 #include "../feats/webpatch.h"
-#include "../feats/compat.h"
 #include "../feats/compatsvc.h"
+#include "../feats/compatpage.h"
 #include "../util/file.h"
 #include "../util/log.h"
 
@@ -120,9 +120,7 @@ static int open_patched(const char *path) {
     }
     close(in);
 
-    np_webpatch_set_fallback_tool(np_compat_fallback_tool_name());
-    const char *fex[NP_WEBPATCH_FEX_TOOLS_MAX];
-    np_webpatch_set_fex_tools(fex, np_compat_fex_tools(fex, NP_WEBPATCH_FEX_TOOLS_MAX));
+    np_compatpage_publish((const uint8_t *)raw, raw_len);
     size_t patched_len = 0;
     const char *shape = NULL;
     char *patched = np_webpatch_transform((const uint8_t *)raw, raw_len, &patched_len,

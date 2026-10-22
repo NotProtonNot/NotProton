@@ -121,6 +121,8 @@ jobs:
           make -s compatsvc-check
           make -s prefixstate-check
           make -s defaults-check
+          make -s compatpage-check
+          make -s defaults-drift
           make -s shortcutcheck
           make -s launch-shell
           make -s envcheck

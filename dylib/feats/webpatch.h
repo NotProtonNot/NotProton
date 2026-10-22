@@ -17,11 +17,28 @@ void np_webpatch_set_fallback_tool(const char *name);
 // fallback would drop are skipped, as is anything past NP_WEBPATCH_FEX_TOOLS_MAX.
 void np_webpatch_set_fex_tools(const char *const *names, size_t count);
 
+// NULL for a runner whose file couldn't be read, which hides the page.
+void np_webpatch_set_defaults(const char *rosetta, const char *fex);
+
+#define NP_WEBPATCH_BUILDS_MAX 32
+
+typedef struct {
+    const char *tool;     // Steam's name for the tool
+    const char *build;
+    const char *label;
+    int         fex;
+    const char *override; // KEY=VALUE lines, NULL when the build has no own set
+} np_webpatch_build_t;
+
+void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count);
+
 // The compat UIs, named so a caller can compare against the table rather than a literal
 // of its own that a rename would leave behind. forcetool calls SpecifyCompatTool straight
 // out; selecttool reads its list from the CompatManager routes.
 #define NP_SHAPE_FORCETOOL  "forcetool"
 #define NP_SHAPE_SELECTTOOL "selecttool"
+
+int np_webpatch_has_shape(const uint8_t *src, size_t src_len);
 
 // `out_shape` is optional and names the compat UI the chunk carried, so a caller can tell
 // which page it just served without probing the bytes a second time. It is set whenever a
