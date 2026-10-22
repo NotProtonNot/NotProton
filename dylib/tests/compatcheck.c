@@ -451,6 +451,11 @@ static void tool_list_cases(void) {
     unlink(path);
     check(kept == 40 && strcmp(g_tools[39].name, "notproton-39") == 0
           && strcmp(g_tools[0].dir, "/tools/notproton-0") == 0, "a long list keeps every tool");
+    np_compat_tool_info_t info;
+    check(np_compat_tool_by_name("notproton-39x", 12, &info) && strcmp(info.name, "notproton-39") == 0
+          && strcmp(info.display, "Tool 39") == 0 && !info.fex, "the last of a long list is found by name");
+    check(!np_compat_tool_by_name("notproton-3", 10, &info) && !np_compat_tool_by_name("notproton-40", 12, &info)
+          && !np_compat_tool_by_name(NULL, 0, &info), "a name has to match a listed tool whole");
     check(strcmp(np_compat_fallback_tool_name(), "notproton-0") == 0,
           "the fallback is the first configured tool");
     check(np_compat_fex_tools(fex, 3) == 0, "a list with no FEX tool has no FEX names");

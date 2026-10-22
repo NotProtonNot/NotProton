@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../util/buildid.h"
+
 // Manager tool array: base pointer at TOOL_ARRAY_OFF, count at TOOL_COUNT_OFF,
 // fixed per-entry stride from np_compat_tool_stride.
 #define COMPAT_MANAGER_TOOL_ARRAY_OFF  0x320
@@ -129,6 +131,17 @@ const char *np_compat_fallback_tool_name(void);
 
 // Names of the listed tools whose flavor is fex, up to max. Returns how many it wrote.
 size_t np_compat_fex_tools(const char **names, size_t max);
+
+typedef struct {
+    const char *name;
+    const char *build;
+    const char *display;
+    bool        fex;
+} np_compat_tool_info_t;
+
+size_t np_compat_tools(np_compat_tool_info_t *out, size_t max);
+
+bool np_compat_tool_by_name(const char *name, size_t n, np_compat_tool_info_t *out);
 
 uint32_t np_compat_manager_tools_max(void);
 

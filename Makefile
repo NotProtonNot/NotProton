@@ -44,6 +44,7 @@ SRCS := \
 	dylib/feats/compat.c \
 	dylib/feats/webui.c \
 	dylib/feats/compatsvc.c \
+	dylib/feats/defaults.c \
 	dylib/feats/prefixstate.c \
 	dylib/feats/usershortcuts.c \
 	dylib/feats/webpatch.c \
@@ -71,7 +72,7 @@ DEPS := $(OBJS:.o=.d)
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
-        compatsvc-check prefixstate-check shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck launch-shell activatecheck FORCE
+        compatsvc-check prefixstate-check defaults-check shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck launch-shell activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -179,6 +180,16 @@ compatsvc-check:
 	mkdir -p $(OUT_DIR) && \
 	$(TEST_CC) -o $(COMPATSVC_CHECK) dylib/tests/compatsvc-check.c && \
 	$(COMPATSVC_CHECK)
+
+DEFAULTS_CHECK := $(OUT_DIR)/defaults-check
+
+$(DEFAULTS_CHECK): dylib/tests/defaults-check.c dylib/feats/defaults.c dylib/feats/defaults.h \
+                   dylib/util/buildid.h dylib/util/file.c dylib/util/file.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/defaults-check.c dylib/util/file.c
+
+defaults-check: $(DEFAULTS_CHECK)
+	@$(DEFAULTS_CHECK)
 
 SHORTCUT_BUNDLE_CHECK := $(OUT_DIR)/shortcut-bundle-check
 SHORTCUTCHECK         := $(OUT_DIR)/shortcutcheck

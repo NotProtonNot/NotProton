@@ -14,6 +14,7 @@
 
 #include "compatsvc.h"
 #include "compat.h"
+#include "defaults.h"
 #include "prefixstate.h"
 #include "webui.h"
 #include "../resolver/anchor.h"
@@ -30,6 +31,9 @@
 #define ROUTE_REBUILD              "NotProton.RebuildPrefix#1"
 #define ROUTE_BACKUP_REBUILD       "NotProton.BackupAndRebuildPrefix#1"
 #define ROUTE_OPEN_LOG             "NotProton.OpenPrefixLog#1"
+#define ROUTE_SET_DEFAULTS         "NotProton.SetDefaults#1"
+#define ROUTE_SET_TOOL_DEFAULTS    "NotProton.SetToolDefaults#1"
+#define ROUTE_APPLY_TOOL_DEFAULTS  "NotProton.ApplyToolDefaults#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -481,6 +485,46 @@ static int open_prefix_log(uintptr_t request, uintptr_t response) {
     return answer_json(response, appid, opened ? "{\"opened\":true}" : "{\"error\":\"log\"}");
 }
 
+static int set_defaults(uintptr_t request, uintptr_t response) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    uint32_t runner   = (has_bits & SPECIFY_HAS_APPID)
+                      ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
+    (void)response;
+    return np_defaults_save(runner, string_field(request + SPECIFY_TOOL_NAME_OFF))
+        ? RESULT_OK : RESULT_FAIL;
+}
+
+static int tool_build(const char *tool, size_t n, char *build, size_t size, uint32_t *runner) {
+    np_compat_tool_info_t info;
+    if (np_compat_tool_by_name(tool, n, &info) && info.build && strlen(info.build) < size) {
+        snprintf(build, size, "%s", info.build);
+        *runner = info.fex ? NP_DEFAULTS_FEX : NP_DEFAULTS_ROSETTA;
+        return 1;
+    }
+    NP_ERR("compatsvc: %.*s is not an installed CrossOver tool", (int)(n > 128 ? 128 : n), tool);
+    return 0;
+}
+
+static int set_tool_defaults(uintptr_t request, uintptr_t response) {
+    const char *text = string_field(request + SPECIFY_TOOL_NAME_OFF), *nl = strchr(text, '\n');
+    char build[NP_BUILD_ID_MAX + 1];
+    uint32_t runner;
+    (void)response;
+    if (!tool_build(text, nl ? (size_t)(nl - text) : strlen(text), build, sizeof build, &runner))
+        return RESULT_FAIL;
+    return np_defaults_save_build(build, runner, nl ? nl + 1 : "") ? RESULT_OK : RESULT_FAIL;
+}
+
+static int apply_tool_defaults(uintptr_t request, uintptr_t response) {
+    const char *tool = string_field(request + SPECIFY_TOOL_NAME_OFF);
+    char build[NP_BUILD_ID_MAX + 1];
+    uint32_t runner;
+    (void)response;
+    if (!tool_build(tool, strlen(tool), build, sizeof build, &runner)) return RESULT_FAIL;
+    int done = np_defaults_apply_build(build, runner);
+    return done > 0 ? RESULT_OK : done < 0 ? NP_COMPATSVC_PARTLY_APPLIED : RESULT_FAIL;
+}
+
 static uintptr_t g_state_changed;
 static int g_routes = NP_COMPATSVC_UNTRIED;
 
@@ -523,6 +567,12 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
 
     np_webui_register_route(ROUTE_SPECIFY_COMPAT_TOOL, specify_request,
                             specify_response, specify_compat_tool);
+    if (!np_webui_register_route(ROUTE_SET_DEFAULTS, specify_request, specify_response, set_defaults)
+        || !np_webui_register_route(ROUTE_SET_TOOL_DEFAULTS, specify_request, specify_response,
+                                    set_tool_defaults)
+        || !np_webui_register_route(ROUTE_APPLY_TOOL_DEFAULTS, specify_request, specify_response,
+                                    apply_tool_defaults))
+        NP_WARN("compatsvc: the Settings page cannot save default compatibility settings");
 
     g_routes = NP_COMPATSVC_READY;
 

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <mach-o/loader.h>
+#include "../feats/compat.h"
 
 // Stubs for the compat layer, set by each test before calling a handler. The check owns
 // both sides, so what the handler includes and labels is under test, not the compat answers.
@@ -108,10 +109,62 @@ int np_webui_parse_into(uintptr_t message, const void *bytes, uint32_t len) {
 
 uintptr_t np_webui_registry(void) { return 1; }
 
+static const char *routes_seen[16];
+static uintptr_t   route_requests[16];
+static int         route_count;
+
 int np_webui_register_route(const char *name, uintptr_t req, uintptr_t resp,
                             int (*handler)(uintptr_t, uintptr_t)) {
-    (void)name; (void)req; (void)resp; (void)handler;
+    (void)resp; (void)handler;
+    if (route_count < 16) {
+        routes_seen[route_count] = name;
+        route_requests[route_count++] = req;
+    }
     return 1;
+}
+
+static uint32_t    saved_runner = 99;
+static const char *saved_text;
+static int         save_ok = 1;
+
+static char saved_build[128];
+static int  applied;
+
+static np_compat_tool_info_t stub_infos[] = {
+    { "notproton-26.1", "26.1", "CrossOver 26.1", false },
+    { "notproton-26.1-fex", "26.1", "CrossOver 26.1 (FEX)", true },
+};
+
+bool np_compat_tool_by_name(const char *name, size_t n, np_compat_tool_info_t *out) {
+    for (size_t i = 0; i < sizeof stub_infos / sizeof stub_infos[0]; i++)
+        if (strlen(stub_infos[i].name) == n && memcmp(stub_infos[i].name, name, n) == 0) {
+            *out = stub_infos[i];
+            return true;
+        }
+    return false;
+}
+
+int np_defaults_save(uint32_t runner, const char *text) {
+    saved_runner = runner;
+    saved_text = text;
+    saved_build[0] = '\0';
+    return save_ok;
+}
+
+int np_defaults_save_build(const char *build, uint32_t runner, const char *text) {
+    saved_runner = runner;
+    saved_text = text;
+    snprintf(saved_build, sizeof saved_build, "%s", build);
+    return save_ok;
+}
+
+static int apply_result = 1;
+
+int np_defaults_apply_build(const char *build, uint32_t runner) {
+    saved_runner = runner;
+    snprintf(saved_build, sizeof saved_build, "%s", build);
+    applied = 1;
+    return save_ok ? apply_result : 0;
 }
 
 int np_webui_notify(const char *name, uintptr_t message) {
@@ -653,6 +706,75 @@ static void specify_cases(void) {
     check(last_map_appid == 0, "a request with no appid has-bit reads as appid zero");
 }
 
+static void set_defaults_cases(void) {
+    reset();
+    int rc = set_defaults(build_specify_request(SPECIFY_HAS_APPID, 1, "WINEMSYNC=1\nMTL_HUD_ENABLED=0"),
+                          (uintptr_t)response_buf);
+    check(rc == RESULT_OK, "saved defaults succeed");
+    check(saved_runner == 1, "the appid names the runner");
+    check(saved_text && strcmp(saved_text, "WINEMSYNC=1\nMTL_HUD_ENABLED=0") == 0,
+          "the tool name carries the lines");
+
+    rc = set_defaults(build_specify_request(0, 1, ""), (uintptr_t)response_buf);
+    check(saved_runner == 0, "a request with no appid has-bit is Rosetta");
+    check(saved_text && saved_text[0] == '\0', "an empty request clears the defaults");
+
+    save_ok = 0;
+    rc = set_defaults(build_specify_request(SPECIFY_HAS_APPID, 0, "x"), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL, "a refused save fails the request");
+    save_ok = 1;
+}
+
+static void tool_defaults_cases(void) {
+    reset();
+    saved_runner = 99;
+    int rc = set_tool_defaults(build_specify_request(0, 0, "notproton-26.1-fex\nWINEMSYNC=1"),
+                               (uintptr_t)response_buf);
+    check(rc == RESULT_OK && saved_runner == 1 && strcmp(saved_build, "26.1") == 0,
+          "a tool's lines save to its build and runner");
+    check(saved_text && strcmp(saved_text, "WINEMSYNC=1") == 0, "the lines after the tool are saved");
+
+    rc = set_tool_defaults(build_specify_request(0, 0, "notproton-26.1"), (uintptr_t)response_buf);
+    check(rc == RESULT_OK && saved_runner == 0 && saved_text && saved_text[0] == '\0',
+          "a tool with no lines saves an empty set");
+
+    saved_build[0] = '\0';
+    rc = set_tool_defaults(build_specify_request(0, 0, "notproton-27.0\nWINEMSYNC=1"),
+                           (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !saved_build[0], "a tool that is not installed saves nothing");
+    rc = set_tool_defaults(build_specify_request(0, 0, "notproton-26\nWINEMSYNC=1"),
+                           (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !saved_build[0], "a tool name has to match whole");
+
+    char long_tool[200];
+    memset(long_tool, 'a', 150);
+    long_tool[150] = '\0';
+    rc = set_tool_defaults(build_specify_request(0, 0, long_tool), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !saved_build[0], "an overlong tool is refused before saving");
+
+    save_ok = 0;
+    rc = set_tool_defaults(build_specify_request(0, 0, "notproton-26.1\nWINEMSYNC=1"),
+                           (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL, "a refused build save fails the request");
+    save_ok = 1;
+
+    applied = 0;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "notproton-26.1"), (uintptr_t)response_buf);
+    check(rc == RESULT_OK && applied && saved_runner == 0 && strcmp(saved_build, "26.1") == 0,
+          "applying hands the tool's build and runner over");
+    applied = 0;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "notproton-27.0"), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !applied, "applying a tool that is not installed does nothing");
+    save_ok = 0;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "notproton-26.1"), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL, "a refused apply fails the request");
+    save_ok = 1;
+    apply_result = -1;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "notproton-26.1"), (uintptr_t)response_buf);
+    check(rc == NP_COMPATSVC_PARTLY_APPLIED, "a partial apply says so, apart from one that changed nothing");
+    apply_result = 1;
+}
+
 static void no_manager_cases(void) {
     // When np_compat_manager returns NULL the handlers must cope.
     reset();
@@ -675,9 +797,24 @@ static void routes_state_cases(void) {
     check(np_compatsvc_routes() == NP_COMPATSVC_UNTRIED,
           "no route lookup yet reads as untried rather than absent");
 
+    route_count = 0;
     np_compatsvc_register(NULL, 0, 0, 0);
     check(np_compatsvc_routes() == NP_COMPATSVC_READY,
           "a client carrying every message type registers and reads as ready");
+    static const char *const defaults_routes[] = { ROUTE_SET_DEFAULTS, ROUTE_SET_TOOL_DEFAULTS,
+                                                   ROUTE_APPLY_TOOL_DEFAULTS };
+    int specify = -1, after = 1, same = 1;
+    for (int i = 0; i < route_count; i++)
+        if (strcmp(routes_seen[i], ROUTE_SPECIFY_COMPAT_TOOL) == 0) specify = i;
+    for (size_t r = 0; r < sizeof defaults_routes / sizeof defaults_routes[0]; r++) {
+        int at = -1;
+        for (int i = 0; i < route_count; i++)
+            if (strcmp(routes_seen[i], defaults_routes[r]) == 0) at = i;
+        after &= specify >= 0 && at > specify;
+        same &= at >= 0 && specify >= 0 && route_requests[at] == route_requests[specify];
+    }
+    check(after, "every defaults route registers after SpecifyCompatTool");
+    check(same, "every defaults route takes the SpecifyCompatTool request");
 
     // The stable client: the page specifies the tool directly and the build carries no
     // CompatManager types at all.
@@ -895,6 +1032,8 @@ int main(void) {
     fallback_cases();
     active_flag_cases();
     specify_cases();
+    set_defaults_cases();
+    tool_defaults_cases();
     no_manager_cases();
     routes_state_cases();
     string_field_cases();

@@ -172,6 +172,50 @@ if [ "$np_flavor" = rosetta ] || [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" 
 fi
 export WINELOADER WINESERVER
 
+np_from_defaults() {
+  case " $np_defaulted " in *" $1="*) return 0 ;; esac
+  return 1
+}
+np_defaulted=""
+case "${np_flavor-}" in
+  fex) np_defaults_runner=fex ;;
+  rosetta) np_defaults_runner=rosetta ;;
+  *) np_defaults_runner=rosetta; [ "${wine_unix##*/}" != aarch64-unix ] || np_defaults_runner=fex ;;
+esac
+np_defaults_file="$np_support/defaults-$np_defaults_runner"
+if [ -n "${np_build-}" ] && [ -f "$np_support/defaults-override-$np_build-$np_defaults_runner" ]; then
+  np_defaults_file="$np_support/defaults-override-$np_build-$np_defaults_runner"
+fi
+if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_defaults_file" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    key=${line%%=*}
+    value=${line#*=}
+    case "$line" in
+      CX_GRAPHICS_BACKEND=dxmt | CX_GRAPHICS_BACKEND=dxvk | CX_GRAPHICS_BACKEND=wined3d) ;;
+      CX_GRAPHICS_BACKEND=d3dmetal | D3DM_ENABLE_METALFX=[01] | ROSETTA_ADVERTISE_AVX=[01])
+        [ "${wine_unix##*/}" != aarch64-unix ] || continue ;;
+      FEX_X87REDUCEDPRECISION=[01])
+        [ "${wine_unix##*/}" = aarch64-unix ] || continue ;;
+      MTL_HUD_ENABLED=[01] | DXMT_ENABLE_NVEXT=[01] | DXMT_METALFX_SPATIAL_SWAPCHAIN=[01] | \
+      WINEMSYNC=[01] | NOTPROTON_RETINA=[01] | NOTPROTON_RAW_CONTROLLERS=[01] | NOTPROTON_DISABLE_HIDRAW=[01]) ;;
+      DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=*)
+        case "${value#*=}" in 1.5 | 1.72 | 2.0 | 3.0) ;; *) continue ;; esac
+        if printf '%s' "${DXMT_CONFIG-}" | tr ';' '\n' \
+          | grep -q '^[[:space:]]*d3d11\.metalSpatialUpscaleFactor[[:space:]]*='; then
+          continue
+        fi
+        export DXMT_CONFIG="${DXMT_CONFIG:+$DXMT_CONFIG;}$value"
+        np_defaulted="$np_defaulted${np_defaulted:+ }$line"
+        continue ;;
+      *) continue ;;
+    esac
+    eval "[ -z \"\${$key+x}\" ]" || continue
+    export "${line?}"
+    np_defaulted="$np_defaulted${np_defaulted:+ }$line"
+  done < "$np_defaults_file"
+fi
+[ "${CX_GRAPHICS_BACKEND-}" != auto ] || unset -v CX_GRAPHICS_BACKEND
+
 np_dropped=""
 if [ "${wine_unix##*/}" = aarch64-unix ]; then
   if [ "${CX_GRAPHICS_BACKEND:-}" = d3dmetal ]; then
@@ -184,10 +228,12 @@ if [ "${wine_unix##*/}" = aarch64-unix ]; then
   done
   fex_from=environment
   [ -n "${FEX_X87REDUCEDPRECISION+x}" ] || fex_from=default
+  if np_from_defaults FEX_X87REDUCEDPRECISION; then fex_from=${np_defaults_file##*/}; fi
   export FEX_X87REDUCEDPRECISION="${FEX_X87REDUCEDPRECISION-1}"
 else
   avx_from=environment
   [ -n "$ROSETTA_ADVERTISE_AVX" ] || avx_from=default
+  if np_from_defaults ROSETTA_ADVERTISE_AVX; then avx_from=${np_defaults_file##*/}; fi
   export ROSETTA_ADVERTISE_AVX="${ROSETTA_ADVERTISE_AVX:-1}"
 fi
 
@@ -217,6 +263,7 @@ fi
   echo "STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID"
   echo "-- steam env passed through --"
   env | grep -iE '^(Steam|SDL_)' | sort
+  [ -z "$np_defaulted" ] || echo "from ${np_defaults_file##*/}: $np_defaulted"
   [ -z "$np_dropped" ] || echo "ignored on arm64 Wine: $np_dropped"
 } >> "$log" 2>&1 || true
 
@@ -1370,7 +1417,9 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   stage_step="prefix lock"
   prepare_prefix_directory
   msync_from=environment
-  if [ -z "$WINEMSYNC" ] && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
+  if np_from_defaults WINEMSYNC; then msync_from=${np_defaults_file##*/}; fi
+  if [ -z "$WINEMSYNC" ] && [ "$verb" != waitforexitandrun ] \
+    && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
     WINEMSYNC=$(tr -d ' \t\n' \
       < "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true)
     msync_from=carried-over

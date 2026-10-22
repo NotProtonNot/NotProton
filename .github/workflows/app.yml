@@ -120,6 +120,7 @@ jobs:
           make -s compatcheck
           make -s compatsvc-check
           make -s prefixstate-check
+          make -s defaults-check
           make -s shortcutcheck
           make -s launch-shell
           make -s envcheck

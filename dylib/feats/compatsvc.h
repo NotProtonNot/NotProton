@@ -23,6 +23,8 @@ int np_compatsvc_routes(void);
 // Sentinel name for "no tool".
 #define NP_COMPAT_TOOL_NONE "notproton.none"
 
+#define NP_COMPATSVC_PARTLY_APPLIED 129
+
 // Tells the page the mapping changed.
 void np_compatsvc_state_changed(void);
 
