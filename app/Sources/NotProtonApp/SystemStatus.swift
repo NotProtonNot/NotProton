@@ -403,6 +403,8 @@ final class SystemStatus {
             record(error)
         }
 
+        // A run can replace a runner copy, so measure every copy again
+        runnerSizes = [:]
         await refreshAfterRun(self)
     }
 
