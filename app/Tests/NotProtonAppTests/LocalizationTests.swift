@@ -32,6 +32,28 @@ struct LocalizationTests {
             == "Aperto Wine Configuration in Zuma Deluxe.")
     }
 
+    let german = Bundle.module.path(forResource: "de", ofType: "lproj").flatMap(Bundle.init(path:))
+
+    @Test("German text is looked up with interpolated values in place")
+    func germanLookup() throws {
+        let de = try #require(german)
+        #expect(String(localized: "Prefixes", bundle: de) == "Präfixe")
+        #expect(String(localized: "Delete \(3) prefixes?", bundle: de) == "3 Präfixe löschen?")
+        #expect(String(localized: "Opened \("Wine Configuration") in \("Zuma Deluxe").", bundle: de)
+            == "Wine Configuration in Zuma Deluxe geöffnet.")
+    }
+
+    let french = Bundle.module.path(forResource: "fr", ofType: "lproj").flatMap(Bundle.init(path:))
+
+    @Test("French text is looked up with interpolated values in place")
+    func frenchLookup() throws {
+        let fr = try #require(french)
+        #expect(String(localized: "Status", bundle: fr) == "État")
+        #expect(String(localized: "Delete \(3) prefixes?", bundle: fr) == "Supprimer 3 préfixes\u{00A0}?")
+        #expect(String(localized: "Opened \("Wine Configuration") in \("Zuma Deluxe").", bundle: fr)
+            == "Wine Configuration ouvert dans Zuma Deluxe.")
+    }
+
     @Test("A string not yet translated into one language shows English there")
     func pendingTranslationFallsBack() throws {
         let zh = try #require(chinese)
