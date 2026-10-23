@@ -237,6 +237,15 @@ else
   export ROSETTA_ADVERTISE_AVX="${ROSETTA_ADVERTISE_AVX:-1}"
 fi
 
+# SDL only reaches pads on Apple's Xbox 360 driver (wired 360 pads, 360 mode dongles) through
+# GameController, and drops them there while any Xbox One/Series pad is on its HIDAPI driver.
+xbox_hint=""
+if [ -z "${SDL_JOYSTICK_HIDAPI_XBOX_ONE+x}" ] \
+  && /usr/sbin/ioreg -r -d 1 -n Xbox360Gamepad 2>/dev/null | grep -q .; then
+  export SDL_JOYSTICK_HIDAPI_XBOX_ONE=0
+  xbox_hint=1
+fi
+
 # Keeps Wine from inheriting the prefix and template locks (fd 8 and 9).
 without_lock_fds() {
   "$@" 8>&- 9>&-
@@ -265,6 +274,7 @@ fi
   env | grep -iE '^(Steam|SDL_)' | sort
   [ -z "$np_defaulted" ] || echo "from ${np_defaults_file##*/}: $np_defaulted"
   [ -z "$np_dropped" ] || echo "ignored on arm64 Wine: $np_dropped"
+  [ -z "$xbox_hint" ] || echo "controllers: SDL_JOYSTICK_HIDAPI_XBOX_ONE=0 set by notproton, an Xbox 360 pad is on Apple's driver"
 } >> "$log" 2>&1 || true
 
 stage_step="startup"
