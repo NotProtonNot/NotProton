@@ -74,6 +74,9 @@ struct BackupsView: View {
         return String(localized: "\(count), \(size) private size")
     }
 
+    // A backup or rebuild in progress may be writing the backup being deleted
+    private var canDelete: Bool { !model.isLoading && !model.isBusy }
+
     private var selected: [PrefixBackup] {
         model.backups.filter { selection.contains($0.id) }
     }
@@ -108,13 +111,13 @@ struct BackupsView: View {
         Button("Delete", systemImage: "trash") {
             ask(selected)
         }
-        .disabled(selected.isEmpty || model.isLoading)
+        .disabled(selected.isEmpty || !canDelete)
         .help("Delete the selected backups.")
 
         Button("Delete All", systemImage: "externaldrive.badge.minus") {
             ask(model.backups)
         }
-        .disabled(model.backups.isEmpty || model.isLoading)
+        .disabled(model.backups.isEmpty || !canDelete)
         .help("Delete every backup that rebuilds have kept.")
 
         Button("Refresh", systemImage: "arrow.clockwise") {
@@ -189,6 +192,7 @@ struct BackupsView: View {
                 Button(PrefixPrompt.deleteBackupsButton(targets), role: .destructive) {
                     ask(targets)
                 }
+                .disabled(!canDelete)
             }
         }
         .disabled(model.isLoading)
@@ -200,7 +204,7 @@ struct BackupsView: View {
     }
 
     private func ask(_ targets: [PrefixBackup]) {
-        guard !targets.isEmpty, !model.isLoading else { return }
+        guard !targets.isEmpty, canDelete else { return }
         model.pendingConfirmation = .deleteBackups(targets)
     }
 
