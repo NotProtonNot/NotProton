@@ -19,7 +19,8 @@ struct NotProtonApp: App {
                 .environment(status)
                 .environment(prefixes)
                 .frame(minWidth: 720, minHeight: 460)
-                .onChange(of: pane) { prefixes.forgetOutcome() }
+                // Status never shows the prefix banner, so a result that lands there is kept
+                .onChange(of: pane) { old, _ in if old != .status { prefixes.forgetOutcome() } }
                 .onChange(of: status.snapshot?.installedRunners.map(\.id)) {
                     if prefixes.hasLoaded { Task { await prefixes.load() } }
                 }
