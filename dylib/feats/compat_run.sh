@@ -997,6 +997,37 @@ if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
 
+# CrossOver does not check its license when its Wine is run directly, so a runner copied to a
+# Mac without a licensed CrossOver would start games too. This is the check the app makes before
+# it sets a runner up, made again at each launch: the license in the preferences, verified with
+# the runner's key, which is only trusted if it is CodeWeavers' (by SHA-256, as the app does).
+np_license_keys="de88c936ee0fe6233314168a4651833abef7ef374ff798fa1c0b548a525a3686"
+crossover_licensed() {
+  key="$CX_ROOT/share/crossover/data/tie.pub"
+  digest=$(/usr/bin/shasum -a 256 "$key" 2>/dev/null) || return 1
+  case " $np_license_keys " in
+    *" ${digest%% *} "*) ;;
+    *) return 1 ;;
+  esac
+  for dir in "$HOME/Library/Preferences" /Library/Preferences; do
+    license="$dir/com.codeweavers.CrossOver.license"
+    [ -f "$license" ] || continue
+    for pair in sha256:-sha256 sig:-sha1; do
+      signature="$dir/com.codeweavers.CrossOver.${pair%%:*}"
+      [ -f "$signature" ] || continue
+      /usr/bin/openssl dgst "${pair#*:}" -verify "$key" -signature "$signature" "$license" \
+        >/dev/null 2>&1 && return 0
+    done
+  done
+  return 1
+}
+stage_step="license check"
+if ! crossover_licensed; then
+  echo "=== no CrossOver license verifies with CodeWeavers' key, run CrossOver to activate it ===" >> "$log" 2>&1 || true
+  show_alert "CrossOver does not appear to be activated." "Please run CrossOver and try again. The trial version is not supported."
+  exit 1
+fi
+
 # Each CrossOver build needs its own template.
 # FEX builds need two, one for FEX/arm64 Wine and one for Rosetta/AMD64 Wine
 runner_id=""
