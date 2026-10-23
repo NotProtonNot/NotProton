@@ -2108,20 +2108,17 @@ done
 # Anything this script does not know by name. A launch option NOTPROTON_ENV_FOO=bar gives
 # the game FOO=bar, which is the only per-game way to set one, and Wine and the graphics
 # layers take far more than the prefixes above.
-np_env_reserved="CX_ROOT CX_HOME HOME PATH WINEPREFIX WINELOADER WINESERVER WINEDLLPATH \
-WINEDLLOVERRIDES STEAM_COMPAT_DATA_PATH STEAM_COMPAT_INSTALL_PATH NOTPROTON_GAME_CWD \
-STEAM_COMPAT_CLIENT_INSTALL_PATH STEAM_COMPAT_APP_ID STEAM_DYLD_INSERT_LIBRARIES"
 np_env_passed=$(env | LC_ALL=C sed -nE 's/^NOTPROTON_ENV_([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' \
   | LC_ALL=C sort)
 for name in $np_env_passed; do
-  case " $np_env_reserved " in
-    *" $name "*)
+  case "$name" in
+    (DYLD_* | PATH | HOME | CX_ROOT | CX_HOME | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+     WINEPREFIX | WINELOADER | WINESERVER | WINEDLLPATH | WINEDLLOVERRIDES | WINEMSYNC | NOTPROTON_*)
       echo "=== NOTPROTON_ENV_$name would replace a setting this launch sets itself, ignored ===" \
         >> "$log" 2>&1 || true
       continue ;;
   esac
   eval "value=\$NOTPROTON_ENV_$name"
-  export "$name=$value"
   set -- --env "$name=$value" "$@"
   echo "=== NOTPROTON_ENV_$name sets $name ===" >> "$log" 2>&1 || true
 done

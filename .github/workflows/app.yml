@@ -126,6 +126,7 @@ jobs:
           make -s shortcutcheck
           make -s launch-shell
           make -s envcheck
+          make -s envpasscheck
           make -s featcheck
           make -s featstagecheck
           make -s buildcheck

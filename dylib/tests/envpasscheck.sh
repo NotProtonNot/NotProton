@@ -5,7 +5,7 @@ set -e
 SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "envpasscheck: $SRC not present, skipped"; exit 0; }
 
-block=$(sed -n '/^np_env_reserved=/,/^done$/p' "$SRC")
+block=$(sed -n '/^np_env_passed=/,/^done$/p' "$SRC")
 case "$block" in
   *NOTPROTON_ENV_*) ;;
   *) echo "FAIL: the passthrough loop was not found in $SRC"; exit 1 ;;
@@ -38,9 +38,15 @@ ok "an empty value is still passed" "$(forwarded NOTPROTON_ENV_EMPTY=)" "EMPTY= 
 
 # The launch sets these itself; letting a game replace them breaks it in ways that look
 # like NotProton is at fault.
-for reserved in CX_ROOT WINEPREFIX PATH STEAM_DYLD_INSERT_LIBRARIES WINEDLLOVERRIDES; do
+for reserved in CX_ROOT WINEPREFIX PATH HOME STEAM_DYLD_INSERT_LIBRARIES STEAM_COMPAT_APP_ID \
+  WINEDLLOVERRIDES WINEMSYNC DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH NOTPROTON_FEATURE_DYLIBS \
+  NOTPROTON_GAME_CWD; do
   ok "$reserved is refused" "$(forwarded "NOTPROTON_ENV_$reserved=x")" ""
 done
+ok "Wine's own settings still pass" \
+  "$(forwarded NOTPROTON_ENV_WINEDEBUG=+loaddll NOTPROTON_ENV_WINEESYNC=1)" "WINEDEBUG=+loaddll WINEESYNC=1 "
+ok "a name the script uses itself reaches the game as given" \
+  "$(forwarded NOTPROTON_ENV_name=HELLO NOTPROTON_ENV_log=x)" "log=x name=HELLO "
 ok "a refusal does not stop the rest" \
   "$(forwarded NOTPROTON_ENV_CX_ROOT=x NOTPROTON_ENV_KEEP=yes)" "KEEP=yes "
 
