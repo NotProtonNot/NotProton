@@ -239,6 +239,20 @@ struct SteamInstallerTests {
         #expect(left.contains("com.notproton.keep"))
     }
 
+    @Test("Our own dylib at a bundle's old location does not stop the install")
+    func acceptsOwnInsertFromMovedBundle() throws {
+        let work = try scratchDirectory("moved")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let plist = work.appending(path: "Info.plist")
+        let old = "/Applications/Steam.app/Contents/MacOS/notproton.dylib"
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: [SteamBundle.environmentKey: [SteamBundle.insertKey: old]], format: .xml, options: 0)
+        try data.write(to: plist)
+
+        try SteamInstaller.assertInsertIsDeployedOrAbsent(
+            at: plist, dylib: URL(filePath: "/Volumes/Games/Steam.app/Contents/MacOS/notproton.dylib"))
+    }
+
     @Test("An insert belonging to something else stops the install and is left alone")
     func refusesForeignInsert() async throws {
         let work = try scratchDirectory("install")

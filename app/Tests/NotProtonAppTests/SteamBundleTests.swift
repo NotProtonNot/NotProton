@@ -136,6 +136,15 @@ struct SteamBundleTests {
         )
     }
 
+    // The insert still names the bundle's old location, so the next install has to rewrite it
+    @Test("A patched bundle moved after install reads as not installed, not foreign")
+    func movedBundle() throws {
+        #expect(
+            try deployment(insert: .other("/Applications/Steam.app/Contents/MacOS/notproton.dylib"), dylib: true, version: "0.2.0")
+                == .notInstalled
+        )
+    }
+
     @Test("An unpatched bundle reads as not installed")
     func unpatched() throws {
         #expect(try deployment(insert: .absent, dylib: false, version: nil) == .notInstalled)
