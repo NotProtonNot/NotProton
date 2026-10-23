@@ -192,6 +192,14 @@ enum PrefixTools {
         return loader
     }
 
+    // A rebuild run from Steam holds the lock in its own process. Wine started now would
+    // write into the prefix that is about to be parked or deleted.
+    private static func requireUnclaimed(step: String, prefix: WinePrefix) throws {
+        guard !PrefixStore.isClaimed(prefix) else {
+            throw StepFailure(step: step, detail: String(localized: "NotProton is rebuilding the prefix for \(prefix.title)."))
+        }
+    }
+
     static func launch(_ tool: WineTool, in prefix: WinePrefix) throws {
         let chosen = try resolvedTool(step: String(localized: "Open \(tool.label)"), for: prefix)
         try launch(
@@ -203,9 +211,9 @@ enum PrefixTools {
     static func launch(
         _ tool: WineTool, in prefix: WinePrefix, runner: URL, flavor: CompatTool.Flavor = .fex
     ) throws {
-        let loader = try readyLoader(
-            step: String(localized: "Open \(tool.label)"), prefix: prefix, runner: runner, flavor: flavor
-        )
+        let step = String(localized: "Open \(tool.label)")
+        try requireUnclaimed(step: step, prefix: prefix)
+        let loader = try readyLoader(step: step, prefix: prefix, runner: runner, flavor: flavor)
         try Shell.detach(
             loader.path(percentEncoded: false),
             [tool.rawValue],
@@ -228,6 +236,7 @@ enum PrefixTools {
         flavor: CompatTool.Flavor = .fex
     ) throws {
         let step = String(localized: "Run \(executable.lastPathComponent)")
+        try requireUnclaimed(step: step, prefix: prefix)
         let loader = try readyLoader(step: step, prefix: prefix, runner: runner, flavor: flavor)
         guard FileManager.default.fileExists(atPath: executable.path(percentEncoded: false)) else {
             throw StepFailure(step: step, detail: String(localized: "No file at \(executable.path(percentEncoded: false))."))

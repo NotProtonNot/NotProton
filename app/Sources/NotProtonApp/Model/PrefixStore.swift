@@ -397,14 +397,15 @@ enum PrefixStore {
         _ prefix: WinePrefix, root: URL = serverRoot, lsof: String = "/usr/sbin/lsof",
         drainTimeout: DispatchTimeInterval = .seconds(2)
     ) -> Bool {
+        isClaimed(prefix) || serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+    }
+
+    // The lock alone: held while a prefix is set up, rebuilt or deleted, not while a game runs
+    static func isClaimed(_ prefix: WinePrefix) -> Bool {
         let lock = open(lockPath(of: prefix), O_RDWR | O_NOFOLLOW | O_CLOEXEC)
-        if lock >= 0 {
-            defer { FileLock.release(lock) }
-            guard locked(lock) else { return true }
-        } else if errno != ENOENT {
-            return true
-        }
-        return serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+        guard lock >= 0 else { return errno != ENOENT }
+        defer { FileLock.release(lock) }
+        return !locked(lock)
     }
 
     // A launch takes this lock while it sets the prefix up. Holding it stops a launch from
