@@ -89,6 +89,16 @@ final class SystemStatus {
     var pendingConfirmation: Confirmation?
     var generation = 0
 
+    var libraryMoveBlockReason: String? {
+        if SteamBundle.isRunning {
+            return String(localized: "Close Steam before moving games.")
+        }
+        if !isIdle {
+            return String(localized: "Wait for the current task to finish.")
+        }
+        return nil
+    }
+
     func beginRun(_ label: String) -> Int {
         activity = label
         AppLog.note("run begin: \(label)")
@@ -372,6 +382,71 @@ final class SystemStatus {
     }
 
     private static let toolsRestartHint = String(localized: "Restart Steam to update its list of compatibility tools.")
+
+    func scanLibraryMoveGames(intoBottle: Bool) -> [BottleGame] {
+        let games = intoBottle
+            ? PrefixStore.scanNativeLibraries()
+            : PrefixStore.scanCrossOverBottles()
+        AppLog.note("library move opened: \(games.count) games\(intoBottle ? " (into bottle)" : "")")
+        return games
+    }
+
+    enum LibraryFolderPick {
+        case cancelled
+        case empty
+        case merged(games: [BottleGame], added: [BottleGame])
+    }
+
+    func pickLibraryFolder(mergingInto existing: [BottleGame]) -> LibraryFolderPick {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Select")
+        panel.message = String(localized: "Select a folder to scan for Steam games.")
+        panel.directoryURL = SupportPaths.CrossOver.bottles
+
+        guard panel.runModal() == .OK, let picked = panel.url else { return .cancelled }
+        let scanned = PrefixStore.scanCustomFolder(picked)
+        guard !scanned.isEmpty else {
+            AppLog.note("library folder refused: empty \(picked.path(percentEncoded: false))")
+            return .empty
+        }
+        var known = Set(existing.map(\.appID))
+        var games = existing
+        var added: [BottleGame] = []
+        for game in scanned where known.insert(game.appID).inserted {
+            games.append(game)
+            added.append(game)
+        }
+        games.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        AppLog.note("library folder added: \(added.count) from \(picked.path(percentEncoded: false))")
+        return .merged(games: games, added: added)
+    }
+
+    func libraryMoveDestination() -> URL {
+        PrefixStore.libraries().first?.steamapps
+            ?? SupportPaths.Steam.userData.appending(path: "steamapps")
+    }
+
+    func transferLibraryGames(_ games: [BottleGame], into destSteamapps: URL) async {
+        guard !games.isEmpty else { return }
+        if let reason = libraryMoveBlockReason {
+            setFailure(reason)
+            AppLog.note("library move refused: \(reason)")
+            return
+        }
+        let count = games.count
+        await perform(from: String(localized: "Moving library games")) { _ in
+            try await Task.detached(priority: .userInitiated) {
+                try PrefixStore.transfer(games, into: destSteamapps)
+            }.value
+            return String(localized: "Transferred \(count) games.")
+        }
+        if failure == nil {
+            AppLog.note("library move finished: \(count) games")
+        }
+    }
 
     private func runnerOutcome(_ result: RunnerSetup.Outcome) -> String {
         if result.stagedNothing { return String(localized: "Compatibility tool is already set up.") }

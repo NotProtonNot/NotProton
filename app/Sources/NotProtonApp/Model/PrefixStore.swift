@@ -60,6 +60,25 @@ struct PrefixBackup: Sendable, Hashable, Identifiable {
     var title: String { prefix.title }
 }
 
+struct BottleGame: Sendable, Hashable, Identifiable {
+    let appID: String
+    let name: String
+    let installdir: String
+    let sourceLabel: String
+    let commonURL: URL
+    let manifestURL: URL
+
+    var id: String { "\(manifestURL.path(percentEncoded: false))#\(appID)" }
+    var title: String { name.isEmpty ? String(localized: "App \(appID)") : name }
+}
+
+struct BottleSteamLibrary: Sendable, Hashable, Identifiable {
+    let name: String
+    let steamapps: URL
+
+    var id: String { steamapps.path(percentEncoded: false) }
+}
+
 enum PrefixStore {
 
     static func libraries(vdf: URL = SupportPaths.Steam.libraryFoldersVDF) -> [SteamLibrary] {
@@ -222,7 +241,10 @@ enum PrefixStore {
     }
 
     private static func manifestValue(_ key: String, appID: String, in library: SteamLibrary) -> String? {
-        let manifest = library.steamapps.appending(path: "appmanifest_\(appID).acf")
+        manifestValue(key, in: library.steamapps.appending(path: "appmanifest_\(appID).acf"))
+    }
+
+    private static func manifestValue(_ key: String, in manifest: URL) -> String? {
         guard let text = try? String(contentsOf: manifest, encoding: .utf8) else { return nil }
         for line in text.split(separator: "\n") {
             // Steam escapes \" \\ \n and \t inside quoted values.
@@ -240,6 +262,304 @@ enum PrefixStore {
             if fields.count >= 2, fields[0] == key { return fields[1] }
         }
         return nil
+    }
+
+    static func resolveSteamapps(_ url: URL) -> URL? {
+        let fm = FileManager.default
+        let candidate =
+            url.lastPathComponent.lowercased() == "steamapps"
+            ? url : url.appending(path: "steamapps")
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: candidate.path(percentEncoded: false), isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else { return nil }
+        return candidate
+    }
+
+    static func games(inSteamapps steamapps: URL, sourceLabel: String) -> [BottleGame] {
+        let fm = FileManager.default
+        let entries = (try? fm.contentsOfDirectory(
+            at: steamapps, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        )) ?? []
+        var games: [BottleGame] = []
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard name.hasPrefix("appmanifest_"), name.hasSuffix(".acf") else { continue }
+            let appID = String(name.dropFirst("appmanifest_".count).dropLast(4))
+            guard !appID.isEmpty,
+                let installdir = manifestValue("installdir", in: entry), !installdir.isEmpty
+            else { continue }
+            let common = steamapps.appending(path: "common").appending(path: installdir)
+            guard fm.fileExists(atPath: common.path(percentEncoded: false)) else { continue }
+            games.append(
+                BottleGame(
+                    appID: appID,
+                    name: manifestValue("name", in: entry) ?? "",
+                    installdir: installdir,
+                    sourceLabel: sourceLabel,
+                    commonURL: common,
+                    manifestURL: entry
+                )
+            )
+        }
+        return games
+    }
+
+    // One Steam library per bottle (x86 preferred) for move-into-bottle targets.
+    static func bottleSteamLibraries(
+        bottlesRoot: URL = SupportPaths.CrossOver.bottles
+    ) -> [BottleSteamLibrary] {
+        var seen: Set<String> = []
+        var found: [BottleSteamLibrary] = []
+        for entry in bottleSteamappsEntries(bottlesRoot: bottlesRoot)
+        where seen.insert(entry.name).inserted {
+            found.append(entry)
+        }
+        return found
+    }
+
+    static func scanCrossOverBottles(
+        bottlesRoot: URL = SupportPaths.CrossOver.bottles
+    ) -> [BottleGame] {
+        var found: [BottleGame] = []
+        var seen: Set<String> = []
+        for bottle in bottleSteamappsEntries(bottlesRoot: bottlesRoot) {
+            collectGames(from: bottle.steamapps, label: bottle.name, into: &found, seen: &seen)
+        }
+        return found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private static func bottleSteamappsEntries(
+        bottlesRoot: URL
+    ) -> [BottleSteamLibrary] {
+        let fm = FileManager.default
+        let bottles = (try? fm.contentsOfDirectory(
+            at: bottlesRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        )) ?? []
+        var found: [BottleSteamLibrary] = []
+        for bottle in bottles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            var isDirectory: ObjCBool = false
+            guard fm.fileExists(atPath: bottle.path(percentEncoded: false), isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else { continue }
+            let name = bottle.lastPathComponent
+            let drive = bottle.appending(path: "drive_c")
+            for relative in ["Program Files (x86)/Steam/steamapps", "Program Files/Steam/steamapps"] {
+                let steamapps = drive.appending(path: relative)
+                guard fm.fileExists(atPath: steamapps.path(percentEncoded: false)) else { continue }
+                found.append(BottleSteamLibrary(name: name, steamapps: steamapps))
+            }
+        }
+        return found
+    }
+
+    static func scanNativeLibraries(
+        _ libraries: [SteamLibrary] = PrefixStore.libraries()
+    ) -> [BottleGame] {
+        var found: [BottleGame] = []
+        var seen: Set<String> = []
+        for library in libraries {
+            collectGames(from: library.steamapps, label: library.displayName, into: &found, seen: &seen)
+        }
+        return found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    static func scanCustomFolder(_ root: URL) -> [BottleGame] {
+        var found: [BottleGame] = []
+        var seen: Set<String> = []
+        if let steamapps = resolveSteamapps(root) {
+            collectGames(
+                from: steamapps,
+                label: steamapps.deletingLastPathComponent().lastPathComponent,
+                into: &found, seen: &seen)
+        } else {
+            let fm = FileManager.default
+            guard let enumerator = fm.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+            for case let url as URL in enumerator {
+                guard url.lastPathComponent.lowercased() == "steamapps" else { continue }
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory),
+                    isDirectory.boolValue
+                else { continue }
+                enumerator.skipDescendants()
+                collectGames(
+                    from: url,
+                    label: url.deletingLastPathComponent().lastPathComponent,
+                    into: &found, seen: &seen)
+            }
+        }
+        return found.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private static func collectGames(
+        from steamapps: URL, label: String, into found: inout [BottleGame], seen: inout Set<String>
+    ) {
+        for game in games(inSteamapps: steamapps, sourceLabel: label)
+        where seen.insert(game.appID).inserted {
+            found.append(game)
+        }
+    }
+
+    static func libraryArtwork(
+        for game: BottleGame,
+        nativeRoot: URL = SupportPaths.Steam.userData
+    ) -> URL? {
+        var caches: [URL] = []
+        var seen: Set<String> = []
+        for anchor in [game.manifestURL, game.commonURL] {
+            guard let steam = steamRoot(near: anchor) else { continue }
+            let cache = steam.appending(path: "appcache/librarycache")
+            guard seen.insert(cache.path(percentEncoded: false)).inserted else { continue }
+            caches.append(cache)
+        }
+        let nativeCache = nativeRoot.appending(path: "appcache/librarycache")
+        if seen.insert(nativeCache.path(percentEncoded: false)).inserted {
+            caches.append(nativeCache)
+        }
+        for cache in caches {
+            if let art = artwork(inLibraryCache: cache, appID: game.appID) { return art }
+        }
+        return nil
+    }
+
+    private static func steamRoot(near url: URL) -> URL? {
+        var current = url.absoluteURL
+        let fm = FileManager.default
+        while current.path(percentEncoded: false) != "/" {
+            let appcache = current.appending(path: "appcache")
+            var isDirectory: ObjCBool = false
+            if fm.fileExists(atPath: appcache.path(percentEncoded: false), isDirectory: &isDirectory),
+                isDirectory.boolValue
+            {
+                return current
+            }
+            let parent = current.deletingLastPathComponent()
+            if parent.path(percentEncoded: false) == current.path(percentEncoded: false) { break }
+            current = parent
+        }
+        return nil
+    }
+
+    private static func artwork(inLibraryCache librarycache: URL, appID: String) -> URL? {
+        let fm = FileManager.default
+        let preferred = ["library_600x900.jpg", "library_capsule.jpg", "header.jpg", "library_header.jpg"]
+        let artDir = librarycache.appending(path: appID)
+        let children = (try? fm.contentsOfDirectory(
+            at: artDir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        )) ?? []
+        let subdirs = children.filter { child in
+            var isDirectory: ObjCBool = false
+            return fm.fileExists(atPath: child.path(percentEncoded: false), isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
+        for name in preferred {
+            let flat = artDir.appending(path: name)
+            if fm.fileExists(atPath: flat.path(percentEncoded: false)) { return flat }
+            for subdir in subdirs {
+                let nested = subdir.appending(path: name)
+                if fm.fileExists(atPath: nested.path(percentEncoded: false)) { return nested }
+            }
+        }
+        let hex = CharacterSet(charactersIn: "0123456789abcdef")
+        for child in children {
+            let name = child.lastPathComponent
+            guard name.hasSuffix(".jpg") else { continue }
+            let stem = String(name.dropLast(4))
+            guard stem.count == 40, stem.unicodeScalars.allSatisfy({ hex.contains($0) }) else { continue }
+            return child
+        }
+        for suffix in ["_library_600x900.jpg", "_header.jpg"] {
+            let url = librarycache.appending(path: appID + suffix)
+            if fm.fileExists(atPath: url.path(percentEncoded: false)) { return url }
+        }
+        return nil
+    }
+
+    // Callers warn first: cross-volume moveItem copies then deletes.
+    static func crossesVolumes(_ games: [BottleGame], destSteamapps: URL) -> Bool {
+        guard let destVolume = volumeURL(of: destSteamapps) else { return false }
+        for game in games {
+            guard let sourceVolume = volumeURL(of: game.commonURL) else { continue }
+            if sourceVolume != destVolume { return true }
+        }
+        return false
+    }
+
+    private static func volumeURL(of url: URL) -> URL? {
+        (try? url.resourceValues(forKeys: [.volumeURLKey]).volume)?
+            .standardizedFileURL
+    }
+
+    static func transfer(_ games: [BottleGame], into destSteamapps: URL) throws {
+        let destCommon = destSteamapps.appending(path: "common")
+        for game in games {
+            let destGame = destCommon.appending(path: game.installdir)
+            let destManifest = destSteamapps.appending(path: "appmanifest_\(game.appID).acf")
+            if sameResolvedPath(game.commonURL, destGame)
+                || sameResolvedPath(game.manifestURL, destManifest)
+            {
+                throw StepFailure(
+                    step: String(localized: "Move library games"),
+                    detail: String(localized: "\(game.title) is already in that library.")
+                )
+            }
+        }
+
+        let fm = FileManager.default
+        try fm.createDirectory(at: destCommon, withIntermediateDirectories: true)
+        for game in games {
+            let destGame = destCommon.appending(path: game.installdir)
+            let destManifest = destSteamapps.appending(path: "appmanifest_\(game.appID).acf")
+            try mergeMove(from: game.commonURL, to: destGame)
+            if fm.fileExists(atPath: game.manifestURL.path(percentEncoded: false)) {
+                if fm.fileExists(atPath: destManifest.path(percentEncoded: false)) {
+                    try fm.removeItem(at: destManifest)
+                }
+                try fm.moveItem(at: game.manifestURL, to: destManifest)
+            }
+        }
+    }
+
+    private static func sameResolvedPath(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+            == b.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+    }
+
+    private static func mergeMove(from source: URL, to dest: URL) throws {
+        let fm = FileManager.default
+        if sameResolvedPath(source, dest) {
+            throw StepFailure(
+                step: String(localized: "Move library games"),
+                detail: String(localized: "Source and destination are the same folder.")
+            )
+        }
+        if !fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+            try fm.moveItem(at: source, to: dest)
+            return
+        }
+        let children = try fm.contentsOfDirectory(
+            at: source, includingPropertiesForKeys: [.isDirectoryKey], options: []
+        )
+        for child in children {
+            let target = dest.appending(path: child.lastPathComponent)
+            var isDirectory: ObjCBool = false
+            let childIsDir = fm.fileExists(
+                atPath: child.path(percentEncoded: false), isDirectory: &isDirectory)
+                && isDirectory.boolValue
+            if childIsDir {
+                try mergeMove(from: child, to: target)
+            } else {
+                if fm.fileExists(atPath: target.path(percentEncoded: false)) {
+                    try fm.removeItem(at: target)
+                }
+                try fm.moveItem(at: child, to: target)
+            }
+        }
+        try? fm.removeItem(at: source)
     }
 
     static let backupPrefix = "pfx.previous"

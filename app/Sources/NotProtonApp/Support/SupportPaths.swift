@@ -117,4 +117,9 @@ enum SupportPaths {
 
         static var libraryFoldersVDF: URL { userData.appending(path: "steamapps/libraryfolders.vdf") }
     }
+
+    enum CrossOver {
+        static var home: URL { applicationSupport.appending(path: "CrossOver") }
+        static var bottles: URL { home.appending(path: "Bottles") }
+    }
 }

@@ -1,5 +1,6 @@
 // 'Status' view, see SystemStatus for actual logic
 
+import AppKit
 import SwiftUI
 
 enum StatusTone: Sendable {
@@ -160,6 +161,7 @@ struct StatusRow: View {
 
 struct StatusView: View {
     @Environment(SystemStatus.self) private var status
+    @State private var libraryMovePresented = false
 
     private static let updateBlockPrompt =
         String(localized: "Steam client updates may break NotProton. If you don't want to wait for NotProton to be updated to be compatible with future Steam versions at the cost of not getting updates to the Steam client, you can stop the Steam client from updating itself.")
@@ -174,6 +176,9 @@ struct StatusView: View {
             }
         }
         .navigationTitle("Status")
+        .sheet(isPresented: $libraryMovePresented) {
+            LibraryMoveSheet(isPresented: $libraryMovePresented)
+        }
         .toolbar {
             if #available(macOS 26.1, *) {
                 ToolbarItem(placement: .primaryAction) { refreshButton }
@@ -338,6 +343,15 @@ struct StatusView: View {
                         label: String(localized: "Reset"),
                         isEnabled: status.isIdle
                     ) { Task { await status.resetControllerPermission() } }
+                )
+                StatusRow(
+                    title: String(localized: "Steam library"),
+                    value: String(localized: "Move games between CrossOver bottles and native Steam."),
+                    action: StatusAction(
+                        label: String(localized: "Move\u{2026}"),
+                        help: String(localized: "Transfer selected games into Steam or back into a bottle."),
+                        isEnabled: status.isIdle
+                    ) { libraryMovePresented = true }
                 )
             }
 
@@ -715,24 +729,18 @@ struct StatusView: View {
 
     @ViewBuilder
     private func componentsSection(_ payload: PayloadState) -> some View {
-        if let problem = payload.manifestProblem {
-            Section("NotProton Components") {
+        Section("NotProton Components") {
+            if let problem = payload.manifestProblem {
                 StatusRow(title: String(localized: "Components"), value: String(localized: "Component list unreadable."), tone: .bad, detail: problem)
-            }
-        } else if payload.isComplete {
-            Section("NotProton Components") {
+            } else if payload.isComplete {
                 StatusRow(
                     title: String(localized: "Components"), value: String(localized: "Ready."), tone: .ok,
                     trailing: status.bridgeCopyBytes > 0
                         ? String(localized: "Copies on other drives \(status.bridgeCopyBytes.formatted(.byteCount(style: .file)))") : nil
                 )
-            }
-        } else if payload.isEmpty {
-            Section("NotProton Components") {
+            } else if payload.isEmpty {
                 StatusRow(title: String(localized: "Components"), value: String(localized: "Not yet deployed."), tone: .neutral)
-            }
-        } else {
-            Section("NotProton Components") {
+            } else {
                 if !payload.missing.isEmpty {
                     let names = payload.missing.map(\.path).joined(separator: ", ")
                     StatusRow(
@@ -751,5 +759,245 @@ struct StatusView: View {
                 }
             }
         }
+    }
+}
+
+private struct LibraryMoveSheet: View {
+    private enum Direction: String, CaseIterable, Identifiable {
+        case intoSteam
+        case intoBottle
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .intoSteam: String(localized: "Into Steam")
+            case .intoBottle: String(localized: "Into bottle")
+            }
+        }
+    }
+
+    @Environment(SystemStatus.self) private var status
+    @Binding var isPresented: Bool
+
+    @State private var direction: Direction = .intoSteam
+    @State private var bottles: [BottleSteamLibrary] = []
+    @State private var bottleID: String?
+    @State private var games: [BottleGame] = []
+    @State private var selection: Set<String> = []
+    @State private var thumbs: [String: NSImage] = [:]
+    @State private var alertMessage: String?
+    @State private var confirmCrossVolume = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(String(localized: "Move Library"))
+                    .font(.headline)
+                Spacer()
+                Button(String(localized: "Select Custom Folder")) { pickFolder() }
+                    .buttonStyle(.bordered)
+            }
+            .padding(.horizontal)
+            .padding(.top)
+            Picker(String(localized: "Destination"), selection: $direction) {
+                ForEach(Direction.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .onChange(of: direction) { _, _ in reloadSources() }
+
+            if direction == .intoBottle, bottles.isEmpty {
+                ContentUnavailableView(
+                    String(localized: "No bottle with Steam"),
+                    systemImage: "shippingbox",
+                    description: Text(String(localized: "Install Steam in a CrossOver bottle first."))
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                if direction == .intoBottle, bottles.count > 1 {
+                    Picker(String(localized: "Bottle"), selection: $bottleID) {
+                        ForEach(bottles) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
+                gameList
+            }
+
+            Divider()
+            HStack {
+                Button(String(localized: "Cancel"), role: .cancel) { isPresented = false }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button(String(localized: "Move")) { attemptMove() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(direction == .intoBottle && bottles.isEmpty)
+            }
+            .padding()
+        }
+        .frame(minWidth: 420, minHeight: 360)
+        .onAppear { reloadSources() }
+        .alert(
+            String(localized: "Can't move"),
+            isPresented: Binding(
+                get: { alertMessage != nil },
+                set: { if !$0 { alertMessage = nil } }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) { alertMessage = nil }
+        } message: {
+            Text(alertMessage ?? "")
+        }
+        .confirmationDialog(
+            String(localized: "Move across volumes?"),
+            isPresented: $confirmCrossVolume,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Move Anyway")) { startTransfer() }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Some games are on a different volume than the destination. macOS will copy them instead of renaming, which is slower and uses more disk while it runs."))
+        }
+    }
+
+    @ViewBuilder
+    private var gameList: some View {
+        if games.isEmpty {
+            ContentUnavailableView(
+                String(localized: "No games found"),
+                systemImage: "shippingbox",
+                description: Text(
+                    direction == .intoBottle
+                        ? String(localized: "No games in the native Steam library. Select a custom folder if they live elsewhere.")
+                        : String(localized: "Select a custom folder, or install Steam games in a CrossOver bottle.")
+                )
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List {
+                ForEach(games) { game in
+                    Toggle(isOn: Binding(
+                        get: { selection.contains(game.id) },
+                        set: { on in
+                            if on { selection.insert(game.id) } else { selection.remove(game.id) }
+                        }
+                    )) {
+                        HStack(spacing: 8) {
+                            libraryThumb(game.id)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(game.title)
+                                Text(game.sourceLabel)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var selectedGames: [BottleGame] {
+        games.filter { selection.contains($0.id) }
+    }
+
+    private var destinationSteamapps: URL? {
+        switch direction {
+        case .intoSteam:
+            status.libraryMoveDestination()
+        case .intoBottle:
+            bottles.first { $0.id == bottleID }?.steamapps
+        }
+    }
+
+    private func reloadSources() {
+        bottles = PrefixStore.bottleSteamLibraries()
+        if bottleID == nil || !bottles.contains(where: { $0.id == bottleID }) {
+            bottleID = bottles.first?.id
+        }
+        let scanned = status.scanLibraryMoveGames(intoBottle: direction == .intoBottle)
+        games = scanned
+        selection = direction == .intoBottle ? [] : Set(scanned.map(\.id))
+        thumbs = Self.loadThumbs(for: scanned)
+    }
+
+    private func pickFolder() {
+        switch status.pickLibraryFolder(mergingInto: games) {
+        case .cancelled:
+            break
+        case .empty:
+            alertMessage = String(localized: "No games found in that folder.")
+        case .merged(_, let added) where added.isEmpty:
+            alertMessage = String(localized: "Those games are already in the list.")
+        case .merged(let next, let added):
+            games = next
+            if direction == .intoSteam {
+                for game in added {
+                    selection.insert(game.id)
+                }
+            }
+            for (id, image) in Self.loadThumbs(for: added) {
+                thumbs[id] = image
+            }
+        }
+    }
+
+    private func attemptMove() {
+        if selection.isEmpty {
+            alertMessage = String(localized: "Select at least one game to move.")
+        } else if direction == .intoBottle, destinationSteamapps == nil {
+            alertMessage = String(localized: "Pick a CrossOver bottle that already has Steam.")
+        } else if let reason = status.libraryMoveBlockReason {
+            alertMessage = reason
+        } else if let dest = destinationSteamapps,
+            PrefixStore.crossesVolumes(selectedGames, destSteamapps: dest)
+        {
+            confirmCrossVolume = true
+        } else {
+            startTransfer()
+        }
+    }
+
+    private func startTransfer() {
+        guard let dest = destinationSteamapps else { return }
+        let moving = selectedGames
+        isPresented = false
+        Task { await status.transferLibraryGames(moving, into: dest) }
+    }
+
+    private static func loadThumbs(for games: [BottleGame]) -> [String: NSImage] {
+        var loaded: [String: NSImage] = [:]
+        for game in games {
+            guard let url = PrefixStore.libraryArtwork(for: game),
+                let image = NSImage(contentsOf: url)
+            else { continue }
+            loaded[game.id] = image
+        }
+        return loaded
+    }
+
+    @ViewBuilder
+    private func libraryThumb(_ id: String) -> some View {
+        let height: CGFloat = 40
+        let width = height * 2 / 3
+        ZStack {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(.quaternary)
+            if let image = thumbs[id] {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
