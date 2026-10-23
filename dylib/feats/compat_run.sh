@@ -2060,6 +2060,21 @@ while IFS= read -r np_feat_entry; do
         np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as the compat_run script sets it"
         continue ;;
     esac
+    np_feat_rest=${np_feat_env#*=}
+    # shellcheck disable=SC2088 # a literal tilde is what is being matched
+    case "$np_feat_rest" in
+      ("~/"*) np_feat_rest="\$HOME/${np_feat_rest#"~/"}" ;;
+    esac
+    np_feat_env="${np_feat_env%%=*}="
+    # shellcheck disable=SC2016 # the literal text $HOME is what is being replaced
+    while :; do
+      case "$np_feat_rest" in
+        (*'$HOME'*)
+          np_feat_env="$np_feat_env${np_feat_rest%%'$HOME'*}$HOME"
+          np_feat_rest=${np_feat_rest#*'$HOME'} ;;
+        (*) np_feat_env="$np_feat_env$np_feat_rest"; break ;;
+      esac
+    done
     # Kept in reverse since they get prepended to open args (which flips the order)
     np_feat_envs="$np_feat_env
 $np_feat_envs"

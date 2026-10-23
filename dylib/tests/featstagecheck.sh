@@ -124,12 +124,16 @@ label = Env
 env = AB\$(touch $work/pwned-env)=1
 env = NOVALUE
 env = lower=1
-env = GOOD=a "b" \$HOME
+env = GOOD=a "b" \$(touch $work/pwned-value) \$HOME/x\$HOMEy
+env = TILDE=~/build/a.dll
+env = MID=a~/b
 env = LATER=2
 EOF
 out=$(run NOTPROTON_ENV=1)
 ok "a key is never evaluated" "$(find "$work" -name 'pwned*' | wc -l | tr -d ' ')" "0"
-ok "env lines are kept newest first, value untouched" "$(line "$out" 3)|$(line "$out" 4)" "LATER=2|GOOD=a \"b\" \$HOME"
+ok "env lines are kept newest first, with \$HOME filled in" \
+  "$(line "$out" 3)|$(line "$out" 4)|$(line "$out" 5)|$(line "$out" 6)" \
+  "LATER=2|MID=a~/b|TILDE=$work/build/a.dll|GOOD=a \"b\" \$(touch $work/pwned-value) $work/x${work}y"
 ok "bad env names are logged" "$(grep -c 'NOTPROTON_ENV skips env' "$work/log")" "3"
 
 reset
