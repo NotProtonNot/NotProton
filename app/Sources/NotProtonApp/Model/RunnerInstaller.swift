@@ -32,10 +32,22 @@ enum RunnerInstaller {
             defer { try? fm.removeItem(at: staging) }
             try copyPayload(from: install.crossOverRoot, to: staging)
             try verifyClone(build: build, root: staging.appending(path: "CrossOver"))
-            if occupied {
-                try fm.removeItem(at: target)
+            guard occupied else {
+                try fm.moveItem(at: staging, to: target)
+                return build
             }
-            try fm.moveItem(at: staging, to: target)
+            // The old copy is moved aside, not deleted in place, so a delete that fails
+            // part way never leaves a half deleted runner. Leftovers are swept later.
+            let trash = target.deletingLastPathComponent().appending(path: ".\(target.lastPathComponent).removing")
+            removeLeftoverRemovals(runners: runners)
+            try fm.moveItem(at: target, to: trash)
+            do {
+                try fm.moveItem(at: staging, to: target)
+            } catch {
+                try? fm.moveItem(at: trash, to: target)
+                throw error
+            }
+            try? fm.removeItem(at: trash)
             return build
         }
 
