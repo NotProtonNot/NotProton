@@ -129,6 +129,8 @@ const char *np_compat_fallback_tool_name(void);
 
 // Names of the listed tools whose flavor is fex, up to max. Returns how many it wrote.
 size_t np_compat_fex_tools(const char **names, size_t max);
+size_t np_compat_tool_builds(const char **names, const char **builds, const char **archs,
+                             size_t max);
 
 uint32_t np_compat_manager_tools_max(void);
 

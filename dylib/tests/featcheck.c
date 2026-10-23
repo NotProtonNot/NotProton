@@ -14,6 +14,7 @@ char *np_nativeplatform_javascript(void) {
 static int g_failed;
 static char g_home[1024];
 static char g_featdir[1200];
+static char g_vardir[1200];
 
 static void ok(int cond, const char *what) {
     printf("  %s  %s\n", cond ? "ok  " : "FAIL", what);
@@ -35,6 +36,35 @@ static void write_desc(const char *name, const char *body) {
     if (!(f = fopen(path, "w"))) { shout("cannot write %s", path); g_failed++; return; }
     fputs(body, f);
     fclose(f);
+}
+
+static void write_var(const char *name, const char *body) {
+    char path[2048];
+    FILE *f;
+    snprintf(path, sizeof(path), "%s/%s", g_vardir, name);
+    if (!(f = fopen(path, "w"))) { shout("cannot write %s", path); g_failed++; return; }
+    fputs(body, f);
+    fclose(f);
+}
+
+// Variants are offered per compat tool, and a tool is only a build whose runner is on
+// disk, so a check has to build both sides of that.
+static void make_dir(const char *fmt, const char *a, const char *b) {
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), fmt, a, b);
+    if (system(cmd) != 0) { shout("cannot run %s", cmd); g_failed++; }
+}
+
+static char *vars_json(void) {
+    g_var_done = 0;
+    var_build();
+    return g_var_rows;
+}
+
+static void clear_vars(void) {
+    char cmd[2600];
+    snprintf(cmd, sizeof(cmd), "rm -f '%s'/*.conf", g_vardir);
+    if (system(cmd) != 0) { shout("cannot clear %s", g_vardir); g_failed++; }
 }
 
 static void clear_descs(void) {
@@ -70,8 +100,12 @@ int main(void) {
     snprintf(g_home, sizeof(g_home), "%s", dir);
     snprintf(g_featdir, sizeof(g_featdir),
              "%s/" NP_FEAT_DIR, g_home);
-    snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", g_featdir);
-    if (system(cmd) != 0) { fputs("cannot make the plugins folder\n", stderr); return 2; }
+    np_support_path(g_vardir, sizeof(g_vardir), g_home, "variants");
+    snprintf(cmd, sizeof(cmd), "mkdir -p '%s' '%s'", g_featdir, g_vardir);
+    if (system(cmd) != 0) {
+        fputs("cannot make the plugins and variants folders\n", stderr);
+        return 2;
+    }
     setenv("HOME", g_home, 1);
 
     puts("== an empty plugins folder");
@@ -80,7 +114,7 @@ int main(void) {
 
     puts("== a plugin with an unmet requires");
     write_desc("10-a.conf",
-               "key = NOTPROTON_A\nlabel = Feature A\nsection = dev\n"
+               "[NOTPROTON_A]\nlabel = Feature A\nsection = dev\n"
                "on = 1\noff = 0\nrequires = assets/a.dylib\n");
     ok(strstr(feats_json(),
               "{k:\"NOTPROTON_A\",l:\"Feature A\",on:\"1\",off:\"0\",dep:\"\",d:\"\"}") != NULL,
@@ -94,22 +128,22 @@ int main(void) {
     puts("== repeated requires are any-of");
     clear_descs();
     write_desc("10-b.conf",
-               "key = NOTPROTON_B\nlabel = Feature B\nsection = dev\n"
+               "[NOTPROTON_B]\nlabel = Feature B\nsection = dev\n"
                "requires = assets/missing-one.dylib\nrequires = assets/a.dylib\n");
     ok(strcmp(ready_json(), "{\"NOTPROTON_B\":1}") == 0, "the second entry can satisfy it");
 
     puts("== a row that requires nothing");
     clear_descs();
-    write_desc("10-c.conf", "key = NOTPROTON_C\nlabel = Feature C\nsection = dev\n");
+    write_desc("10-c.conf", "[NOTPROTON_C]\nlabel = Feature C\nsection = dev\n");
     ok(strcmp(ready_json(), "{\"NOTPROTON_C\":1}") == 0,
        "is always offerable, having nothing that can be missing");
     ok(strstr(feats_json(), "on:\"1\"") != NULL, "defaults its on value to 1");
 
     puts("== file order decides row order");
     clear_descs();
-    write_desc("30-z.conf", "key = NOTPROTON_Z\nlabel = Zed\nsection = dev\n");
-    write_desc("10-a.conf", "key = NOTPROTON_A\nlabel = Ay\nsection = dev\n");
-    write_desc("20-m.conf", "key = NOTPROTON_M\nlabel = Em\nsection = dev\n");
+    write_desc("30-z.conf", "[NOTPROTON_Z]\nlabel = Zed\nsection = dev\n");
+    write_desc("10-a.conf", "[NOTPROTON_A]\nlabel = Ay\nsection = dev\n");
+    write_desc("20-m.conf", "[NOTPROTON_M]\nlabel = Em\nsection = dev\n");
     {
         const char *j = feats_json();
         const char *a = strstr(j, "NOTPROTON_A");
@@ -120,10 +154,10 @@ int main(void) {
 
     puts("== rejections");
     clear_descs();
-    write_desc("10-ok.conf", "key = NOTPROTON_OK\nlabel = Fine\nsection = dev\n");
-    write_desc("20-badsection.conf", "key = NOTPROTON_BAD\nlabel = Bad\nsection = graphics\n");
+    write_desc("10-ok.conf", "[NOTPROTON_OK]\nlabel = Fine\nsection = dev\n");
+    write_desc("20-badsection.conf", "[NOTPROTON_BAD]\nlabel = Bad\nsection = graphics\n");
     write_desc("30-nokey.conf", "label = No key\nsection = dev\n");
-    write_desc("40-dup.conf", "key = NOTPROTON_OK\nlabel = Again\nsection = dev\n");
+    write_desc("40-dup.conf", "[NOTPROTON_OK]\nlabel = Again\nsection = dev\n");
     {
         const char *j = feats_json();
         ok(strstr(j, "NOTPROTON_OK") != NULL, "a good plugin still loads");
@@ -132,40 +166,48 @@ int main(void) {
         ok(strstr(j, "Again") == NULL, "a repeated key is refused");
     }
     clear_descs();
-    write_desc("10-evil.conf", "key = NOTPROTON_A:-}$(touch x)${X\nlabel = Evil\n");
-    write_desc("20-lower.conf", "key = NOTPROTON_low\nlabel = Lower\n");
-    write_desc("30-bare.conf", "key = NOTPROTON_\nlabel = Bare\n");
-    write_desc("40-nolabel.conf", "key = NOTPROTON_NOLABEL\n");
-    ok(strcmp(feats_json(), "[]") == 0, "a key that is not a NOTPROTON_ name is refused");
+    write_desc("10-evil.conf", "[NOTPROTON_A:-}$(touch x)${X]\nlabel = Evil\n");
+    write_desc("20-lower.conf", "[NOTPROTON_low]\nlabel = Lower\n");
+    write_desc("30-bare.conf", "[NOTPROTON_]\nlabel = Bare\n");
+    write_desc("40-nolabel.conf", "[NOTPROTON_NOLABEL]\n");
+    ok(strcmp(feats_json(), "[]") == 0, "an id that is not a NOTPROTON_ name is refused");
     ok(strcmp(ready_json(), "{}") == 0, "and so is a plugin with no label");
 
     puts("== a repeated field");
     clear_descs();
     write_desc("10-f.conf",
-               "key = NOTPROTON_F\nkey = NOTPROTON_G\nlabel = First\nlabel = Second\n"
-               "on = 2\non = 3\n");
-    ok(strstr(feats_json(), "{k:\"NOTPROTON_F\",l:\"First\",on:\"2\"") != NULL,
-       "keeps its first value");
+               "[NOTPROTON_F]\nlabel = First\nlabel = Second\n"
+               "[NOTPROTON_G]\nlabel = Good\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "NOTPROTON_F") == NULL, "loses its record");
+        ok(strstr(j, "NOTPROTON_G") != NULL, "and the rest of the file is kept");
+    }
+
+    puts("== a field that is not in the schema");
+    clear_descs();
+    write_desc("10-k.conf", "[NOTPROTON_K]\nkey = NOTPROTON_K\nlabel = Key\n");
+    ok(strcmp(feats_json(), "[]") == 0,
+       "key is one of them now the header carries the id, so it is refused");
 
     puts("== limits shared with compat_run.sh");
     clear_descs();
     {
         char body[4096];
         memset(body, 'x', sizeof(body));
-        memcpy(body, "key = NOTPROTON_LONG\nlabel = L\n# ", 33);
+        memcpy(body, "[NOTPROTON_LONG]\nlabel = L\n# ", 29);
         memcpy(body + 2100, "\n", 2);
         write_desc("10-line.conf", body);
     }
-    write_desc("20-on.conf", "key = NOTPROTON_ON\nlabel = On\non = 0123456789012345678901234567890123\n");
-    ok(strcmp(feats_json(), "[]") == 0, "a line or value too long loses the file");
+    ok(strcmp(feats_json(), "[]") == 0, "a line too long loses the file");
     clear_descs();
     make_asset("assets/fifth.dylib");
     write_desc("10-five.conf",
-               "key = NOTPROTON_FIVE\nlabel = Five\nrequires = m1\nrequires = m2\n"
+               "[NOTPROTON_FIVE]\nlabel = Five\nrequires = m1\nrequires = m2\n"
                "requires = m3\nrequires = m4\nrequires = assets/fifth.dylib\n");
-    ok(strcmp(ready_json(), "{\"NOTPROTON_FIVE\":0}") == 0, "only the first four requires count");
+    ok(strcmp(ready_json(), "{}") == 0, "a fifth requires is past the cap, so the record goes");
     clear_descs();
-    write_desc("10-vt.conf", "key\v= NOTPROTON_VT\f\nlabel = Vt\n");
+    write_desc("10-vt.conf", "[NOTPROTON_VT]\nlabel\v=\fVt\n");
     ok(strstr(feats_json(), "k:\"NOTPROTON_VT\"") != NULL, "any blank counts as space");
     clear_descs();
     for (int i = 0; i < NP_FEAT_MAX; i++) {
@@ -173,7 +215,7 @@ int main(void) {
         memset(fill, '"', sizeof(fill));
         snprintf(name, sizeof(name), "%02d.conf", i);
         snprintf(body, sizeof(body),
-                 "key = NOTPROTON_%0180d\nlabel = %.190s\ndescription = %.510s\n"
+                 "[NOTPROTON_%0180d]\nlabel = %.190s\ndescription = %.510s\n"
                  "on = %.31s\noff = %.31s\ndepends = %.190s\n",
                  i, fill, fill, fill, fill, fill);
         write_desc(name, body);
@@ -196,19 +238,123 @@ int main(void) {
     puts("== an optional description");
     clear_descs();
     write_desc("10-d.conf",
-               "key = NOTPROTON_D\nlabel = Dee\nsection = dev\n"
+               "[NOTPROTON_D]\nlabel = Dee\nsection = dev\n"
                "description = What this does, in a sentence.\n");
     ok(strstr(feats_json(), "d:\"What this does, in a sentence.\"") != NULL,
        "is carried through to the row");
     clear_descs();
-    write_desc("10-e.conf", "key = NOTPROTON_E\nlabel = Ee\nsection = dev\n");
+    write_desc("10-e.conf", "[NOTPROTON_E]\nlabel = Ee\nsection = dev\n");
     ok(strstr(feats_json(), "d:\"\"") != NULL,
        "is empty when the plugin omits it");
+
+    puts("== a choice row");
+    clear_descs();
+    write_desc("10-ch.conf",
+               "[NOTPROTON_ENV_HUD_POS]\nlabel = HUD position\nsection = dev\n"
+               "type = choice\n"
+               "choice = tl = Top left\nchoice = tr = Top right\nchoice = br\n");
+    {
+        const char *j = feats_json();
+        // The whole tail, so a mis-counted literal cannot drop a bracket and still pass.
+        ok(strstr(j, ",ty:\"choice\",ch:[{v:\"tl\",l:\"Top left\"},"
+                     "{v:\"tr\",l:\"Top right\"},{v:\"br\",l:\"br\"}]}") != NULL,
+           "is marked as a choice, splits value from label, and defaults a missing label");
+    }
+
+    puts("== a slider snapped to declared values");
+    clear_descs();
+    write_desc("10-ld.conf",
+               "[NOTPROTON_ENV_HZ]\nlabel = Target\nsection = dev\n"
+               "type = slider\ndefault = off\n"
+               "choice = off = Off\nchoice = 60 = 60 Hz\n");
+    ok(strstr(feats_json(),
+              ",ty:\"slider\",ch:[{v:\"off\",l:\"Off\"},{v:\"60\",l:\"60 Hz\"}],"
+              "df:\"off\"") != NULL,
+       "carries its values and a default that stays one of them");
+    clear_descs();
+    write_desc("10-e1.conf", "[NOTPROTON_E1]\nlabel = Ee\nsection = dev\n"
+                             "type = slider\nchoice = 30\n");
+    write_desc("10-e2.conf", "[NOTPROTON_E2]\nlabel = Ee\nsection = dev\n"
+                             "type = slider\nmin = 0\nmax = 1\nchoice = 30\n"
+                             "choice = 60\n");
+    write_desc("10-e3.conf", "[NOTPROTON_E3]\nlabel = Ee\nsection = dev\n"
+                             "type = slider\ndefault = 45\nchoice = 30\nchoice = 60\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "NOTPROTON_E1") == NULL, "one value cannot be moved, so it is refused");
+        ok(strstr(j, "NOTPROTON_E2") == NULL, "values and a range together are refused");
+        ok(strstr(j, "NOTPROTON_E3") == NULL,
+           "and a default that is not one of the values is refused");
+    }
+
+    puts("== a slider that could not be drawn");
+    clear_descs();
+    write_desc("10-a.conf", "[NOTPROTON_A]\nlabel = Ay\nsection = dev\n"
+                            "type = slider\nmax = 1\n");
+    write_desc("10-b.conf", "[NOTPROTON_B]\nlabel = Bee\nsection = dev\n"
+                            "type = slider\nmin = 1\nmax = 1\n");
+    write_desc("10-c.conf", "[NOTPROTON_C]\nlabel = Cee\nsection = dev\n"
+                            "type = slider\nmin = 0\nmax = 1\nstep = fast\n");
+    write_desc("10-d2.conf", "[NOTPROTON_D2]\nlabel = Dee\nsection = dev\n"
+                             "type = slider\nmin = 0\nmax = 1px\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "NOTPROTON_A") == NULL, "no min is refused");
+        ok(strstr(j, "NOTPROTON_B") == NULL, "an empty range is refused");
+        ok(strstr(j, "NOTPROTON_C") == NULL, "a step that is not a number is refused");
+        ok(strstr(j, "NOTPROTON_D2") == NULL, "and so is a bound with trailing text");
+    }
+
+    puts("== a slider row");
+    clear_descs();
+    write_desc("10-sl.conf",
+               "[NOTPROTON_ENV_HUD_SCALE]\nlabel = HUD size\nsection = dev\n"
+               "type = slider\nmin = 0.5\nmax = 2\nstep = 0.25\ndefault = 1\n"
+               "suffix = x\n");
+    ok(strstr(feats_json(),
+              ",ty:\"slider\",mn:0.5,mx:2,st:0.25,df:1,sf:\"x\"") != NULL,
+       "carries its range, step, default and suffix as numbers");
+    clear_descs();
+    write_desc("10-sl.conf",
+               "[NOTPROTON_ENV_HUD_SCALE]\nlabel = HUD size\nsection = dev\n"
+               "type = slider\nmin = 0\nmax = 1\n");
+    ok(strstr(feats_json(), ",ty:\"slider\",mn:0,mx:1}") != NULL,
+       "and leaves out a step, default and suffix it was not given");
+
+    puts("== a row with no type, or one that does not exist");
+    clear_descs();
+    write_desc("10-t.conf", "[NOTPROTON_T]\nlabel = T\nsection = dev\n");
+    write_desc("10-t2.conf", "[NOTPROTON_T2]\nlabel = T2\nsection = dev\n"
+                             "type = dial\n");
+    write_desc("10-t3.conf", "[NOTPROTON_T3]\nlabel = T3\nsection = dev\n"
+                             "type = choice\n");
+    {
+        const char *j = feats_json();
+        ok(strstr(j, "ty:") == NULL,
+           "no type at all stays the toggle it has always been");
+        ok(strstr(j, "NOTPROTON_T2") == NULL, "a type that does not exist is refused");
+        ok(strstr(j, "NOTPROTON_T3") == NULL, "and so is a choice with no values");
+    }
+
+    puts("== lines for when a row is on");
+    clear_descs();
+    write_desc("10-dn.conf",
+               "[NOTPROTON_DN]\nlabel = Dee\nsection = dev\n"
+               "description = What it does.\n"
+               "description_on = Ctrl+Opt+H hides it.\n"
+               "description_on = Ctrl+Opt+G draws the graph.\n");
+    ok(strstr(feats_json(),
+              "d:\"What it does.\",dn:[\"Ctrl+Opt+H hides it.\","
+              "\"Ctrl+Opt+G draws the graph.\"]") != NULL,
+       "each line is carried separately, in the order it was read");
+    clear_descs();
+    write_desc("10-dn.conf", "[NOTPROTON_DN]\nlabel = Dee\nsection = dev\n");
+    ok(strstr(feats_json(), "dn:") == NULL, "a row with none carries none");
 
     puts("== a label cannot break the page it renders into");
     clear_descs();
     write_desc("10-q.conf",
-               "key = NOTPROTON_Q\nlabel = He said \"go\" \\ onwards\nsection = dev\n");
+               "[NOTPROTON_Q]\nlabel = He said \"go\" \\ onwards\nsection = dev\n");
     ok(strstr(feats_json(), "l:\"He said \\\"go\\\" \\\\ onwards\"") != NULL,
        "quotes and backslashes are escaped");
 
@@ -218,10 +364,116 @@ int main(void) {
     ok(strcmp(feats_json(), "[]") == 0, "renders no rows, since nothing ships by default");
     ok(strcmp(ready_json(), "{}") == 0, "reports no readiness");
 
+    puts("== runner variants");
+    {
+        const char *tools[]  = { "notproton", "notproton-26.3", "notproton-fex-rosetta" };
+        const char *builds[] = { "27.0-fex", "26.3.0", "27.0-fex" };
+        const char *archs[]  = { "aarch64", "x86_64", "x86_64" };
+        np_webpatch_set_tool_builds(tools, builds, archs, 3);
+    }
+    // The 26.3 runner carries one slot. The FEX runner carries both, as a real one does,
+    // which is why the slot a tool actually runs has to decide and not the directory.
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-26.3.0/CrossOver/lib/dxmt/x86_64-windows'%s", g_home, "");
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-27.0-fex/CrossOver/lib/dxmt/'{x86_64,aarch64}'-windows'%s",
+             g_home, "");
+    make_dir("mkdir -p '%s/trees/one/x86_64-windows'%s", g_home, "");
+    make_asset("trees/one/x86_64-windows/d3d11.dll");
+
+    ok(strcmp(vars_json(), "[]") == 0, "an empty directory offers nothing");
+
+    write_var("one.conf",
+               "[one]\n"
+               "label   = A build\nvariant = Backend\n"
+              "src     = trees/one\ndst     = lib/dxmt\n");
+    ok(strcmp(vars_json(),
+              "[{k:\"one\",l:\"A build\",v:\"Backend\","
+              "t:[\"notproton-26.3\",\"notproton-fex-rosetta\"]}]") == 0,
+       "an x86_64 tree is offered to the tools that run x86_64, and not to the arm64 one");
+
+    puts("== a tree for the other architecture");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/otherarch/aarch64-windows'%s", g_home, "");
+    make_asset("trees/otherarch/aarch64-windows/d3d11.dll");
+    write_var("otherarch.conf",
+               "[otherarch]\nlabel = Other\nvariant = Backend\n"
+               "src = trees/otherarch\ndst = lib/dxmt\n");
+    ok(strstr(vars_json(), "t:[\"notproton\"]") != NULL,
+       "an arm64 tree is offered only to the tool that runs arm64 Wine");
+    clear_vars();
+    write_var("nolabel.conf", "[nolabel]\nsrc = trees/otherarch\ndst = lib/dxmt\n");
+    {
+        const char *j = vars_json();
+        ok(strstr(j, "l:\"nolabel\"") != NULL,
+           "a variant on its own is labelled with its id rather than saying it twice");
+        ok(strstr(j, "v:\"nolabel\"") != NULL, "and is its own group");
+    }
+
+    puts("== a tree carrying both architectures");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/both/'{x86_64,aarch64}'-windows'%s", g_home, "");
+    make_asset("trees/both/x86_64-windows/d3d11.dll");
+    make_asset("trees/both/aarch64-windows/d3d11.dll");
+    write_var("bothslots.conf",
+               "[bothslots]\nlabel = Both\nvariant = Backend\n"
+               "src = trees/both\ndst = lib/dxmt\n");
+    // A cross build produces one architecture at a time but installs them into one
+    // prefix, so a shared src holds both -- and the first runner has only the x86_64 slot.
+    ok(strstr(vars_json(), "t:[\"notproton\",\"notproton-26.3\",\"notproton-fex-rosetta\"]")
+       != NULL, "is offered everywhere, each runner taking the slot it has");
+
+    puts("== rejections");
+    clear_vars();
+    write_var("ok-one.conf",
+               "[ok-one]\nlabel = Fine\nvariant = Backend\n"
+               "src = trees/one\ndst = lib/dxmt\n");
+    write_var("typo.conf",
+               "[typo]\nlabel = Typo\nvariant = Backend\n"
+               "src = trees/one\ndst = lib/dxmt\nsrcc = elsewhere\n");
+    write_var("nowhere.conf",
+               "[nowhere]\nlabel = No source\nvariant = Backend\n");
+    write_var("escape.conf",
+               "[escape]\nlabel = Escape\nvariant = Backend\n"
+               "src = trees/one\ndst = ../../lib/wine\n");
+    write_var("absolute.conf",
+               "[absolute]\nlabel = Absolute\nvariant = Backend\n"
+               "src = trees/one\ndst = /lib/wine\n");
+    {
+        const char *j = vars_json();
+        ok(strstr(j, "ok-one") != NULL, "a good descriptor still loads");
+        ok(strstr(j, "typo") == NULL, "an unknown field is refused");
+        ok(strstr(j, "No source") == NULL, "a descriptor with no src is refused");
+        ok(strstr(j, "escape") == NULL, "a dst that climbs out of the runner is refused");
+        ok(strstr(j, "absolute") == NULL, "an absolute dst is refused");
+    }
+
+    puts("== a tree holding nothing");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/empty/x86_64-windows'%s", g_home, "");
+    write_var("hollow.conf",
+               "[hollow]\nlabel = Hollow\nvariant = Backend\n"
+               "src = trees/empty\ndst = lib/dxmt\n");
+    ok(strcmp(vars_json(), "[]") == 0, "is not offered at all");
+
+    puts("== a label cannot break the page it renders into");
+    clear_vars();
+    write_var("quoted.conf",
+               "[quoted]\nvariant = Backend\n"
+               "label = He said \"go\" \\ onwards\nsrc = trees/one\ndst = lib/dxmt\n");
+    ok(strstr(vars_json(), "l:\"He said \\\"go\\\" \\\\ onwards\"") != NULL,
+       "quotes and backslashes are escaped");
+
+    puts("== a missing variant directory");
+    clear_vars();
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_vardir);
+    if (system(cmd) != 0) { shout("cannot remove %s", g_vardir); g_failed++; }
+    ok(strcmp(vars_json(), "[]") == 0, "offers nothing, since nothing ships by default");
+
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_home);
     if (system(cmd) != 0) shout("note: could not remove %s", g_home);
 
     if (g_failed) { printf("\n%d failure(s)\n", g_failed); return 1; }
-    puts("\n==> featcheck: plugins load, rank, validate and report readiness");
+    puts("\n==> featcheck: plugins and variants load, validate and report readiness");
     return 0;
 }
