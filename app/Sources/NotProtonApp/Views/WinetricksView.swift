@@ -2,6 +2,7 @@
 // menus winetricks runs for ProtonTricks. Category, checklist, install. The
 // verb list itself comes from WinetricksCatalog, the running from PrefixTools.
 
+import AppKit
 import SwiftUI
 
 struct WinetricksView: View {
@@ -15,17 +16,19 @@ struct WinetricksView: View {
     @State private var loadFailed: String?
     @State private var downloadLabel: String?
     @State private var installing = false
+    @State private var ranOnce = false
     @State private var category = "dlls"
     @State private var search = ""
     @State private var checked = Set<String>()
-    @State private var customExpanded = false
+    @State private var selection = Set<String>()
+    @State private var showingOther = false
     @State private var customVerbs = ""
     @State private var installed = Set<String>()
     @State private var tail = ""
     @State private var watcher: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             if let failure = loadFailed {
                 failureView(failure)
             } else if verbs.isEmpty {
@@ -33,18 +36,28 @@ struct WinetricksView: View {
                     Text(downloadLabel ?? String(localized: "Preparing"))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(20)
             } else {
-                header
-                pickerView
-                searchView
+                Text("Install Winetricks packages in \(prefix.title)")
+                    .font(.headline)
+                    .padding([.top, .horizontal], 20)
+                controls
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
                 table
-                otherVerbs
-                if installing { logView }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                if installing {
+                    logView
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                }
                 footer
+                    .padding(20)
             }
         }
-        .padding(16)
-        .frame(minWidth: 700, minHeight: 480)
+        .frame(minWidth: 760, idealWidth: 820, minHeight: 520, idealHeight: 600)
+        .interactiveDismissDisabled(installing)
         .task {
             // An earlier tool action's outcome would sit in the footer as if
             // this window produced it.
@@ -64,8 +77,7 @@ struct WinetricksView: View {
             let text = try await Task.detached {
                 try String(contentsOf: script, encoding: .utf8)
             }.value
-            let found = await Task.detached { WinetricksCatalog.verbs(in: text) }.value
-            verbs = found
+            verbs = await Task.detached { WinetricksCatalog.verbs(in: text) }.value
             await refreshInstalled()
         } catch {
             loadFailed = (error as? StepFailure)?.detail ?? error.localizedDescription
@@ -84,12 +96,17 @@ struct WinetricksView: View {
         let chosen = selectedVerbs
         guard !chosen.isEmpty, !installing else { return }
         installing = true
+        ranOnce = true
         tail = ""
         watcher = Task { await watchLog() }
         Task {
             await model.winetricks(chosen, in: prefix)
             watcher?.cancel()
             installing = false
+            if model.failure == nil {
+                checked.removeAll()
+                customVerbs = ""
+            }
             await refreshInstalled()
         }
     }
@@ -123,24 +140,17 @@ struct WinetricksView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 Button("Retry") { Task { await load() } }
-                Button("Close") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Winetricks")
-                .font(.title3)
-                .bold()
-            Text("Which package(s) would you like to install in \(prefix.title)?")
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var pickerView: some View {
+    private var controls: some View {
         HStack(spacing: 12) {
             Picker("Category", selection: $category) {
                 ForEach(WinetricksCatalog.categories, id: \.self) { name in
@@ -149,30 +159,25 @@ struct WinetricksView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 220)
-            .disabled(installing)
-            Spacer()
+            .fixedSize()
+            Spacer(minLength: 12)
+            SearchField(text: $search, prompt: String(localized: "Search"))
+                .frame(width: 220)
         }
-    }
-
-    private var searchView: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            TextField("Search", text: $search)
-                .textFieldStyle(.plain)
-                .disabled(installing)
-        }
-        .padding(EdgeInsets(top: 5, leading: 6, bottom: 5, trailing: 6))
-        .background(.bar, in: RoundedRectangle(cornerRadius: 5))
+        .disabled(installing)
     }
 
     private struct Row: Identifiable {
         let verb: WinetricksVerb
         let installed: Bool
         var id: String { verb.name }
+        var name: String { verb.name }
+        var title: String { verb.title }
+        var publisher: String { verb.publisher }
+        var year: String { verb.year }
     }
+
+    @State private var sortOrder = [KeyPathComparator(\Row.name)]
 
     private var rows: [Row] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -185,135 +190,162 @@ struct WinetricksView: View {
                     || verb.publisher.lowercased().contains(query)
             }
             .map { Row(verb: $0, installed: installed.contains($0.name)) }
+            .sorted(using: sortOrder)
     }
 
     private var table: some View {
-        Table(rows) {
-            TableColumn("") { row in
-                Toggle("", isOn: check(row.verb))
-                    .toggleStyle(.checkbox)
-                    .labelsHidden()
-                    .disabled(row.verb.isManualDownload || installing)
-                    .accessibilityLabel(row.verb.title.isEmpty ? row.verb.name : row.verb.title)
+        Table(rows, selection: $selection, sortOrder: $sortOrder) {
+            TableColumn("Package", value: \.name) { row in
+                Toggle(isOn: check(row.verb)) {
+                    Text(row.verb.name)
+                }
+                .toggleStyle(.checkbox)
+                .disabled(row.verb.isManualDownload || installing)
+                .help(row.verb.title.isEmpty ? row.verb.name : row.verb.title)
             }
-            .width(22)
+            .width(min: 120, ideal: 160)
 
-            TableColumn("Package") { row in
-                Text(row.verb.name).help(row.verb.title.isEmpty ? row.verb.name : row.verb.title)
+            TableColumn("Title", value: \.title) { row in
+                Text(row.verb.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(row.verb.title)
             }
-            .width(min: 60, ideal: 110)
+            .width(min: 160, ideal: 300)
 
-            TableColumn("Title") { row in
-                Text(row.verb.title).lineLimit(1).help(row.verb.title)
-            }
-            .width(min: 80, ideal: 230)
-
-            TableColumn("Publisher") { row in
+            TableColumn("Publisher", value: \.publisher) { row in
                 Text(row.verb.publisher)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .help(row.verb.publisher)
             }
-            .width(min: 40, ideal: 110)
+            .width(min: 80, ideal: 120)
 
-            TableColumn("Year") { row in
+            TableColumn("Year", value: \.year) { row in
                 Text(row.verb.year)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
-            .width(min: 36, ideal: 44)
-
-            TableColumn("Media") { row in
-                Text(mediaLabel(row.verb))
-                    .foregroundStyle(.secondary)
-                    .help(manualHelp(row.verb) ?? "")
-            }
-            .width(min: 40, ideal: 92)
+            .width(min: 40, ideal: 44, max: 56)
 
             TableColumn("Status") { row in
                 if row.installed {
                     Label("Installed", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.secondary)
+                } else if row.verb.isManualDownload {
+                    Text("Manual download")
+                        .foregroundStyle(.tertiary)
+                        .help("This package needs its files downloaded by hand, which NotProton cannot do.")
                 }
             }
-            .width(min: 40, ideal: 84)
+            .width(min: 80, ideal: 110)
+        }
+        .tableStyle(.bordered(alternatesRowBackgrounds: true))
+        .onKeyPress(.space) {
+            toggleSelected()
+            return .handled
         }
     }
 
-    private var otherVerbs: some View {
-        DisclosureGroup("Other verbs", isExpanded: $customExpanded) {
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("vcrun2022 corefonts", text: $customVerbs)
-                    .onSubmit { install() }
-                    .disabled(installing)
-                Text("Enter the Winetricks verbs to install in \(prefix.title), separated by spaces.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 4)
+    // Space flips every selected row at once, the way a Finder-style
+    // checklist does. Rows that cannot be installed are left alone.
+    private func toggleSelected() {
+        guard !installing else { return }
+        let targets = verbs.filter { selection.contains($0.name) && !$0.isManualDownload }
+        guard !targets.isEmpty else { return }
+        let turnOn = targets.contains { !checked.contains($0.name) }
+        for verb in targets {
+            if turnOn { checked.insert(verb.name) } else { checked.remove(verb.name) }
         }
-        .font(.callout)
-        .disabled(installing)
     }
 
     private var logView: some View {
         ScrollView {
             Text(verbatim: String(tail.split(separator: "\n").suffix(10).joined(separator: "\n")))
                 .font(Font.system(size: 11).monospaced())
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
+                .padding(8)
         }
         .frame(height: 110)
-        .padding(8)
-        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+        .background(Color(nsColor: .textBackgroundColor))
+        .overlay(RoundedRectangle(cornerRadius: 1).stroke(Color(nsColor: .separatorColor)))
     }
 
     private var footer: some View {
-        HStack(alignment: .firstTextBaseline) {
-            if installing {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.trailing, 4)
-                Text("Installing…")
-                    .foregroundStyle(.secondary)
-            } else if let failed = model.failure {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-                    .font(.callout)
-                Text(failed)
-                    .lineLimit(3)
-            } else if let outcome = model.outcome {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.callout)
-                Text(outcome)
-                    .lineLimit(3)
-            } else if let clash = clash {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .font(.callout)
-                Text("\(clash.a) conflicts with \(clash.b).")
-                    .foregroundStyle(.orange)
-            } else {
-                Text(summary ?? "")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+        HStack(alignment: .center, spacing: 8) {
+            Button("Other Verbs…") { showingOther = true }
+                .disabled(installing)
+                .popover(isPresented: $showingOther, arrowEdge: .top) { otherVerbs }
+
+            status
+                .padding(.leading, 4)
 
             Spacer(minLength: 12)
 
-            if !installing {
-                if PrefixTools.hasWinetricksLog(for: prefix) {
-                    Button("Show Log") { PrefixTools.openWinetricksLog(for: prefix) }
-                        .disabled(selectedVerbs.isEmpty)
-                }
-                Button("Install") { install() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(selectedVerbs.isEmpty)
-            }
-            Button("Close") { dismiss() }
+            Button(ranOnce ? String(localized: "Done") : String(localized: "Cancel")) { dismiss() }
                 .keyboardShortcut(.cancelAction)
+                .disabled(installing)
+            Button("Install") { install() }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selectedVerbs.isEmpty || installing)
         }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if installing {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Installing…").foregroundStyle(.secondary)
+            }
+        } else if let failed = model.failure {
+            statusLine(failed, symbol: "xmark.circle.fill", color: .red, showLog: true)
+        } else if let outcome = model.outcome {
+            statusLine(outcome, symbol: "checkmark.circle.fill", color: .green, showLog: true)
+        } else if let clash {
+            statusLine(
+                String(localized: "\(clash.a) conflicts with \(clash.b)."),
+                symbol: "exclamationmark.triangle.fill", color: .orange, showLog: false)
+        } else if let summary {
+            Text(summary)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(summary)
+        }
+    }
+
+    private func statusLine(_ text: String, symbol: String, color: Color, showLog: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).foregroundStyle(color)
+            Text(text)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .help(text)
+            if showLog, PrefixTools.hasWinetricksLog(for: prefix) {
+                Button("Show Log") { PrefixTools.openWinetricksLog(for: prefix) }
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    private var otherVerbs: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Other Verbs")
+                .font(.headline)
+            TextField("vcrun2022 corefonts", text: $customVerbs)
+                .frame(width: 280)
+                .onSubmit { showingOther = false }
+            Text("Enter the Winetricks verbs to install in \(prefix.title), separated by spaces.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 280, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
     }
 
     private func check(_ verb: WinetricksVerb) -> Binding<Bool> {
@@ -356,16 +388,34 @@ struct WinetricksView: View {
         default: String(localized: "Settings")
         }
     }
+}
 
-    private func mediaLabel(_ verb: WinetricksVerb) -> String {
-        switch verb.media {
-        case "download": String(localized: "Download")
-        case "manual_download": String(localized: "Manual download")
-        default: ""
-        }
+// SwiftUI's searchable needs a toolbar, which a sheet does not have.
+private struct SearchField: NSViewRepresentable {
+    @Binding var text: String
+    let prompt: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = prompt
+        field.delegate = context.coordinator
+        field.sendsSearchStringImmediately = true
+        return field
     }
 
-    private func manualHelp(_ verb: WinetricksVerb) -> String? {
-        verb.isManualDownload ? String(localized: "This package needs its files downloaded by hand, which NotProton cannot do.") : nil
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        let text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+
+        func controlTextDidChange(_ note: Notification) {
+            guard let field = note.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
     }
 }

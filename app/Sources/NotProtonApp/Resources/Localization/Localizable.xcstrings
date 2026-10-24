@@ -1660,6 +1660,22 @@
         }
       }
     },
+    "Category" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Categoria"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "类别"
+          }
+        }
+      }
+    },
     "Check for Updates…" : {
       "localizations" : {
         "it" : {
@@ -1832,22 +1848,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制 CrossOver"
-          }
-        }
-      }
-    },
-    "Close" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chiudi"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭"
           }
         }
       }
@@ -2687,22 +2687,6 @@
         }
       }
     },
-    "Download" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载"
-          }
-        }
-      }
-    },
     "Download missing Valve binaries." : {
       "localizations" : {
         "it" : {
@@ -3003,6 +2987,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将 NotProton 安装到 Steam。"
+          }
+        }
+      }
+    },
+    "Install Winetricks packages in %@" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installa pacchetti Winetricks in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%@”中安装 Winetricks 软件包"
           }
         }
       }
@@ -3419,22 +3419,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "手动下载"
-          }
-        }
-      }
-    },
-    "Media" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Origine"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "来源"
           }
         }
       }
@@ -4066,7 +4050,7 @@
         }
       }
     },
-    "Other verbs" : {
+    "Other Verbs" : {
       "localizations" : {
         "it" : {
           "stringUnit" : {
@@ -4078,6 +4062,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "其他组件"
+          }
+        }
+      }
+    },
+    "Other Verbs…" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altri verbi…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他组件…"
           }
         }
       }
@@ -6817,22 +6817,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支持版本 %@（支持：%@）"
-          }
-        }
-      }
-    },
-    "Which package(s) would you like to install in %@?" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quali pacchetti vuoi installare in %@?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要在“%@”中安装哪些软件包？"
           }
         }
       }
