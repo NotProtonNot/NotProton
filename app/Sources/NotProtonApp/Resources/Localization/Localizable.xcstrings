@@ -2655,6 +2655,22 @@
         }
       }
     },
+    "Description" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descrizione"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述"
+          }
+        }
+      }
+    },
     "Detaching from Steam" : {
       "localizations" : {
         "it" : {
@@ -2987,22 +3003,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将 NotProton 安装到 Steam。"
-          }
-        }
-      }
-    },
-    "Install Winetricks packages in %@" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Installa pacchetti Winetricks in %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“%@”中安装 Winetricks 软件包"
           }
         }
       }
@@ -6577,22 +6577,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此操作会将 Steam 恢复原状，但不会移除 NotProton 使用的支持组件。"
-          }
-        }
-      }
-    },
-    "Title" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Titolo"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "名称"
           }
         }
       }

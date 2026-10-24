@@ -38,7 +38,7 @@ struct WinetricksView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(20)
             } else {
-                Text("Install Winetricks packages in \(prefix.title)")
+                Text(verbatim: "Winetricks")
                     .font(.headline)
                     .padding([.top, .horizontal], 20)
                 controls
@@ -197,32 +197,26 @@ struct WinetricksView: View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Package", value: \.name) { row in
                 Toggle(isOn: check(row.verb)) {
-                    Text(row.verb.name)
+                    CellText(text: row.verb.name)
                 }
                 .toggleStyle(.checkbox)
                 .disabled(row.verb.isManualDownload || installing)
-                .help(row.verb.title.isEmpty ? row.verb.name : row.verb.title)
             }
             .width(min: 120, ideal: 160)
 
-            TableColumn("Title", value: \.title) { row in
-                Text(row.verb.title)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(row.verb.title)
+            TableColumn("Description", value: \.title) { row in
+                CellText(text: row.verb.title)
             }
             .width(min: 160, ideal: 300)
 
             TableColumn("Publisher", value: \.publisher) { row in
-                Text(row.verb.publisher)
+                CellText(text: row.verb.publisher)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .help(row.verb.publisher)
             }
             .width(min: 80, ideal: 120)
 
             TableColumn("Year", value: \.year) { row in
-                Text(row.verb.year)
+                CellText(text: row.verb.year)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -387,6 +381,22 @@ struct WinetricksView: View {
         case "fonts": String(localized: "Fonts")
         default: String(localized: "Settings")
         }
+    }
+}
+
+// A tooltip only where the column cuts the text off. One on every cell would
+// pop up over text that is already fully on screen.
+private struct CellText: View {
+    let text: String
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        Text(text)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .help(TextWidth.of(text) > width ? text : "")
     }
 }
 
