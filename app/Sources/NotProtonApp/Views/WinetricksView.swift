@@ -235,14 +235,44 @@ struct WinetricksView: View {
     }
 
     private var table: some View {
-        List(rows, selection: $selection) { verb in
-            row(verb)
-                .padding(.vertical, 4)
+        let all = rows
+        let wined3d = all.filter(\.wined3dOnly)
+        return List(selection: $selection) {
+            if wined3d.isEmpty {
+                rowList(all)
+            } else {
+                let general = all.filter { !$0.wined3dOnly }
+                if !general.isEmpty {
+                    Section("General") { rowList(general) }
+                }
+                // One explanation for the group, not a tag on every row. It is a
+                // row rather than the header because list headers are one line
+                // high. The wording follows the Graphics menu NotProton adds to Steam.
+                Section {
+                    Label {
+                        Text("These only apply to games set to WineD3D. To use them, choose WineD3D from the Graphics menu in the game's Compatibility settings in Steam. Games on D3DMetal, DXMT or DXVK ignore them.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle.fill").foregroundStyle(.blue)
+                    }
+                    .padding(.vertical, 6)
+                    .selectionDisabled()
+                    rowList(wined3d)
+                } header: {
+                    Text(verbatim: "WineD3D")
+                }
+            }
         }
         .listStyle(.bordered(alternatesRowBackgrounds: true))
         .onKeyPress(.space) {
             toggleSelected()
             return .handled
+        }
+    }
+
+    private func rowList(_ verbs: [WinetricksVerb]) -> some View {
+        ForEach(verbs) { verb in
+            row(verb).padding(.vertical, 4)
         }
     }
 
@@ -304,10 +334,6 @@ struct WinetricksView: View {
             Text("Manual download")
                 .foregroundStyle(.tertiary)
                 .help("This package needs its files downloaded by hand, which NotProton cannot do.")
-        } else if verb.wined3dOnly {
-            Text("wined3d only")
-                .foregroundStyle(.secondary)
-                .help("Only games that run on wined3d use this setting. Games on D3DMetal, DXMT or DXVK ignore it.")
         }
     }
 

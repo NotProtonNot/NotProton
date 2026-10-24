@@ -2959,6 +2959,22 @@
         }
       }
     },
+    "General" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generali"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常规"
+          }
+        }
+      }
+    },
     "If NotProton is installed there, it will stay installed. Continue anyway?" : {
       "localizations" : {
         "it" : {
@@ -3998,22 +4014,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "好"
-          }
-        }
-      }
-    },
-    "Only games that run on wined3d use this setting. Games on D3DMetal, DXMT or DXVK ignore it." : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo i giochi che usano wined3d leggono questa impostazione. I giochi su D3DMetal, DXMT o DXVK la ignorano."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只有使用 wined3d 运行的游戏才会读取此设置。使用 D3DMetal、DXMT 或 DXVK 的游戏会忽略它。"
           }
         }
       }
@@ -6469,6 +6469,22 @@
         }
       }
     },
+    "These only apply to games set to WineD3D. To use them, choose WineD3D from the Graphics menu in the game's Compatibility settings in Steam. Games on D3DMetal, DXMT or DXVK ignore them." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valgono solo per i giochi impostati su WineD3D. Per usarle, scegli WineD3D dal menu Grafica nelle impostazioni di Compatibilità del gioco in Steam. I giochi su D3DMetal, DXMT o DXVK le ignorano."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些设置只对使用 WineD3D 的游戏生效。要使用它们，请在 Steam 中该游戏的兼容性设置里，从“图形”菜单选择 WineD3D。使用 D3DMetal、DXMT 或 DXVK 的游戏会忽略这些设置。"
+          }
+        }
+      }
+    },
     "This app includes newer files than those installed for Steam." : {
       "localizations" : {
         "it" : {
@@ -7255,22 +7271,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重复声明了软件包 ID %@。"
-          }
-        }
-      }
-    },
-    "wined3d only" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo wined3d"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅限 wined3d"
           }
         }
       }
