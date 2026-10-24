@@ -162,12 +162,25 @@ struct WinetricksView: View {
             .labelsHidden()
             .fixedSize()
             Spacer(minLength: 12)
-            Picker("Sort By", selection: $sort) {
-                ForEach(SortKey.allCases, id: \.self) { key in
-                    Text(key.label).tag(key)
+            // Order lives in the same menu as the key, as in Mail and Finder.
+            Menu {
+                Picker("Sort By", selection: $sort) {
+                    ForEach(SortKey.allCases, id: \.self) { key in
+                        Text(key.label).tag(key)
+                    }
                 }
+                .pickerStyle(.inline)
+                Picker("Order", selection: $ascending) {
+                    Text("Ascending").tag(true)
+                    Text("Descending").tag(false)
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label(
+                    String(localized: "Sort by \(sort.label)"),
+                    systemImage: ascending ? "arrow.up" : "arrow.down")
+                    .labelStyle(.titleAndIcon)
             }
-            .pickerStyle(.menu)
             .fixedSize()
             SearchField(text: $search, prompt: String(localized: "Search"))
                 .frame(width: 200)
@@ -188,6 +201,7 @@ struct WinetricksView: View {
     }
 
     @State private var sort = SortKey.name
+    @State private var ascending = true
 
     private var rows: [WinetricksVerb] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -199,17 +213,24 @@ struct WinetricksView: View {
                     || verb.title.lowercased().contains(query)
                     || verb.publisher.lowercased().contains(query)
             }
-        // Ties fall back to the name so the order never shuffles.
         func key(_ verb: WinetricksVerb) -> String {
             switch sort {
-            case .name: ""
-            case .publisher: verb.publisher.lowercased()
+            case .name: verb.name
+            case .publisher: verb.publisher
             case .year: verb.year
             }
         }
         return shown.sorted {
             let (a, b) = (key($0), key($1))
-            return a == b ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : a < b
+            // Settings have no publisher or year. They go after the rest
+            // either way rather than heading the list.
+            if a.isEmpty != b.isEmpty { return b.isEmpty }
+            let order = a.localizedStandardCompare(b)
+            if order == .orderedSame {
+                // Ties fall back to the name so the order never shuffles.
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+            return (order == .orderedAscending) == ascending
         }
     }
 
@@ -231,15 +252,14 @@ struct WinetricksView: View {
         HStack(alignment: .top, spacing: 12) {
             Toggle(isOn: check(verb)) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: verb.title.isEmpty ? verb.name : readable(verb.title))
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
-                        if !verb.title.isEmpty {
-                            Text(verbatim: verb.name).foregroundStyle(.secondary)
-                        }
-                        status(verb)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: verb.name).fontWeight(.semibold)
+                        status(verb).font(.callout)
                     }
-                    .font(.callout)
+                    if !verb.title.isEmpty {
+                        Text(verbatim: readable(verb.title))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

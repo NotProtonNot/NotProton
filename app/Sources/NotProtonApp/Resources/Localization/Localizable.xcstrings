@@ -1292,6 +1292,22 @@
         }
       }
     },
+    "Ascending" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crescente"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "升序"
+          }
+        }
+      }
+    },
     "Back Up %lld Prefixes" : {
       "localizations" : {
         "it" : {
@@ -2687,6 +2703,22 @@
         }
       }
     },
+    "Descending" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decrescente"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "降序"
+          }
+        }
+      }
+    },
     "Detaching from Steam" : {
       "localizations" : {
         "it" : {
@@ -4062,6 +4094,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已在“%2$@”中打开%1$@。"
+          }
+        }
+      }
+    },
+    "Order" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordine"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顺序"
           }
         }
       }
@@ -5454,6 +5502,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "排序方式"
+          }
+        }
+      }
+    },
+    "Sort by %@" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordina per %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按%@排序"
           }
         }
       }
