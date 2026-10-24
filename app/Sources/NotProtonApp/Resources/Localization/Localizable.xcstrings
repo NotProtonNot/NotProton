@@ -6469,22 +6469,6 @@
         }
       }
     },
-    "These only apply to games set to WineD3D. To use them, choose WineD3D from the Graphics menu in the game's Compatibility settings in Steam. Games on D3DMetal, DXMT or DXVK ignore them." : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valgono solo per i giochi impostati su WineD3D. Per usarle, scegli WineD3D dal menu Grafica nelle impostazioni di Compatibilità del gioco in Steam. I giochi su D3DMetal, DXMT o DXVK le ignorano."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这些设置只对使用 WineD3D 的游戏生效。要使用它们，请在 Steam 中该游戏的兼容性设置里，从“图形”菜单选择 WineD3D。使用 D3DMetal、DXMT 或 DXVK 的游戏会忽略这些设置。"
-          }
-        }
-      }
-    },
     "This app includes newer files than those installed for Steam." : {
       "localizations" : {
         "it" : {

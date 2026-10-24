@@ -245,22 +245,7 @@ struct WinetricksView: View {
                 if !general.isEmpty {
                     Section("General") { rowList(general) }
                 }
-                // One explanation for the group, not a tag on every row. It is a
-                // row rather than the header because list headers are one line
-                // high. The wording follows the Graphics menu NotProton adds to Steam.
-                Section {
-                    Label {
-                        Text("These only apply to games set to WineD3D. To use them, choose WineD3D from the Graphics menu in the game's Compatibility settings in Steam. Games on D3DMetal, DXMT or DXVK ignore them.")
-                            .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        Image(systemName: "info.circle.fill").foregroundStyle(.blue)
-                    }
-                    .padding(.vertical, 6)
-                    .selectionDisabled()
-                    rowList(wined3d)
-                } header: {
-                    Text(verbatim: "WineD3D")
-                }
+                Section("WineD3D") { rowList(wined3d) }
             }
         }
         .listStyle(.bordered(alternatesRowBackgrounds: true))
@@ -397,7 +382,7 @@ struct WinetricksView: View {
             statusLine(
                 String(localized: "\(clash.verb) conflicts with \(clash.with)."),
                 symbol: "exclamationmark.triangle.fill", color: .orange, showLog: false)
-        } else if checked.isEmpty, let failed = model.failure {
+        } else if let failed = model.failure {
             statusLine(failed, symbol: "xmark.circle.fill", color: .red, showLog: true)
         } else if checked.isEmpty, let outcome = model.outcome {
             statusLine(outcome, symbol: "checkmark.circle.fill", color: .green, showLog: true)

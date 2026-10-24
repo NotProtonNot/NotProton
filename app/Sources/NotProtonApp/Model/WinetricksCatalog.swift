@@ -17,6 +17,9 @@ struct WinetricksVerb: Identifiable, Sendable, Equatable {
     // The verb calls w_package_unsupported_win64, which exits 32 on any prefix
     // but a 32-bit one.
     var win32Only = false
+    // The verb calls w_package_unsupported_win32, which exits 64 on a 32-bit
+    // prefix.
+    var win64Only = false
     // The verb only sets wined3d's Direct3D keys. Games on D3DMetal, DXMT or
     // DXVK never read them.
     var wined3dOnly = false
@@ -61,6 +64,7 @@ enum WinetricksCatalog {
     static func isOffered(_ verb: WinetricksVerb, prefixIs32Bit: Bool = false) -> Bool {
         guard categories.contains(verb.category) else { return false }
         if verb.win32Only && !prefixIs32Bit { return false }
+        if verb.win64Only && prefixIs32Bit { return false }
         let family = String(verb.name.prefix { $0 != "=" })
         return !hiddenFamilies.contains(family) && !hiddenVerbs.contains(verb.name)
     }
@@ -88,12 +92,14 @@ enum WinetricksCatalog {
         }
         close()
         let win32Only = loaders(in: script) { $0 == "w_package_unsupported_win64" }
+        let win64Only = loaders(in: script) { $0 == "w_package_unsupported_win32" }
         let wined3dOnly = loaders(in: script) {
             $0.hasPrefix("winetricks_set_wined3d_var ") || $0 == #"[HKEY_CURRENT_USER\\Software\\Wine\\Direct3D]"#
         }
         for index in found.indices {
             let family = String(found[index].name.prefix { $0 != "=" })
             found[index].win32Only = win32Only.contains(family)
+            found[index].win64Only = win64Only.contains(family)
             found[index].wined3dOnly = wined3dOnly.contains(family)
         }
         return found
@@ -133,9 +139,16 @@ enum WinetricksCatalog {
         }
         let rest = line[equals.upperBound...]
         guard let closing = rest.lastIndex(of: "\"") else { return nil }
-        let value = String(rest[..<closing])
-        let after = rest[rest.index(after: closing)...].trimmingCharacters(in: .whitespaces)
-        guard after.isEmpty || after == "\\" else { return nil }
+        var value = String(rest[..<closing])
+        var after = rest[rest.index(after: closing)...].trimmingCharacters(in: .whitespaces)
+        if after.last == "\\" { after.removeLast() }
+        after = after.trimmingCharacters(in: .whitespaces)
+        // Shell strings can continue outside the quotes: "${VAR}"/file.dll.
+        if after.hasPrefix("/") {
+            value += after
+            after = ""
+        }
+        guard after.isEmpty else { return nil }
         return (key, value)
     }
 
@@ -251,6 +264,8 @@ enum WinetricksCatalog {
                 ? "C:/Program Files (x86)/Common Files" : "C:/Program Files/Common Files",
             "W_SYSTEM32_DLLS_WIN": win64 ? "C:/windows/syswow64" : "C:/windows/system32",
             "W_SYSTEM64_DLLS_WIN64": win64 ? "C:/windows/system32" : "C:/does-not-exist-on-win32",
+            "W_SYSTEM64_DLLS_WIN64:-does_not_exist": win64
+                ? "C:/windows/system32" : "C:/does-not-exist",
         ]
         var expanded = path
         for (name, value) in variables {

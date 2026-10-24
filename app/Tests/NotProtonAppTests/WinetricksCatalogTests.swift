@@ -90,6 +90,33 @@ struct WinetricksCatalogTests {
         #expect(csmt.title == "Enable Command Stream Multithreading (default)")
     }
 
+    @Test("Pinned path suffixes and shell defaults resolve to installed files")
+    func resolvesPinnedInstalledFiles() throws {
+        let script = #"""
+            w_metadata wmp9 dlls \
+                title="Windows Media Player 9" \
+                installed_file1="${W_SYSTEM32_DLLS_WIN}"/l3codeca.acm
+
+            w_metadata xact_x64 dlls \
+                title="MS XACT Engine (64-bit only)" \
+                installed_file1="${W_SYSTEM64_DLLS_WIN64:-does_not_exist}/xactengine2_0.dll"
+            """#
+        let found = WinetricksCatalog.verbs(in: script)
+        #expect(found[0].installedFiles == ["${W_SYSTEM32_DLLS_WIN}/l3codeca.acm"])
+
+        let prefix = try prefixWithLog(ran: ["wmp9", "xact_x64"])
+        #expect(WinetricksCatalog.installedVerbs(among: found, in: prefix).isEmpty)
+
+        for path in ["drive_c/windows/syswow64/l3codeca.acm",
+                     "drive_c/windows/system32/xactengine2_0.dll"] {
+            let url = prefix.pfx.appending(path: path)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("MZ real dll".utf8).write(to: url)
+        }
+        #expect(WinetricksCatalog.installedVerbs(among: found, in: prefix) == ["wmp9", "xact_x64"])
+    }
+
     @Test("Winetricks path variables and doubled backslashes resolve under drive_c")
     func resolvesPaths() throws {
         let prefix = try prefixWithLog(ran: [])
@@ -180,6 +207,13 @@ struct WinetricksCatalogTests {
                 w_set_winver win98
             }
 
+            w_metadata xact_x64 dlls \\
+                title="MS XACT Engine (64-bit only)"
+            load_xact_x64()
+            {
+                w_package_unsupported_win32
+            }
+
             w_metadata fontsmooth=rgb settings \\
                 title="Enable subpixel font smoothing for LCD (RGB)"
             load_fontsmooth()
@@ -198,8 +232,11 @@ struct WinetricksCatalogTests {
             """
         let found = WinetricksCatalog.verbs(in: script)
         #expect(found.filter(\.win32Only).map(\.name) == ["win98", "dotnet11"])
-        #expect(found.filter { WinetricksCatalog.isOffered($0) }.map(\.name) == ["fontsmooth=rgb"])
-        #expect(found.filter { WinetricksCatalog.isOffered($0, prefixIs32Bit: true) }.count == 3)
+        #expect(found.filter(\.win64Only).map(\.name) == ["xact_x64"])
+        #expect(found.filter { WinetricksCatalog.isOffered($0) }.map(\.name) == ["xact_x64", "fontsmooth=rgb"])
+        #expect(found.filter { WinetricksCatalog.isOffered($0, prefixIs32Bit: true) }.map(\.name) == [
+            "win98", "fontsmooth=rgb", "dotnet11"
+        ])
     }
 
     @Test("Settings that only set wined3d's Direct3D keys are marked")
