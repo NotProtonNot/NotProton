@@ -656,6 +656,30 @@ struct PrefixesModelTests {
         #expect(model.busy.isEmpty)
     }
 
+    // Opening the Prefixes tab loads again. That load used to end the loading state while a
+    // backup was still copying, which let Backups delete the half written copy.
+    @Test("A load that finishes during a backup leaves the model loading")
+    func loadDuringBackupStaysLoading() async throws {
+        let (dir, library) = try makeLibrary(appIDs: ["1574480"])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let log = Recorder(holdingEachTurn: true)
+        let model = PrefixesModel(
+            libraries: { [library] }, makeBackup: { prefix in try log.enter(prefix) ?? prefix.root })
+        await model.load()
+        let targets = model.prefixes
+
+        let running = Task { await model.backUp(targets) }
+        while log.visited.isEmpty { await Task.yield() }
+
+        await model.load()
+        #expect(model.isLoading)
+
+        log.releaseTurn()
+        await running.value
+        #expect(!model.isLoading)
+    }
+
     // A rebuilt prefix has new sizes to measure and a deleted one must leave the list, so
     // both runs end by reading the libraries again rather than keeping what was read before.
     @Test("A finished rebuild reads the libraries again")

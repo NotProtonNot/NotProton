@@ -415,6 +415,8 @@ final class SystemStatus {
         }
 
         await perform(from: RunnerSetup.Phase.cloning.label) { progress in
+            // Cached sizes outlive a recopy of the same build
+            if case .supported(let build) = install.support { runnerSizes[build.id] = nil }
             let lock = try DeploymentContent.acquireInstallationLock()
             defer { lock.release() }
             try await requireInstallableContent()

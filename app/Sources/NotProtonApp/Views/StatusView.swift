@@ -564,7 +564,7 @@ struct StatusView: View {
                     label: String(localized: "Repair"),
                     isProminent: true,
                     help: String(localized: "Set up the compatibility tool again."),
-                    isEnabled: status.isIdle && status.setupSource != nil
+                    isEnabled: status.canInstall && status.setupSource != nil
                 ) { Task { await status.requestCompatibilityTool() } }
             )
         }

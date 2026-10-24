@@ -10,7 +10,10 @@ final class PrefixesModel {
 
     private(set) var prefixes: [WinePrefix] = []
     private(set) var usage: [String: PrefixUsage] = [:]
-    private(set) var isLoading = false
+    // A load that finishes in the middle of a rebuild or backup must not end the loading state
+    var isLoading: Bool { listing || working }
+    private var listing = false
+    private var working = false
     private(set) var records: [String: PrefixBuildRecord] = [:]
     private(set) var tools: [InstalledTool] = []
 
@@ -87,8 +90,8 @@ final class PrefixesModel {
     func load() async {
         loadGeneration += 1
         let run = loadGeneration
-        isLoading = true
-        defer { if run == loadGeneration { isLoading = false } }
+        listing = true
+        defer { if run == loadGeneration { listing = false } }
 
         let roots = libraries()
         let found = await Task.detached { PrefixStore.all(libraries: roots) }.value
@@ -124,14 +127,14 @@ final class PrefixesModel {
         }
         kept.sort { ($0.taken ?? .distantPast) > ($1.taken ?? .distantPast) }
         backups = kept
+        // Sizes fill in as they are measured, so a big library does not hold up the list
+        hasLoaded = true
 
         for prefix in found {
             let measured = await Task.detached { PrefixStore.usage(of: prefix) }.value
             guard run == loadGeneration else { return }
             usage[prefix.id] = measured
         }
-
-        hasLoaded = true
     }
 
     func open(_ tool: WineTool, for prefix: WinePrefix) {
@@ -205,7 +208,7 @@ final class PrefixesModel {
     func deleteBackups(_ targets: [PrefixBackup]) async {
         guard !targets.isEmpty else { return }
         forgetOutcome()
-        isLoading = true
+        working = true
 
         var cleared: [PrefixBackup] = []
         var refused: [Error] = []
@@ -222,7 +225,7 @@ final class PrefixesModel {
         report = FailureReport(refused)
         let gone = Set(cleared.map(\.id))
         backups.removeAll { gone.contains($0.id) }
-        isLoading = false
+        working = false
         await load()
     }
 
@@ -248,7 +251,7 @@ final class PrefixesModel {
     ) async -> [Step<Made>] {
         guard !targets.isEmpty else { return [] }
         forgetOutcome()
-        isLoading = true
+        working = true
         busy = Set(targets.map(\.id))
 
         var done: [Step<Made>] = []
@@ -267,7 +270,7 @@ final class PrefixesModel {
         report = FailureReport(refused)
 
         busy = []
-        isLoading = false
+        working = false
         await load()
         return done
     }

@@ -50,6 +50,53 @@ struct PrefixStoreTests {
         #expect(libraries.last?.compatdata.lastPathComponent == "compatdata")
     }
 
+    @Test("A library path with an escaped quote or backslash is read whole")
+    func readsEscapedLibraryPaths() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let vdf = dir.appending(path: "libraryfolders.vdf")
+        try write(
+            #"""
+            "libraryfolders"
+            {
+            \#t"0"
+            \#t{
+            \#t\#t"path"\#t\#t"/Volumes/Bob\"s Drive/Back\\Slash/SteamLibrary"
+            \#t}
+            }
+            """#, to: vdf)
+
+        let libraries = PrefixStore.libraries(vdf: vdf)
+        #expect(libraries.map { $0.root.path(percentEncoded: false) } == [#"/Volumes/Bob"s Drive/Back\Slash/SteamLibrary"#])
+    }
+
+    // The old splitter dropped empty fields, so an empty path was never read as a library
+    @Test("An empty library path is skipped")
+    func skipsEmptyLibraryPath() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let vdf = dir.appending(path: "libraryfolders.vdf")
+        try write(
+            #"""
+            "libraryfolders"
+            {
+            \#t"0"
+            \#t{
+            \#t\#t"path"\#t\#t""
+            \#t}
+            \#t"1"
+            \#t{
+            \#t\#t"path"\#t\#t"/Volumes/Games/SteamLibrary"
+            \#t}
+            }
+            """#, to: vdf)
+
+        let libraries = PrefixStore.libraries(vdf: vdf)
+        #expect(libraries.map { $0.root.path(percentEncoded: false) } == ["/Volumes/Games/SteamLibrary"])
+    }
+
     @Test("A missing or empty file still yields the default library")
     func fallsBackToTheDefaultLibrary() throws {
         let dir = try scratchDirectory("pfx")

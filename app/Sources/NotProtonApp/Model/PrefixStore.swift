@@ -69,9 +69,8 @@ enum PrefixStore {
 
         var roots: [URL] = []
         for line in text.split(separator: "\n") {
-            let fields = line.split(separator: "\"").map(String.init)
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            guard fields.count >= 2, fields[0] == "path" else { continue }
+            let fields = vdfFields(line)
+            guard fields.count >= 2, fields[0] == "path", !fields[1].isEmpty else { continue }
             roots.append(URL(filePath: fields[1]))
         }
 
@@ -225,21 +224,25 @@ enum PrefixStore {
         let manifest = library.steamapps.appending(path: "appmanifest_\(appID).acf")
         guard let text = try? String(contentsOf: manifest, encoding: .utf8) else { return nil }
         for line in text.split(separator: "\n") {
-            // Steam escapes \" \\ \n and \t inside quoted values.
-            let fields = line.matches(of: #/"((?:[^"\\]|\\.)*)"/#)
-                .map {
-                    String($0.1).replacing(#/\\(.)/#) { escape -> String in
-                        switch escape.1 {
-                        case "n": "\n"
-                        case "t": "\t"
-                        case "\\", "\"": String(escape.1)
-                        default: String(escape.0)
-                        }
-                    }
-                }
+            let fields = vdfFields(line)
             if fields.count >= 2, fields[0] == key { return fields[1] }
         }
         return nil
+    }
+
+    // Steam escapes \" \\ \n and \t inside quoted values.
+    private static func vdfFields(_ line: Substring) -> [String] {
+        line.matches(of: #/"((?:[^"\\]|\\.)*)"/#)
+            .map {
+                String($0.1).replacing(#/\\(.)/#) { escape -> String in
+                    switch escape.1 {
+                    case "n": "\n"
+                    case "t": "\t"
+                    case "\\", "\"": String(escape.1)
+                    default: String(escape.0)
+                    }
+                }
+            }
     }
 
     static let backupPrefix = "pfx.previous"
@@ -394,14 +397,15 @@ enum PrefixStore {
         _ prefix: WinePrefix, root: URL = serverRoot, lsof: String = "/usr/sbin/lsof",
         drainTimeout: DispatchTimeInterval = .seconds(2)
     ) -> Bool {
+        isClaimed(prefix) || serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+    }
+
+    // The lock only, without the wineserver check. A running game does not hold it.
+    static func isClaimed(_ prefix: WinePrefix) -> Bool {
         let lock = open(lockPath(of: prefix), O_RDWR | O_NOFOLLOW | O_CLOEXEC)
-        if lock >= 0 {
-            defer { FileLock.release(lock) }
-            guard locked(lock) else { return true }
-        } else if errno != ENOENT {
-            return true
-        }
-        return serverIsBusy(prefix, root: root, lsof: lsof, drainTimeout: drainTimeout)
+        guard lock >= 0 else { return errno != ENOENT }
+        defer { FileLock.release(lock) }
+        return !locked(lock)
     }
 
     // A launch takes this lock while it sets the prefix up. Holding it stops a launch from

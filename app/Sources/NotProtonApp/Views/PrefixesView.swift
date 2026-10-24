@@ -383,6 +383,7 @@ struct PrefixesView: View {
             if let prefix { model.chooseExecutable(for: prefix) }
         }
         Button("Winetricks…") {
+            winetricksVerbs = ""
             winetricksPrefix = prefix
         }
         Divider()

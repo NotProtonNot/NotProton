@@ -202,6 +202,40 @@ struct RunnerInstallerTests {
         )
     }
 
+    // A folder inside the old clone that cannot be emptied makes deleting it fail part way.
+    // The old clone used to be deleted in place, so that failure left a half deleted runner.
+    @Test("A recopy over a clone that cannot be fully deleted still installs the new copy")
+    func recopyMovesOldCloneAside() throws {
+        let runners = try makeRunners()
+        let (install, build) = try makeSupportedInstall(in: runners)
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+
+        let files = FileManager.default
+        let locked = SupportPaths.clonedRoot(forBuild: build.id, runners: runners).appending(path: "locked")
+        try files.createDirectory(at: locked, withIntermediateDirectories: true)
+        try Data("kept".utf8).write(to: locked.appending(path: "file"))
+        try files.setAttributes([.posixPermissions: 0o500], ofItemAtPath: locked.path(percentEncoded: false))
+        defer {
+            let entries = (try? files.subpathsOfDirectory(atPath: runners.path(percentEncoded: false))) ?? []
+            for entry in entries where entry.hasSuffix("locked") {
+                try? files.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: runners.appending(path: entry).path(percentEncoded: false))
+            }
+            try? files.removeItem(at: runners)
+        }
+
+        _ = try RunnerInstaller.clone(from: install, replacingExisting: true, runners: runners)
+
+        let root = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        #expect(files.fileExists(atPath: root.appending(path: "lib/wine").path(percentEncoded: false)))
+        #expect(!files.fileExists(atPath: root.appending(path: "locked").path(percentEncoded: false)))
+
+        // The old copy that would not delete is still parked. It must not block the next repair.
+        _ = try RunnerInstaller.clone(from: install, replacingExisting: true, runners: runners)
+        #expect(files.fileExists(atPath: root.appending(path: "lib/wine").path(percentEncoded: false)))
+        #expect(RunnerStore.clonedBuilds(in: runners) == [build.id])
+    }
+
     @Test("A rejected replacement keeps the installed runner", arguments: [false, true])
     func rejectedReplacementKeepsInstalledRunner(missing: Bool) throws {
         let runners = try makeRunners()
