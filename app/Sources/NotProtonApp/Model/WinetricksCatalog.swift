@@ -172,9 +172,7 @@ enum WinetricksCatalog {
     // names a file to look for, that file must exist and not be one of the
     // placeholder DLLs Wine writes during prefix setup.
     static func installedVerbs(among verbs: [WinetricksVerb], in prefix: WinePrefix) -> Set<String> {
-        let log = prefix.pfx.appending(path: "winetricks.log")
-        guard let text = try? String(contentsOf: log, encoding: .utf8) else { return [] }
-        let ran = Set(text.split(whereSeparator: \.isWhitespace).map(String.init))
+        let ran = ranVerbs(in: prefix)
         var installed: Set<String> = []
         for verb in verbs where ran.contains(verb.name) && !verb.installedFiles.isEmpty {
             if verb.installedFiles.contains(where: { isRealFile($0, in: prefix) }) {
@@ -182,6 +180,29 @@ enum WinetricksCatalog {
             }
         }
         return installed
+    }
+
+    // Every verb winetricks has run in the prefix. w_conflicts refuses a verb
+    // when one it conflicts with is in here, installed file or not.
+    static func ranVerbs(in prefix: WinePrefix) -> Set<String> {
+        let log = prefix.pfx.appending(path: "winetricks.log")
+        guard let text = try? String(contentsOf: log, encoding: .utf8) else { return [] }
+        return Set(text.split(whereSeparator: \.isWhitespace).map(String.init))
+    }
+
+    // The first checked verb winetricks would refuse, with what it clashes
+    // with. Install order is list order, so two clashing new picks fail too.
+    static func clash(
+        among verbs: [WinetricksVerb], checked: Set<String>, ran: Set<String>
+    ) -> (verb: String, with: String)? {
+        for verb in verbs where checked.contains(verb.name) {
+            if let other = verb.conflicts.first(where: {
+                $0 != verb.name && (ran.contains($0) || checked.contains($0))
+            }) {
+                return (verb.name, other)
+            }
+        }
+        return nil
     }
 
     private static func isRealFile(_ path: String, in prefix: WinePrefix) -> Bool {

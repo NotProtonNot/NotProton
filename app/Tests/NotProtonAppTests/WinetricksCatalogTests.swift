@@ -245,6 +245,25 @@ struct WinetricksCatalogTests {
         #expect(WinetricksCatalog.displayYear("") == "")
     }
 
+    @Test("A pick winetricks would refuse for a conflict is caught")
+    func catchesConflicts() throws {
+        let found = verbs()
+        // vcrun2022 conflicts with vcrun2015 and vcrun2019 in the sample script.
+        #expect(WinetricksCatalog.clash(among: found, checked: ["vcrun2022"], ran: []) == nil)
+        // Only in the log, the way w_conflicts reads it, with no file behind it.
+        let fromLog = WinetricksCatalog.clash(among: found, checked: ["vcrun2022"], ran: ["vcrun2019"])
+        #expect(fromLog?.verb == "vcrun2022")
+        #expect(fromLog?.with == "vcrun2019")
+        // Two new picks clash as well, since the first is logged before the second runs.
+        #expect(WinetricksCatalog.clash(
+            among: found, checked: ["vcrun2022", "vcrun2015"], ran: [])?.with == "vcrun2015")
+        // Unrelated picks are fine.
+        #expect(WinetricksCatalog.clash(among: found, checked: ["d3dx9", "corefonts"], ran: ["vcrun2019"]) == nil)
+
+        let prefix = try prefixWithLog(ran: ["vcrun2019", "corefonts"])
+        #expect(WinetricksCatalog.ranVerbs(in: prefix) == ["vcrun2019", "corefonts"])
+    }
+
     @Test("A missing log means nothing is installed")
     func noLogInstallsNothing() throws {
         let dir = try scratchDirectory("winetricks-nolog")

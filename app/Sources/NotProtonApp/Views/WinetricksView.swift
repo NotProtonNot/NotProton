@@ -22,6 +22,7 @@ struct WinetricksView: View {
     @State private var checked = Set<String>()
     @State private var selection = Set<String>()
     @State private var installed = Set<String>()
+    @State private var ran = Set<String>()
     @State private var tail = ""
     @State private var watcher: Task<Void, Never>?
 
@@ -89,8 +90,9 @@ struct WinetricksView: View {
     private func refreshInstalled() async {
         let found = verbs
         let target = prefix
-        installed = await Task.detached {
-            WinetricksCatalog.installedVerbs(among: found, in: target)
+        (installed, ran) = await Task.detached {
+            (WinetricksCatalog.installedVerbs(among: found, in: target),
+             WinetricksCatalog.ranVerbs(in: target))
         }.value
     }
 
@@ -226,36 +228,42 @@ struct WinetricksView: View {
     // The whole row is the checkbox's label, so a click anywhere on it ticks
     // the package, as in any Mac checklist.
     private func row(_ verb: WinetricksVerb) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .top, spacing: 12) {
             Toggle(isOn: check(verb)) {
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(verbatim: verb.name)
-                            .fontWeight(.semibold)
-                        if let meta = meta(verb) {
-                            Text(verbatim: meta)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                    Text(verbatim: verb.title.isEmpty ? verb.name : readable(verb.title))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        if !verb.title.isEmpty {
+                            Text(verbatim: verb.name).foregroundStyle(.secondary)
                         }
+                        status(verb)
                     }
-                    if !verb.title.isEmpty {
-                        Text(verbatim: readable(verb.title))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    .font(.callout)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .toggleStyle(.checkbox)
             .disabled(verb.isManualDownload || installing)
 
-            status(verb)
-                .font(.callout)
+            VStack(alignment: .trailing, spacing: 2) {
+                if !verb.publisher.isEmpty {
+                    Text(verbatim: publisher(verb))
+                }
+                if !verb.year.isEmpty {
+                    Text(verbatim: verb.year).monospacedDigit()
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize()
         }
     }
 
-    private func meta(_ verb: WinetricksVerb) -> String? {
-        let parts = [verb.publisher, verb.year].filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    // allcodecs and a few others credit "various".
+    private func publisher(_ verb: WinetricksVerb) -> String {
+        verb.publisher.prefix(1).uppercased() + verb.publisher.dropFirst()
     }
 
     // Descriptions like vcrun2022's list their DLLs as one comma-run with no
@@ -267,9 +275,11 @@ struct WinetricksView: View {
     @ViewBuilder
     private func status(_ verb: WinetricksVerb) -> some View {
         if installed.contains(verb.name) {
-            Label("Installed", systemImage: "checkmark.circle.fill")
-                .labelStyle(.titleAndIcon)
-                .foregroundStyle(.secondary)
+            Label {
+                Text("Installed").foregroundStyle(.secondary)
+            } icon: {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            }
         } else if verb.isManualDownload {
             Text("Manual download")
                 .foregroundStyle(.tertiary)
@@ -325,7 +335,7 @@ struct WinetricksView: View {
                 .help(installing ? String(localized: "Winetricks keeps running. The Prefixes window shows when it is done.") : "")
             Button("Install") { install() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedVerbs.isEmpty || installing)
+                .disabled(selectedVerbs.isEmpty || installing || clash != nil)
         }
     }
 
@@ -336,14 +346,14 @@ struct WinetricksView: View {
                 ProgressView().controlSize(.small)
                 Text("Installing…").foregroundStyle(.secondary)
             }
-        } else if let failed = model.failure {
-            statusLine(failed, symbol: "xmark.circle.fill", color: .red, showLog: true)
-        } else if let outcome = model.outcome {
-            statusLine(outcome, symbol: "checkmark.circle.fill", color: .green, showLog: true)
         } else if let clash {
             statusLine(
-                String(localized: "\(clash.a) conflicts with \(clash.b)."),
+                String(localized: "\(clash.verb) conflicts with \(clash.with)."),
                 symbol: "exclamationmark.triangle.fill", color: .orange, showLog: false)
+        } else if checked.isEmpty, let failed = model.failure {
+            statusLine(failed, symbol: "xmark.circle.fill", color: .red, showLog: true)
+        } else if checked.isEmpty, let outcome = model.outcome {
+            statusLine(outcome, symbol: "checkmark.circle.fill", color: .green, showLog: true)
         } else if let summary {
             Text(summary)
                 .foregroundStyle(.secondary)
@@ -386,14 +396,9 @@ struct WinetricksView: View {
         return String(localized: "\(names.count) selected: \(names.joined(separator: " "))")
     }
 
-    private var clash: (a: String, b: String)? {
-        for verb in verbs where checked.contains(verb.name) {
-            for other in verb.conflicts
-            where other != verb.name && (installed.contains(other) || checked.contains(other)) {
-                return (verb.name, other)
-            }
-        }
-        return nil
+    // winetricks stops on a conflict, so Install stays off while there is one.
+    private var clash: (verb: String, with: String)? {
+        WinetricksCatalog.clash(among: verbs, checked: checked, ran: ran)
     }
 
     private func categoryLabel(_ category: String) -> String {
