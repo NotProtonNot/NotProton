@@ -169,6 +169,39 @@ struct WinetricksCatalogTests {
         #expect(!offered("3dmark2000", "benchmarks"))
     }
 
+    @Test("Verbs that refuse a 64-bit prefix are hidden unless the prefix is 32-bit")
+    func hidesWin32Only() {
+        let script = """
+            w_metadata win98 settings \\
+                title="Set Windows version to Windows 98"
+            load_win98()
+            {
+                w_package_unsupported_win64
+                w_set_winver win98
+            }
+
+            w_metadata vd=1024x768 settings \\
+                title="Enable virtual desktop, set size to 1024x768"
+            load_vd()
+            {
+                size="$1"
+            }
+
+            w_metadata dotnet11 dlls \\
+                title="MS .NET 1.1" \\
+                media="download"
+            load_dotnet11()
+            {
+                w_package_unsupported_win64
+                w_call remove_mono internal
+            }
+            """
+        let found = WinetricksCatalog.verbs(in: script)
+        #expect(found.filter(\.win32Only).map(\.name) == ["win98", "dotnet11"])
+        #expect(found.filter { WinetricksCatalog.isOffered($0) }.map(\.name) == ["vd=1024x768"])
+        #expect(found.filter { WinetricksCatalog.isOffered($0, prefixIs32Bit: true) }.count == 3)
+    }
+
     @Test("A missing log means nothing is installed")
     func noLogInstallsNothing() throws {
         let dir = try scratchDirectory("winetricks-nolog")

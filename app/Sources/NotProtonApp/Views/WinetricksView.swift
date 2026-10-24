@@ -77,8 +77,11 @@ struct WinetricksView: View {
             let text = try await Task.detached {
                 try String(contentsOf: script, encoding: .utf8)
             }.value
+            let target = prefix
             verbs = await Task.detached {
-                WinetricksCatalog.verbs(in: text).filter(WinetricksCatalog.isOffered)
+                let is32Bit = PrefixStore.arch(of: target) == .i386
+                return WinetricksCatalog.verbs(in: text)
+                    .filter { WinetricksCatalog.isOffered($0, prefixIs32Bit: is32Bit) }
             }.value
             await refreshInstalled()
         } catch {

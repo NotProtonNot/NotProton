@@ -14,6 +14,9 @@ struct WinetricksVerb: Identifiable, Sendable, Equatable {
     // installed_file1 and installed_exe1, winetricks-style c: paths. A single
     // entry may name alternatives separated by |.
     let installedFiles: [String]
+    // The verb calls w_package_unsupported_win64, which exits 32 on any prefix
+    // but a 32-bit one.
+    var win32Only = false
 
     var id: String { name }
     var isManualDownload: Bool { media == "manual_download" }
@@ -49,8 +52,9 @@ enum WinetricksCatalog {
     ]
     private static let hiddenVerbs: Set<String> = ["sound=alsa", "sound=oss", "sound=pulse"]
 
-    static func isOffered(_ verb: WinetricksVerb) -> Bool {
+    static func isOffered(_ verb: WinetricksVerb, prefixIs32Bit: Bool = false) -> Bool {
         guard categories.contains(verb.category) else { return false }
+        if verb.win32Only && !prefixIs32Bit { return false }
         let family = String(verb.name.prefix { $0 != "=" })
         return !hiddenFamilies.contains(family) && !hiddenVerbs.contains(verb.name)
     }
@@ -77,7 +81,30 @@ enum WinetricksCatalog {
             }
         }
         close()
+        let win32Only = win32OnlyLoaders(in: script)
+        for index in found.indices
+        where win32Only.contains(String(found[index].name.prefix { $0 != "=" })) {
+            found[index].win32Only = true
+        }
         return found
+    }
+
+    // Names of the load_ functions whose body calls w_package_unsupported_win64.
+    // A verb like vd=1024x768 runs load_vd, so the family name is what matches.
+    private static func win32OnlyLoaders(in script: String) -> Set<String> {
+        var names: Set<String> = []
+        var current: String?
+        for line in script.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("load_"), line.hasSuffix("()") {
+                current = String(line.dropFirst("load_".count).dropLast(2))
+            } else if line == "}" {
+                current = nil
+            } else if let name = current,
+                      line.trimmingCharacters(in: .whitespaces) == "w_package_unsupported_win64" {
+                names.insert(name)
+            }
+        }
+        return names
     }
 
     private static func header(of line: Substring) -> (name: String, category: String)? {
