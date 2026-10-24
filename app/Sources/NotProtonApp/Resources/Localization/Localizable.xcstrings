@@ -1068,6 +1068,38 @@
         }
       }
     },
+    "Add by Name" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi per nome"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按名称添加"
+          }
+        }
+      }
+    },
+    "Add by Name…" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiungi per nome…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按名称添加…"
+          }
+        }
+      }
+    },
     "Allow Client Updates" : {
       "localizations" : {
         "it" : {
@@ -2767,22 +2799,6 @@
         }
       }
     },
-    "Enter the Winetricks verbs to install in %@, separated by spaces." : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inserisci i verbi di Winetricks da installare in %@, separati da spazi."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入要安装到“%@”中的 Winetricks 组件，用空格分隔。"
-          }
-        }
-      }
-    },
     "Extracting" : {
       "localizations" : {
         "it" : {
@@ -4062,38 +4078,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已在“%2$@”中打开%1$@。"
-          }
-        }
-      }
-    },
-    "Other Verbs" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Altri verbi"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他组件"
-          }
-        }
-      }
-    },
-    "Other Verbs…" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Altri verbi…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他组件…"
           }
         }
       }
@@ -6625,6 +6609,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工具"
+          }
+        }
+      }
+    },
+    "Type the names of Winetricks packages that aren't in the list, separated by spaces." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scrivi i nomi dei pacchetti Winetricks che non sono nell'elenco, separati da spazi."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入列表中没有的 Winetricks 软件包名称，用空格分隔。"
           }
         }
       }

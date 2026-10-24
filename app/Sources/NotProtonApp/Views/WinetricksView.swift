@@ -315,7 +315,7 @@ struct WinetricksView: View {
 
     private var footer: some View {
         HStack(alignment: .center, spacing: 8) {
-            Button("Other Verbs…") { showingOther = true }
+            Button("Add by Name…") { showingOther = true }
                 .disabled(installing)
                 .popover(isPresented: $showingOther, arrowEdge: .top) { otherVerbs }
 
@@ -373,12 +373,12 @@ struct WinetricksView: View {
 
     private var otherVerbs: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Other Verbs")
+            Text("Add by Name")
                 .font(.headline)
             TextField("vcrun2022 corefonts", text: $customVerbs)
                 .frame(width: 280)
                 .onSubmit { showingOther = false }
-            Text("Enter the Winetricks verbs to install in \(prefix.title), separated by spaces.")
+            Text("Type the names of Winetricks packages that aren't in the list, separated by spaces.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 280, alignment: .leading)
