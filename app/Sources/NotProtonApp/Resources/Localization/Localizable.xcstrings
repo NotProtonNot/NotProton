@@ -2655,22 +2655,6 @@
         }
       }
     },
-    "Description" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descrizione"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "描述"
-          }
-        }
-      }
-    },
     "Detaching from Steam" : {
       "localizations" : {
         "it" : {
@@ -3519,6 +3503,22 @@
         }
       }
     },
+    "Name" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nome"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称"
+          }
+        }
+      }
+    },
     "Needs rebuilding" : {
       "localizations" : {
         "it" : {
@@ -4110,22 +4110,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "游戏叠加层适配组件"
-          }
-        }
-      }
-    },
-    "Package" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pacchetto"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "软件包"
           }
         }
       }
@@ -5486,6 +5470,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下载的文件存在问题。请检查是否有新版 NotProton。"
+          }
+        }
+      }
+    },
+    "Sort By" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordina per"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序方式"
           }
         }
       }

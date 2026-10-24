@@ -166,27 +166,36 @@ struct WinetricksView: View {
             .labelsHidden()
             .fixedSize()
             Spacer(minLength: 12)
+            Picker("Sort By", selection: $sort) {
+                ForEach(SortKey.allCases, id: \.self) { key in
+                    Text(key.label).tag(key)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
             SearchField(text: $search, prompt: String(localized: "Search"))
-                .frame(width: 220)
+                .frame(width: 200)
         }
         .disabled(installing)
     }
 
-    private struct Row: Identifiable {
-        let verb: WinetricksVerb
-        let installed: Bool
-        var id: String { verb.name }
-        var name: String { verb.name }
-        var title: String { verb.title }
-        var publisher: String { verb.publisher }
-        var year: String { verb.year }
+    private enum SortKey: CaseIterable {
+        case name, publisher, year
+
+        var label: String {
+            switch self {
+            case .name: String(localized: "Name")
+            case .publisher: String(localized: "Publisher")
+            case .year: String(localized: "Year")
+            }
+        }
     }
 
-    @State private var sortOrder = [KeyPathComparator(\Row.name)]
+    @State private var sort = SortKey.name
 
-    private var rows: [Row] {
+    private var rows: [WinetricksVerb] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return verbs
+        let shown = verbs
             .filter { $0.category == category }
             .filter { verb in
                 query.isEmpty
@@ -194,60 +203,87 @@ struct WinetricksView: View {
                     || verb.title.lowercased().contains(query)
                     || verb.publisher.lowercased().contains(query)
             }
-            .map { Row(verb: $0, installed: installed.contains($0.name)) }
-            .sorted(using: sortOrder)
+        // Ties fall back to the name so the order never shuffles.
+        func key(_ verb: WinetricksVerb) -> String {
+            switch sort {
+            case .name: ""
+            case .publisher: verb.publisher.lowercased()
+            case .year: verb.year
+            }
+        }
+        return shown.sorted {
+            let (a, b) = (key($0), key($1))
+            return a == b ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : a < b
+        }
     }
 
     private var table: some View {
-        Table(rows, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("Package", value: \.name) { row in
-                Toggle(isOn: check(row.verb)) {
-                    CellText(text: row.verb.name)
-                }
-                .toggleStyle(.checkbox)
-                .disabled(row.verb.isManualDownload || installing)
-            }
-            .width(min: 120, ideal: 160)
-
-            TableColumn("Description", value: \.title) { row in
-                CellText(text: row.verb.title)
-            }
-            .width(min: 160, ideal: 300)
-
-            TableColumn("Publisher", value: \.publisher) { row in
-                CellText(text: row.verb.publisher)
-                    .foregroundStyle(.secondary)
-            }
-            .width(min: 80, ideal: 120)
-
-            TableColumn("Year", value: \.year) { row in
-                CellText(text: row.verb.year)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .width(min: 40, ideal: 44, max: 56)
-
-            TableColumn("Status") { row in
-                if row.installed {
-                    Label("Installed", systemImage: "checkmark.circle.fill")
-                        .labelStyle(.titleAndIcon)
-                        .foregroundStyle(.secondary)
-                } else if row.verb.isManualDownload {
-                    Text("Manual download")
-                        .foregroundStyle(.tertiary)
-                        .help("This package needs its files downloaded by hand, which NotProton cannot do.")
-                } else if row.verb.wined3dOnly {
-                    Text("wined3d only")
-                        .foregroundStyle(.secondary)
-                        .help("Only games that run on wined3d use this setting. Games on D3DMetal, DXMT or DXVK ignore it.")
-                }
-            }
-            .width(min: 80, ideal: 110)
+        List(rows, selection: $selection) { verb in
+            row(verb)
+                .padding(.vertical, 4)
         }
-        .tableStyle(.bordered(alternatesRowBackgrounds: true))
+        .listStyle(.bordered(alternatesRowBackgrounds: true))
         .onKeyPress(.space) {
             toggleSelected()
             return .handled
+        }
+    }
+
+    // The whole row is the checkbox's label, so a click anywhere on it ticks
+    // the package, as in any Mac checklist.
+    private func row(_ verb: WinetricksVerb) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Toggle(isOn: check(verb)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(verbatim: verb.name)
+                            .fontWeight(.semibold)
+                        if let meta = meta(verb) {
+                            Text(verbatim: meta)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if !verb.title.isEmpty {
+                        Text(verbatim: readable(verb.title))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(verb.isManualDownload || installing)
+
+            status(verb)
+                .font(.callout)
+        }
+    }
+
+    private func meta(_ verb: WinetricksVerb) -> String? {
+        let parts = [verb.publisher, verb.year].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
+    // Descriptions like vcrun2022's list their DLLs as one comma-run with no
+    // spaces, which can only wrap mid-word.
+    private func readable(_ title: String) -> String {
+        title.replacingOccurrences(of: #",(?=\S)"#, with: ", ", options: .regularExpression)
+    }
+
+    @ViewBuilder
+    private func status(_ verb: WinetricksVerb) -> some View {
+        if installed.contains(verb.name) {
+            Label("Installed", systemImage: "checkmark.circle.fill")
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.secondary)
+        } else if verb.isManualDownload {
+            Text("Manual download")
+                .foregroundStyle(.tertiary)
+                .help("This package needs its files downloaded by hand, which NotProton cannot do.")
+        } else if verb.wined3dOnly {
+            Text("wined3d only")
+                .foregroundStyle(.secondary)
+                .help("Only games that run on wined3d use this setting. Games on D3DMetal, DXMT or DXVK ignore it.")
         }
     }
 
@@ -390,22 +426,6 @@ struct WinetricksView: View {
         case "fonts": String(localized: "Fonts")
         default: String(localized: "Settings")
         }
-    }
-}
-
-// A tooltip only where the column cuts the text off. One on every cell would
-// pop up over text that is already fully on screen.
-private struct CellText: View {
-    let text: String
-    @State private var width: CGFloat = 0
-
-    var body: some View {
-        Text(text)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .help(TextWidth.of(text) > width ? text : "")
     }
 }
 

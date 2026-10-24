@@ -237,6 +237,14 @@ struct WinetricksCatalogTests {
         #expect(found.filter(\.wined3dOnly).map(\.name) == ["renderer=vulkan", "csmt=off"])
     }
 
+    @Test("Year ranges get an en dash and placeholders are dropped")
+    func cleansYears() {
+        #expect(WinetricksCatalog.displayYear("2022") == "2022")
+        #expect(WinetricksCatalog.displayYear("1995-2009") == "1995\u{2013}2009")
+        #expect(WinetricksCatalog.displayYear("FIXME") == "")
+        #expect(WinetricksCatalog.displayYear("") == "")
+    }
+
     @Test("A missing log means nothing is installed")
     func noLogInstallsNothing() throws {
         let dir = try scratchDirectory("winetricks-nolog")

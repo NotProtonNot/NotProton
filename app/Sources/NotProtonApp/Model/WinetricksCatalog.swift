@@ -152,12 +152,19 @@ enum WinetricksCatalog {
             category: category,
             title: fields["title"] ?? "",
             publisher: fields["publisher"] ?? "",
-            year: fields["year"] ?? "",
+            year: displayYear(fields["year"] ?? ""),
             media: fields["media"] ?? "",
             conflicts: (fields["conflicts"] ?? "")
                 .split(whereSeparator: \.isWhitespace).map(String.init),
             installedFiles: probed
         )
+    }
+
+    // A few entries carry a range like 1995-2009, shown with an en dash, and
+    // d3dcompiler_47 has the placeholder FIXME, which is no year at all.
+    static func displayYear(_ raw: String) -> String {
+        guard raw.first?.isNumber == true else { return "" }
+        return raw.replacingOccurrences(of: "-", with: "\u{2013}")
     }
 
     // The same test winetricks_is_installed makes: the verb must have been run,
