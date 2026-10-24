@@ -77,7 +77,9 @@ struct WinetricksView: View {
             let text = try await Task.detached {
                 try String(contentsOf: script, encoding: .utf8)
             }.value
-            verbs = await Task.detached { WinetricksCatalog.verbs(in: text) }.value
+            verbs = await Task.detached {
+                WinetricksCatalog.verbs(in: text).filter(WinetricksCatalog.isOffered)
+            }.value
             await refreshInstalled()
         } catch {
             loadFailed = (error as? StepFailure)?.detail ?? error.localizedDescription

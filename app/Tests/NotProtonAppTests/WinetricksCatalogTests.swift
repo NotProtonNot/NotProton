@@ -145,6 +145,30 @@ struct WinetricksCatalogTests {
         #expect(!installed.contains("corefonts"))
     }
 
+    @Test("Linux-only, overridden and prefix-breaking settings are left out of the list")
+    func hidesUselessSettings() {
+        func offered(_ name: String, _ category: String = "settings") -> Bool {
+            WinetricksCatalog.isOffered(WinetricksVerb(
+                name: name, category: category, title: "", publisher: "", year: "",
+                media: "", conflicts: [], installedFiles: []))
+        }
+        for name in ["graphics=x11", "graphics=mac", "sound=alsa", "sound=pulse", "sound=oss",
+                     "usetakefocus=y", "grabfullscreen=y", "nocrashdialog",
+                     "autostart_winedbg=enabled", "isolate_home", "sandbox", "bad", "good",
+                     "set_userpath", "set_mididevice"] {
+            #expect(!offered(name), "\(name) should be hidden")
+        }
+        for name in ["win10", "fontsmooth=rgb", "mackeyremap=both", "sound=coreaudio",
+                     "sound=disabled", "renderer=gl", "csmt=off", "vd=1024x768"] {
+            #expect(offered(name), "\(name) should be listed")
+        }
+        // Only the three menus winetricks shows for a shared prefix.
+        #expect(offered("vcrun2022", "dlls"))
+        #expect(offered("corefonts", "fonts"))
+        #expect(!offered("7zip", "apps"))
+        #expect(!offered("3dmark2000", "benchmarks"))
+    }
+
     @Test("A missing log means nothing is installed")
     func noLogInstallsNothing() throws {
         let dir = try scratchDirectory("winetricks-nolog")

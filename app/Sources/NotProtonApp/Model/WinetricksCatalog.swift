@@ -25,6 +25,36 @@ enum WinetricksCatalog {
     // users only ever see these three.
     static let categories = ["dlls", "fonts", "settings"]
 
+    // Settings with no place in the list. Families are matched by the part
+    // before the =, so graphics covers graphics=x11, graphics=mac and so on.
+    private static let hiddenFamilies: Set<String> = [
+        // Driver choices for Linux. The Mac driver and CoreAudio are the only
+        // ones that work, and they are already the default.
+        "graphics",
+        // X11 Driver keys, which the Mac driver never reads.
+        "windowmanagerdecorated", "windowmanagermanaged", "usetakefocus", "useegl",
+        "grabfullscreen",
+        // compat_run.sh sets AeDebug Auto=0 and hides the crash dialog on
+        // every launch, so these are either already done or undone.
+        "autostart_winedbg", "nocrashdialog",
+        // Read their value from WINEPATH and MIDI_DEVICE, which nothing in the
+        // window can set.
+        "set_userpath", "set_mididevice",
+        // Winetricks' own test verbs.
+        "bad", "good",
+        // Both write "disable" to .update-timestamp, which PrefixTools.lastBuild
+        // reads to name the prefix's build, and sandbox removes the z: drive
+        // games outside the prefix run from.
+        "isolate_home", "sandbox",
+    ]
+    private static let hiddenVerbs: Set<String> = ["sound=alsa", "sound=oss", "sound=pulse"]
+
+    static func isOffered(_ verb: WinetricksVerb) -> Bool {
+        guard categories.contains(verb.category) else { return false }
+        let family = String(verb.name.prefix { $0 != "=" })
+        return !hiddenFamilies.contains(family) && !hiddenVerbs.contains(verb.name)
+    }
+
     static func verbs(in script: String) -> [WinetricksVerb] {
         var found: [WinetricksVerb] = []
         var open: (name: String, category: String, fields: [String: String])?

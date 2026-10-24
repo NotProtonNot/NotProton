@@ -313,8 +313,10 @@ enum PrefixTools {
             throw StepFailure(step: step, detail: String(localized: "Enter at least one verb, like vcrun2022."))
         }
         // Under -q annihilate wipes the prefix and its saves without asking, prefix= switches to
-        // another prefix, and options like --self-update change winetricks itself.
-        if let refused = verbs.first(where: { $0 == "annihilate" || $0.hasPrefix("prefix=") || $0.hasPrefix("-") }) {
+        // another prefix, and options like --self-update change winetricks itself. isolate_home
+        // and sandbox overwrite .update-timestamp, which lastBuild reads, and sandbox removes z:.
+        let damaging: Set<String> = ["annihilate", "isolate_home", "sandbox"]
+        if let refused = verbs.first(where: { damaging.contains($0) || $0.hasPrefix("prefix=") || $0.hasPrefix("-") }) {
             throw StepFailure(step: step, detail: String(localized: "NotProton does not run \(refused) with Winetricks."))
         }
         guard let claim = PrefixStore.claim(prefix) else {
