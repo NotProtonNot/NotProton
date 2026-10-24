@@ -155,11 +155,11 @@ struct WinetricksCatalogTests {
         for name in ["graphics=x11", "graphics=mac", "sound=alsa", "sound=pulse", "sound=oss",
                      "usetakefocus=y", "grabfullscreen=y", "nocrashdialog",
                      "autostart_winedbg=enabled", "isolate_home", "sandbox", "bad", "good",
-                     "set_userpath", "set_mididevice"] {
+                     "set_userpath", "set_mididevice", "vd=1024x768", "vd=off"] {
             #expect(!offered(name), "\(name) should be hidden")
         }
         for name in ["win10", "fontsmooth=rgb", "mackeyremap=both", "sound=coreaudio",
-                     "sound=disabled", "renderer=gl", "csmt=off", "vd=1024x768"] {
+                     "sound=disabled", "renderer=gl", "csmt=off"] {
             #expect(offered(name), "\(name) should be listed")
         }
         // Only the three menus winetricks shows for a shared prefix.
@@ -180,11 +180,11 @@ struct WinetricksCatalogTests {
                 w_set_winver win98
             }
 
-            w_metadata vd=1024x768 settings \\
-                title="Enable virtual desktop, set size to 1024x768"
-            load_vd()
+            w_metadata fontsmooth=rgb settings \\
+                title="Enable subpixel font smoothing for LCD (RGB)"
+            load_fontsmooth()
             {
-                size="$1"
+                arg="$1"
             }
 
             w_metadata dotnet11 dlls \\
@@ -198,8 +198,43 @@ struct WinetricksCatalogTests {
             """
         let found = WinetricksCatalog.verbs(in: script)
         #expect(found.filter(\.win32Only).map(\.name) == ["win98", "dotnet11"])
-        #expect(found.filter { WinetricksCatalog.isOffered($0) }.map(\.name) == ["vd=1024x768"])
+        #expect(found.filter { WinetricksCatalog.isOffered($0) }.map(\.name) == ["fontsmooth=rgb"])
         #expect(found.filter { WinetricksCatalog.isOffered($0, prefixIs32Bit: true) }.count == 3)
+    }
+
+    @Test("Settings that only set wined3d's Direct3D keys are marked")
+    func marksWined3dOnly() {
+        let script = #"""
+            w_metadata renderer=vulkan settings \
+                title="Set renderer to Vulkan"
+            load_renderer()
+            {
+                winetricks_set_wined3d_var renderer "$1"
+            }
+
+            w_metadata csmt=off settings \
+                title="Disable Command Stream Multithreading"
+            load_csmt()
+            {
+                cat > "${W_TMP}"/set-csmt.reg <<_EOF_
+            REGEDIT4
+
+            [HKEY_CURRENT_USER\\Software\\Wine\\Direct3D]
+            "csmt"=dword:0
+            _EOF_
+            }
+
+            w_metadata fontsmooth=rgb settings \
+                title="Enable subpixel font smoothing for LCD (RGB)"
+            load_fontsmooth()
+            {
+                cat > "${W_TMP}"/fontsmooth.reg <<_EOF_
+            [HKEY_CURRENT_USER\\Control Panel\\Desktop]
+            _EOF_
+            }
+            """#
+        let found = WinetricksCatalog.verbs(in: script)
+        #expect(found.filter(\.wined3dOnly).map(\.name) == ["renderer=vulkan", "csmt=off"])
     }
 
     @Test("A missing log means nothing is installed")

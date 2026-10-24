@@ -236,6 +236,10 @@ struct WinetricksView: View {
                     Text("Manual download")
                         .foregroundStyle(.tertiary)
                         .help("This package needs its files downloaded by hand, which NotProton cannot do.")
+                } else if row.verb.wined3dOnly {
+                    Text("wined3d only")
+                        .foregroundStyle(.secondary)
+                        .help("Only games that run on wined3d use this setting. Games on D3DMetal, DXMT or DXVK ignore it.")
                 }
             }
             .width(min: 80, ideal: 110)

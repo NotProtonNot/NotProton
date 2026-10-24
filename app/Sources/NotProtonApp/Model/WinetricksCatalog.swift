@@ -17,6 +17,9 @@ struct WinetricksVerb: Identifiable, Sendable, Equatable {
     // The verb calls w_package_unsupported_win64, which exits 32 on any prefix
     // but a 32-bit one.
     var win32Only = false
+    // The verb only sets wined3d's Direct3D keys. Games on D3DMetal, DXMT or
+    // DXVK never read them.
+    var wined3dOnly = false
 
     var id: String { name }
     var isManualDownload: Bool { media == "manual_download" }
@@ -45,6 +48,9 @@ enum WinetricksCatalog {
         "set_userpath", "set_mididevice",
         // Winetricks' own test verbs.
         "bad", "good",
+        // Wine starts explorer /desktop for it, but the Mac driver opens no
+        // desktop window and the game's windows stay as they were.
+        "vd",
         // Both write "disable" to .update-timestamp, which PrefixTools.lastBuild
         // reads to name the prefix's build, and sandbox removes the z: drive
         // games outside the prefix run from.
@@ -81,17 +87,21 @@ enum WinetricksCatalog {
             }
         }
         close()
-        let win32Only = win32OnlyLoaders(in: script)
-        for index in found.indices
-        where win32Only.contains(String(found[index].name.prefix { $0 != "=" })) {
-            found[index].win32Only = true
+        let win32Only = loaders(in: script) { $0 == "w_package_unsupported_win64" }
+        let wined3dOnly = loaders(in: script) {
+            $0.hasPrefix("winetricks_set_wined3d_var ") || $0 == #"[HKEY_CURRENT_USER\\Software\\Wine\\Direct3D]"#
+        }
+        for index in found.indices {
+            let family = String(found[index].name.prefix { $0 != "=" })
+            found[index].win32Only = win32Only.contains(family)
+            found[index].wined3dOnly = wined3dOnly.contains(family)
         }
         return found
     }
 
-    // Names of the load_ functions whose body calls w_package_unsupported_win64.
-    // A verb like vd=1024x768 runs load_vd, so the family name is what matches.
-    private static func win32OnlyLoaders(in script: String) -> Set<String> {
+    // Names of the load_ functions with a line in their body that matches. A
+    // verb like csmt=off runs load_csmt, so the family name is what matches.
+    private static func loaders(in script: String, where matches: (String) -> Bool) -> Set<String> {
         var names: Set<String> = []
         var current: String?
         for line in script.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -99,8 +109,7 @@ enum WinetricksCatalog {
                 current = String(line.dropFirst("load_".count).dropLast(2))
             } else if line == "}" {
                 current = nil
-            } else if let name = current,
-                      line.trimmingCharacters(in: .whitespaces) == "w_package_unsupported_win64" {
+            } else if let name = current, matches(line.trimmingCharacters(in: .whitespaces)) {
                 names.insert(name)
             }
         }

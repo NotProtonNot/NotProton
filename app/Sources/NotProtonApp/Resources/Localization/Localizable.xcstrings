@@ -3970,6 +3970,22 @@
         }
       }
     },
+    "Only games that run on wined3d use this setting. Games on D3DMetal, DXMT or DXVK ignore it." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo i giochi che usano wined3d leggono questa impostazione. I giochi su D3DMetal, DXMT o DXVK la ignorano."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有使用 wined3d 运行的游戏才会读取此设置。使用 D3DMetal、DXMT 或 DXVK 的游戏会忽略它。"
+          }
+        }
+      }
+    },
     "Open %@" : {
       "localizations" : {
         "it" : {
@@ -7197,6 +7213,22 @@
     },
     "vcrun2022 corefonts" : {
       "shouldTranslate" : false
+    },
+    "wined3d only" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo wined3d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅限 wined3d"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
