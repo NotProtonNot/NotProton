@@ -312,10 +312,11 @@ struct WinetricksView: View {
     }
 
     // Space flips every selected row at once, the way a Finder-style
-    // checklist does. Rows that cannot be installed are left alone.
+    // checklist does. Rows that cannot be installed are left alone, and so are
+    // selected rows another category or the search has hidden.
     private func toggleSelected() {
         guard !installing else { return }
-        let targets = verbs.filter { selection.contains($0.name) && !$0.isManualDownload }
+        let targets = rows.filter { selection.contains($0.name) && !$0.isManualDownload }
         guard !targets.isEmpty else { return }
         let turnOn = targets.contains { !checked.contains($0.name) }
         for verb in targets {
