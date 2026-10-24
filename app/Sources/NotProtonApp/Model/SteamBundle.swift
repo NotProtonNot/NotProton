@@ -44,7 +44,11 @@ enum SteamBundle {
         let deployedDylib = SupportPaths.Steam.deployedDylib(inBundle: app)
             .path(percentEncoded: false)
         let components = insert.split(separator: ":").map(String.init)
-        guard components.contains(deployedDylib) else { return .foreign(insert: insert) }
+        guard components.contains(deployedDylib) else {
+            // Our dylib at another path means Steam.app moved after install. Installing again rewrites it.
+            let others = components.filter { URL(filePath: $0).lastPathComponent != SupportPaths.dylibName }
+            return others.isEmpty ? .notInstalled : .foreign(insert: insert)
+        }
 
         guard files.fileExists(atPath: deployedDylib) else { return .notInstalled }
 
