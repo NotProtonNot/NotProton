@@ -55,7 +55,6 @@ struct WinetricksView: View {
             }
         }
         .frame(minWidth: 760, idealWidth: 820, minHeight: 520, idealHeight: 600)
-        .interactiveDismissDisabled(installing)
         .task {
             // An earlier tool action's outcome would sit in the footer as if
             // this window produced it.
@@ -308,15 +307,22 @@ struct WinetricksView: View {
         .overlay(RoundedRectangle(cornerRadius: 1).stroke(Color(nsColor: .separatorColor)))
     }
 
+    private var dismissLabel: String {
+        if installing { return String(localized: "Close") }
+        return ranOnce ? String(localized: "Done") : String(localized: "Cancel")
+    }
+
     private var footer: some View {
         HStack(alignment: .center, spacing: 8) {
             status
 
             Spacer(minLength: 12)
 
-            Button(ranOnce ? String(localized: "Done") : String(localized: "Cancel")) { dismiss() }
+            // Closing mid-install leaves it running. The install's Task is not
+            // the sheet's, and the Prefixes window shows its spinner and outcome.
+            Button(dismissLabel) { dismiss() }
                 .keyboardShortcut(.cancelAction)
-                .disabled(installing)
+                .help(installing ? String(localized: "Winetricks keeps running. The Prefixes window shows when it is done.") : "")
             Button("Install") { install() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(selectedVerbs.isEmpty || installing)

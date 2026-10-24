@@ -1868,6 +1868,22 @@
         }
       }
     },
+    "Close" : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiudi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
     "Close Steam before continuing." : {
       "localizations" : {
         "it" : {
@@ -6807,6 +6823,22 @@
     },
     "Winetricks" : {
       "shouldTranslate" : false
+    },
+    "Winetricks keeps running. The Prefixes window shows when it is done." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Winetricks continua a funzionare. La finestra Prefissi mostra quando ha finito."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Winetricks 会继续运行。完成后会在“游戏容器”窗口中显示。"
+          }
+        }
+      }
     },
     "Winetricks ran %@ in %@." : {
       "localizations" : {
