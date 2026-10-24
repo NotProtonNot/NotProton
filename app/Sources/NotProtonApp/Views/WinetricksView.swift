@@ -21,8 +21,6 @@ struct WinetricksView: View {
     @State private var search = ""
     @State private var checked = Set<String>()
     @State private var selection = Set<String>()
-    @State private var showingOther = false
-    @State private var customVerbs = ""
     @State private var installed = Set<String>()
     @State private var tail = ""
     @State private var watcher: Task<Void, Never>?
@@ -108,10 +106,7 @@ struct WinetricksView: View {
             await model.winetricks(chosen, in: prefix)
             watcher?.cancel()
             installing = false
-            if model.failure == nil {
-                checked.removeAll()
-                customVerbs = ""
-            }
+            if model.failure == nil { checked.removeAll() }
             await refreshInstalled()
         }
     }
@@ -315,12 +310,7 @@ struct WinetricksView: View {
 
     private var footer: some View {
         HStack(alignment: .center, spacing: 8) {
-            Button("Add by Name…") { showingOther = true }
-                .disabled(installing)
-                .popover(isPresented: $showingOther, arrowEdge: .top) { otherVerbs }
-
             status
-                .padding(.leading, 4)
 
             Spacer(minLength: 12)
 
@@ -371,22 +361,6 @@ struct WinetricksView: View {
         }
     }
 
-    private var otherVerbs: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Add by Name")
-                .font(.headline)
-            TextField("vcrun2022 corefonts", text: $customVerbs)
-                .frame(width: 280)
-                .onSubmit { showingOther = false }
-            Text("Type the names of Winetricks packages that aren't in the list, separated by spaces.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 280, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-    }
-
     private func check(_ verb: WinetricksVerb) -> Binding<Bool> {
         Binding(
             get: { checked.contains(verb.name) },
@@ -397,11 +371,7 @@ struct WinetricksView: View {
     }
 
     private var selectedVerbs: [String] {
-        var names = verbs.filter { checked.contains($0.name) }.map(\.name)
-        for name in PrefixTools.winetricksVerbs(customVerbs) where !names.contains(name) {
-            names.append(name)
-        }
-        return names
+        verbs.filter { checked.contains($0.name) }.map(\.name)
     }
 
     private var summary: String? {

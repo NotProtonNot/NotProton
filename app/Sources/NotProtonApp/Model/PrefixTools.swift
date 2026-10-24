@@ -273,10 +273,6 @@ enum PrefixTools {
 
         """#
 
-    static func winetricksVerbs(_ text: String) -> [String] {
-        text.split(whereSeparator: \.isWhitespace).map(String.init)
-    }
-
     // The package list needs the script before anything is installed, so the
     // download is its own step with its own name in failures.
     static func winetricksScript(
@@ -310,7 +306,7 @@ enum PrefixTools {
     ) throws -> URL {
         let step = String(localized: "Run Winetricks")
         guard !verbs.isEmpty else {
-            throw StepFailure(step: step, detail: String(localized: "Enter at least one verb, like vcrun2022."))
+            throw StepFailure(step: step, detail: String(localized: "Choose at least one package."))
         }
         // Under -q annihilate wipes the prefix and its saves without asking, prefix= switches to
         // another prefix, and options like --self-update change winetricks itself. isolate_home

@@ -1068,38 +1068,6 @@
         }
       }
     },
-    "Add by Name" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi per nome"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按名称添加"
-          }
-        }
-      }
-    },
-    "Add by Name…" : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aggiungi per nome…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按名称添加…"
-          }
-        }
-      }
-    },
     "Allow Client Updates" : {
       "localizations" : {
         "it" : {
@@ -1816,6 +1784,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择要在“%@”中运行的 Windows 程序。"
+          }
+        }
+      }
+    },
+    "Choose at least one package." : {
+      "localizations" : {
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scegli almeno un pacchetto."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请至少选择一个软件包。"
           }
         }
       }
@@ -2779,22 +2763,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在下载缺失的组件"
-          }
-        }
-      }
-    },
-    "Enter at least one verb, like vcrun2022." : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inserisci almeno un verbo, ad esempio vcrun2022."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请至少输入一个组件，例如 vcrun2022。"
           }
         }
       }
@@ -6613,22 +6581,6 @@
         }
       }
     },
-    "Type the names of Winetricks packages that aren't in the list, separated by spaces." : {
-      "localizations" : {
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scrivi i nomi dei pacchetti Winetricks che non sono nell'elenco, separati da spazi."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入列表中没有的 Winetricks 软件包名称，用空格分隔。"
-          }
-        }
-      }
-    },
     "Unknown" : {
       "localizations" : {
         "it" : {
@@ -7210,9 +7162,6 @@
           }
         }
       }
-    },
-    "vcrun2022 corefonts" : {
-      "shouldTranslate" : false
     },
     "wined3d only" : {
       "localizations" : {
