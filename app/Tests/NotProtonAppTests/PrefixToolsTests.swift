@@ -233,19 +233,19 @@ struct PrefixToolsTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let script = dir.appending(path: "winetricks")
 
-        #expect(PrefixTools.winetricksVerbs("  vcrun2022\tcorefonts \n") == ["vcrun2022", "corefonts"])
-
         func refusal(_ verbs: String) -> String? {
             do {
                 _ = try PrefixTools.winetricks(
-                    PrefixTools.winetricksVerbs(verbs), in: samplePrefix(), script: script, runner: dir)
+                    verbs.split(separator: " ").map(String.init), in: samplePrefix(), script: script, runner: dir)
                 return nil
             } catch {
                 return (error as? StepFailure)?.detail
             }
         }
-        #expect(refusal(" ")?.contains("at least one verb") == true)
+        #expect(refusal(" ")?.contains("at least one package") == true)
         #expect(refusal("vcrun2022 annihilate")?.contains("annihilate") == true)
+        #expect(refusal("sandbox")?.contains("sandbox") == true)
+        #expect(refusal("corefonts isolate_home")?.contains("isolate_home") == true)
         #expect(refusal("prefix=other corefonts")?.contains("prefix=other") == true)
         #expect(refusal("--self-update")?.contains("--self-update") == true)
         #expect(refusal("corefonts")?.contains("No compatibility tool") == true)

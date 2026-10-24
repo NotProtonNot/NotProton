@@ -298,8 +298,7 @@ final class PrefixesModel {
         }
     }
 
-    func winetricks(_ text: String, in prefix: WinePrefix) async {
-        let verbs = PrefixTools.winetricksVerbs(text)
+    func winetricks(_ verbs: [String], in prefix: WinePrefix) async {
         await eachInTurn([prefix], { try await PrefixTools.winetricks(verbs, in: $0) }) { done in
             guard !done.isEmpty else { return nil }
             return String(localized: "Winetricks ran \(verbs.joined(separator: " ")) in \(prefix.title).")
