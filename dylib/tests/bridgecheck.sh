@@ -13,10 +13,13 @@ esac
 block=$(printf '%s\n' "$block" | sed '$d')
 legacy=$(sed -n '/^install_legacycompat() {/,/^}/p' "$SRC")
 [ -n "$legacy" ] || { echo "FAIL: install_legacycompat not found in $SRC"; exit 1; }
-body='same_volume() { [ -z "$cross" ]; }
+body='np_cache() { return 1; }
+np_timing() { :; }
+same_volume() { [ -z "$cross" ]; }
 volume_clones() { :; }
 show_alert() { printf "alert: %s\n" "$1" >> "$log"; }
 '"$block
+fi
 fi"
 
 work=$(mktemp -d)

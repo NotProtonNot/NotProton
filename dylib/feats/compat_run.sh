@@ -5,6 +5,67 @@ set -e
 verb="$1"
 shift || true
 
+# An already-completed common-redist check needs no Wine process.
+case "$verb:$1" in
+  run:*/legacycompat/iscriptevaluator.exe)
+    np_eval=$(printf '%s' "$2" | tr '\\' '/')
+    if [ -f "$np_eval" ] && [ -n "$STEAM_COMPAT_DATA_PATH" ] &&
+       /usr/bin/python3 -I - "$np_eval" "$STEAM_COMPAT_DATA_PATH/pfx" <<'NP_COMPLETED_REDIST'
+# Conservative offline fast path for Steam's already-completed common-redist script.
+import sys,re
+from pathlib import Path
+try:
+    script,prefix=map(Path,sys.argv[1:])
+    text=script.read_text()
+    tokens=re.findall(r'"(?:\\.|[^"\\])*"|[{}]|[^\s{}"]+',text)
+    def decode(t):
+        assert t.startswith('"') and t.endswith('"')
+        return re.sub(r'\\([\\"])',r'\1',t[1:-1])
+    def obj(i):
+        result={}
+        while i<len(tokens) and tokens[i]!='}':
+            k=decode(tokens[i]);i+=1
+            assert k not in result
+            if tokens[i]=='{': v,i=obj(i+1)
+            else: v=decode(tokens[i]);i+=1
+            result[k]=v
+        assert i<len(tokens) and tokens[i]=='}'
+        return result,i+1
+    assert tokens[:2]==['"evaluatorscript"','{']
+    entries,end=obj(2);assert end==len(tokens) and entries
+    reg={};section=''
+    for line in (prefix/'system.reg').read_text().splitlines():
+        if line.startswith('['):
+            section=line[1:line.index(']')].replace('\\\\','\\').casefold();reg[section]={}
+        elif line.startswith('"') and '=' in line:
+            name,value=line.split('=',1);reg[section][name[1:-1].casefold()]=value
+    for entry in entries.values():
+        assert set(entry)<=set(('appid','mode','language','install_path','SteamID','compat_installscript'))
+        assert entry['appid']=='228980' and entry['mode']=='1'
+        install=entry['compat_installscript'];assert set(install)=={'run process'}
+        for name,process in install['run process'].items():
+            assert set(process)<=set(('hasrunkey','process 1','command 1','nocleanup','requirement_os'))
+            assert process['nocleanup']=='1'
+            assert process.get('requirement_os',{}) in ({},{'Is64BitWindows':'1'})
+            key=process['hasrunkey'].casefold()
+            assert key.startswith('hkey_local_machine\\software\\valve\\steam\\apps\\commonredist\\')
+            suffix=key.split('commonredist\\',1)[1]
+            assert suffix in ('vcredist\\2019','vcredist\\2022','directx\\jun2010')
+            assert process['process 1'].casefold().startswith('%installdir%\\_commonredist\\'+suffix+'\\')
+            # These common-redist completion markers use the redirected view.
+            key=key.replace('hkey_local_machine\\software\\','software\\wow6432node\\',1)
+            assert reg[key][name.casefold()]=='dword:00000001'
+except Exception:
+    sys.exit(1)
+NP_COMPLETED_REDIST
+    then
+      printf '=== completed common-redist checks verified on disk; skipped Wine evaluator ===\n' >> "$STEAM_COMPAT_DATA_PATH/notproton-run.log"
+      np_redist_complete=1
+    fi
+    ;;
+esac
+
+
 # hook_launch.c passes the launch options through a shell before this script runs, matching
 # Linux Steam. A NAME=value option placed ahead of %command% is an environment variable,
 # and anything after %command% is a launch argument passed to the game.
@@ -251,6 +312,8 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
 else
   log=/dev/null
 fi
+np_timing() { printf 'TIMING %s %s\n' "$(date +%s)" "$*" >> "$log"; }
+np_timing launcher-entry
 [ "$(stat -f %z "$log" 2>/dev/null || echo 0)" -gt 262144 ] \
   && : > "$log" || true
 {
@@ -268,6 +331,7 @@ fi
 } >> "$log" 2>&1 || true
 
 stage_step="startup"
+np_timing "startup"
 # shellcheck disable=SC2329 # the trap below invokes this
 report_early_exit() {
   status=$?
@@ -910,7 +974,106 @@ video_lines() {
   printf '%s\r\n' '[HKEY_CURRENT_USER\Control Panel\Desktop]' "$dpi_value" ''
 }
 
+# Check the requested values on disk before starting Wine just to import them.
+# Missing Python, unreadable registries, or unsupported syntax use the normal import.
+settings_already_applied() {
+  [ -x /usr/bin/python3 ] || return 1
+  /usr/bin/python3 -I - "$WINEPREFIX" "$settings_file" <<'NP_REG_CHECK'
+import sys, re
+from pathlib import Path
+try:
+    prefix, requested = map(Path, sys.argv[1:])
+    def registry(path, wine=False):
+        sections, section = {}, None
+        for line in path.read_text(encoding='utf-8').splitlines():
+            if line.startswith('['):
+                end = line.index(']')
+                section = line[1:end]
+                if wine:
+                    section = section.replace('\\\\', '\\')
+                section = section.casefold()
+                sections[section] = {}
+            elif section is not None and (line.startswith('"') or line.startswith('@=')):
+                match = re.fullmatch(r'("(?:[^"\\]|\\.)*"|@)=(.*)', line)
+                if not match:
+                    raise ValueError('unsupported value')
+                sections[section][match[1].casefold()] = match[2]
+        return sections
+    roots = {'hkey_local_machine': registry(prefix/'system.reg', True),
+             'hkey_current_user': registry(prefix/'user.reg', True)}
+    for section, values in registry(requested).items():
+        deleted = section.startswith('-')
+        root, key = section.lstrip('-').split('\\', 1)
+        if root == 'hkey_local_machine' and key.startswith('system\\currentcontrolset\\'):
+            key = key.replace('system\\currentcontrolset\\', 'system\\controlset001\\', 1)
+        actual = roots[root].get(key)
+        if deleted:
+            assert actual is None
+        else:
+            for name, value in values.items():
+                if value == '-':
+                    assert actual is None or name not in actual
+                else:
+                    assert actual is not None and actual.get(name) == value
+except Exception:
+    sys.exit(1)
+NP_REG_CHECK
+}
+
 import_prefix_settings() {
+  if NP_SETTINGS_VERB="$verb" /usr/bin/python3 -I - <<'NP_SETTINGS_FAST'
+import os,re,sys
+from pathlib import Path
+try:
+    p=Path(os.environ['WINEPREFIX']); data=Path(os.environ['STEAM_COMPAT_DATA_PATH'])
+    def registry(file):
+        out={};section=None
+        for line in file.read_text().splitlines():
+            if line.startswith('['):
+                section=line[1:line.index(']')].replace('\\\\','\\').casefold();out[section]={}
+            elif section is not None and (line.startswith('"') or line.startswith('@=')):
+                m=re.fullmatch(r'("(?:[^"\\]|\\.)*"|@)=(.*)',line)
+                if m:out[section][m[1].casefold()]=m[2]
+        return out
+    system=registry(p/'system.reg');user=registry(p/'user.reg')
+    def check(reg,key,name,value):
+        assert reg.get(key.casefold(),{}).get(name.casefold())==value
+    for key in ('Software\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug','Software\\Wow6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug'):
+        check(system,key,'"Auto"','"0"')
+    check(user,'Software\\Wine\\WineDbg','"ShowCrashDialog"','dword:00000000')
+    check(system,'Software\\Classes\\steam','"URL Protocol"','""')
+    check(system,'Software\\Classes\\steam\\shell\\open\\command','@',r'"\"C:\\Program Files (x86)\\Steam\\steam.exe\" \"%1\""')
+    env=os.environ
+    if env.get('NP_SETTINGS_VERB')=='waitforexitandrun':
+        retina=env.get('NOTPROTON_RETINA')=='1'
+        actual=user.get('software\\wine\\mac driver',{}).get('"retinamode"')
+        assert actual==('"y"' if retina else None)
+        if retina:
+            dpi=user.get('control panel\\desktop',{}).get('"logpixels"') or system.get('system\\controlset001\\hardware profiles\\current\\software\\fonts',{}).get('"logpixels"')
+            assert dpi and dpi.startswith('dword:') and int(dpi[6:],16)>=110
+    ownedfile=data/'notproton-hidden-controllers';assert not ownedfile.is_symlink()
+    owned=set(ownedfile.read_text().split()) if ownedfile.exists() else set()
+    start='system\\controlset001\\services\\winebus\\devices\\'
+    existing={k[len(start):] for k in system if k.startswith(start) and re.fullmatch('[0-9a-f]{4}/[0-9a-f]{4}',k[len(start):])}
+    def ids(s):return set(re.findall(r'0x([0-9a-f]{4})/0x([0-9a-f]{4})',s.lower()))
+    wanted={a+'/'+b for a,b in ids(env.get('SDL_GAMECONTROLLER_IGNORE_DEVICES',''))}-{a+'/'+b for a,b in ids(env.get('SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT',''))}
+    wanted|={'057e/2006','057e/2007','057e/2009'}
+    if env.get('NP_SETTINGS_VERB')=='run':wanted|=owned
+    wanted-=existing-owned
+    if env.get('NOTPROTON_RAW_CONTROLLERS')=='1':wanted=set()
+    assert wanted==owned and wanted<=existing
+    for controller in wanted:check(system,start+controller,'"Hidraw"','dword:00000000')
+    marker=data/'notproton-disable-hidraw';assert not marker.is_symlink()
+    disabled=system.get('system\\controlset001\\services\\winebus',{}).get('"disablehidraw"')=='dword:00000001'
+    if env.get('NOTPROTON_DISABLE_HIDRAW')=='1':assert disabled and marker.exists()
+    else:assert not marker.exists() or not disabled
+except Exception:
+    sys.exit(1)
+NP_SETTINGS_FAST
+  then
+    echo "=== prefix settings verified in one pass ===" >> "$log" 2>&1 || true
+    return 0
+  fi
   if [ "$NOTPROTON_RETINA" = "1" ]; then
     retina_line='"RetinaMode"="y"'
   else
@@ -959,8 +1122,13 @@ import_prefix_settings() {
     without_lock_fds "$WINELOADER" wineboot --init >> "$log" 2>&1 || true
     return 0
   fi
+  if settings_already_applied; then
+    import_status=0
+    echo "=== prefix settings unchanged; skipped Wine registry helper ===" >> "$log" 2>&1 || true
+  else
   without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
     && import_status=0 || import_status=$?
+  fi
   rm -f "$settings_file"
   if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" != "1" ]; then
     rm -f "$hidraw_file"
@@ -990,6 +1158,7 @@ import_prefix_settings() {
 }
 
 stage_step="runner check"
+np_timing "runner check"
 if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
   echo "=== build ${np_build:-(none recorded)} behind this compatibility tool is not set up, set it up in NotProton ===" >> "$log" 2>&1 || true
   show_alert "CrossOver is not set up" "The CrossOver build behind $(alert_safe "$np_display") is not set up. Set it up in NotProton, or pick another compatibility tool for this game."
@@ -1380,6 +1549,27 @@ map_game_drive() {
 
 # Implementation of Proton's create_fonts_symlinks().
 link_fonts() {
+  if [ -x /usr/bin/python3 ] && /usr/bin/python3 -I - "$WINEPREFIX" "$np_support" "$CX_ROOT" "$app_id" <<'NP_FONTS'
+import sys, os
+from pathlib import Path
+prefix, support, runner = map(Path, sys.argv[1:4])
+fonts = prefix/'drive_c/windows/Fonts'
+fonts.mkdir(parents=True, exist_ok=True)
+for directory in (support/'fonts', runner/'share/wine/fonts'):
+    for src in sorted(directory.glob('*.ttf')) + sorted(directory.glob('*.ttc')):
+        if not src.is_file(): continue
+        if sys.argv[4] in ('1313860', '1506830') and src.name == 'arial.ttf':
+            src = directory/'alt'/src.name
+        dst = fonts/src.name
+        if dst.is_symlink():
+            if os.readlink(dst) == str(src): continue
+            dst.unlink()
+        elif dst.exists(): continue
+        dst.symlink_to(src)
+NP_FONTS
+  then
+    return 0
+  fi
   [ -f "$WINEPREFIX/system.reg" ] || return 0
   fonts_dir="$WINEPREFIX/drive_c/windows/Fonts"
   mkdir -p "$fonts_dir" 2>> "$log" || return 0
@@ -1415,6 +1605,7 @@ native_vc_runtime() {
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
   stage_step="prefix lock"
+  np_timing "prefix lock"
   prepare_prefix_directory
   msync_from=environment
   if np_from_defaults WINEMSYNC; then msync_from=${np_defaults_file##*/}; fi
@@ -1429,8 +1620,10 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   printf '%s' "$WINEMSYNC" \
     > "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true
   stage_step="prefix build check"
+  np_timing "prefix build check"
   note_other_build
   stage_step="prefix arch check"
+  np_timing "prefix arch check"
   refuse_foreign_prefix
   claim_prefix
   stage_step="prefix switch check"
@@ -1441,23 +1634,43 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   else
     echo "avx: ROSETTA_ADVERTISE_AVX=$ROSETTA_ADVERTISE_AVX from $avx_from" >> "$log" 2>&1 || true
   fi
-  without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+  # Reuse the install-script server when its boot environment is identical.
+  server_config=$(printf '%s\n' "$CX_ROOT" "$WINEMSYNC" "$ROSETTA_ADVERTISE_AVX" "$FEX_X87REDUCEDPRECISION")
+  server_record="$STEAM_COMPAT_DATA_PATH/notproton-server-config"
+  if [ "$(cat "$server_record" 2>/dev/null)" != "$server_config" ]; then
+    without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+    without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
+    printf '%s\n' "$server_config" > "$server_record" || true
+  fi
+  if [ "${np_redist_complete:-0}" = 1 ]; then
+    # Overlap Wine initialization with Steam's helper-to-game handoff.
+    without_lock_fds "$WINESERVER" -p60 >> "$log" 2>&1 || true
+    WINEDEBUG=err+all,fixme-all "$WINELOADER" cmd.exe /d /c "sc start SamSs" >> "$log" 2>&1 8>&- 9>&- < /dev/null &
+    np_timing background-wine-init
+    exit 0
+  fi
   stage_step="prefix seed"
+  np_timing "prefix seed"
   seed_prefix_from_template
   stage_step="profile layout"
+  np_timing "profile layout"
   if ! lay_out_proton_profile; then
     show_alert "Saved-game folders need attention" "NotProton left the conflicting files in place. Open this prefix's notproton-run.log for details before trying again."
     exit 1
   fi
   [ "$verb" != waitforexitandrun ] || echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
   stage_step="game drive"
+  np_timing "game drive"
   map_game_drive
   stage_step="prefix settings"
+  np_timing "prefix settings"
   import_prefix_settings
   stage_step="fonts"
+  np_timing "fonts"
   link_fonts
   # A prefix that Wine built just now only has dosdevices from this point on.
   stage_step="game drive"
+  np_timing "game drive"
   map_game_drive
 fi
 
@@ -1548,6 +1761,42 @@ link_legacy_steam_dll() {
   fi
 }
 
+np_cache() {
+  /usr/bin/python3 -I - "$@" <<'NP_METADATA_CACHE'
+import sys,os,json,stat,hashlib,shlex
+from pathlib import Path
+try:
+ mode,cache,parameters,values,*paths=sys.argv[1:]
+ snapshot=[]
+ def record(p):
+  try:
+   st=os.lstat(p);s=[p,st.st_mode] if stat.S_ISDIR(st.st_mode) else [p,st.st_mode,st.st_ino,st.st_size,st.st_mtime_ns,st.st_ctime_ns]
+   if stat.S_ISLNK(st.st_mode):
+    s.append(os.readlink(p))
+    try:
+     target=os.stat(p);s.extend([target.st_ino,target.st_size,target.st_mtime_ns,target.st_ctime_ns])
+    except FileNotFoundError:s.append('broken')
+   snapshot.append(s)
+  except FileNotFoundError:snapshot.append([p,'missing'])
+ for p in paths:
+  record(p)
+  if os.path.isdir(p) and not os.path.islink(p):
+   for parent,dirs,files in os.walk(p,followlinks=False):
+    for child in sorted(dirs+files):record(os.path.join(parent,child))
+ signature=hashlib.sha256(json.dumps([parameters,snapshot],sort_keys=True).encode()).hexdigest()
+ path=Path(cache)
+ if mode=='read':
+  saved=json.loads(path.read_text());assert signature==saved['signature']
+  assert set(saved['values'])<=set(('WINEDLLPATH','WINEDLLOVERRIDES','STEAM_COMPAT_CLIENT_INSTALL_PATH','WINELOADER'))
+  print('; '.join('export '+key+'='+shlex.quote(value) for key,value in saved['values'].items()))
+ else:
+  pairs=values.split('\n');vals=dict(x.split('=',1) for x in pairs if '=' in x)
+  temp=path.with_suffix('.tmp');temp.write_text(json.dumps(dict(signature=signature,values=vals)));temp.replace(path)
+except Exception:
+ sys.exit(1)
+NP_METADATA_CACHE
+}
+
 bridge_files="steamclient64.dll steamclient.dll tier0_s64.dll vstdlib_s64.dll"
 bridge_files="$bridge_files lsteamclient.dll lsteamclient.so steam.exe"
 # A clone cannot cross drives, so a prefix on another drive clones from a copy of the
@@ -1573,7 +1822,17 @@ place_bridge_file() {
   cp -c -fp "$origin" "$2" 2>/dev/null || cp -fp "$bridge_src/$1" "$2" 2>> "$log"
 }
 if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
+  np_bridge_parameters="$WINEDLLPATH|$WINEDLLOVERRIDES|$CX_ROOT|$np_build|$wine_unix|$STEAM_COMPAT_CLIENT_INSTALL_PATH|$STEAM_COMPAT_INSTALL_PATH"
+  np_bridge_cache="$STEAM_COMPAT_DATA_PATH/.notproton-bridge-cache.json"
+  np_bridge_stamp() {
+    np_cache "$1" "$np_bridge_cache" "$np_bridge_parameters" "$2" "$0" "$bridge_src" "$prefix_steam/steamclient64.dll" "$prefix_steam/steamclient.dll" "$prefix_steam/tier0_s64.dll" "$prefix_steam/vstdlib_s64.dll" "$prefix_steam/lsteamclient.dll" "$prefix_steam/lsteamclient.so" "$prefix_steam/steam.exe" "$prefix_steam/Steam.dll" "$CX_ROOT/lib/wine/x86_64-windows/ntdll.dll" "$CX_ROOT/lib/wine/i386-windows/ntdll.dll" "$CX_ROOT/lib/wine/aarch64-windows/ntdll.dll" "$CX_ROOT/lib/wine/${wine_unix##*/}/lsteamclient.so" "$WINEPREFIX"/drive_c/windows/system32/msvc*.dll "$WINEPREFIX"/drive_c/windows/system32/vc*.dll "$WINEPREFIX"/drive_c/windows/system32/concrt*.dll "$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/GameOverlayRenderer64.dll" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/Steam.dll" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/SteamService.exe" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/iscriptevaluator.exe" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/steamclient.dll" "$STEAM_COMPAT_CLIENT_INSTALL_PATH/legacycompat/steamclient64.dll" "$WINEPREFIX/drive_c/windows/system32/lsteamclient.dll" "$WINEPREFIX/drive_c/windows/syswow64/lsteamclient.dll" "$WINEPREFIX/drive_c/windows/system32/Steam.dll" "$(dirname "$STEAM_COMPAT_INSTALL_PATH")/Steam.dll"
+  }
+  if np_cached_env=$(np_bridge_stamp read ""); then
+    eval "$np_cached_env"
+    np_timing bridge-cache-reused
+  else
   stage_step="bridge staging"
+  np_timing "bridge staging"
   mkdir -p "$prefix_steam"
   bridge_cache=""
   if [ -n "$STEAM_COMPAT_DATA_PATH" ] && ! same_volume "$bridge_src" "$STEAM_COMPAT_DATA_PATH" \
@@ -1644,6 +1903,10 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   echo "WINEDLLPATH=$WINEDLLPATH" >> "$log" 2>&1 || true
   echo "WINEDLLOVERRIDES=$WINEDLLOVERRIDES" >> "$log" 2>&1 || true
   echo "STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_COMPAT_CLIENT_INSTALL_PATH" >> "$log" 2>&1 || true
+  np_bridge_stamp write "WINEDLLPATH=$WINEDLLPATH
+WINEDLLOVERRIDES=$WINEDLLOVERRIDES
+STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_COMPAT_CLIENT_INSTALL_PATH" || true
+  fi
 fi
 
 export WINEDEBUG="${WINEDEBUG:-err+all,fixme-all}"
@@ -1662,6 +1925,8 @@ esac
 shim_exe="C:\\Program Files (x86)\\Steam\\steam.exe"
 
 if [ "$foreground" = 0 ]; then
+  "$WINESERVER" -p60 >> "$log" 2>&1 || true
+  np_timing helper-start
   status=0  # set -e would exit before the status is read
   case "$verb" in
     # runinprefix is the one verb the Linux client keeps on the raw loader.
@@ -1675,6 +1940,10 @@ if [ "$foreground" = 0 ]; then
       "$WINELOADER" "$shim_exe" "$@" >> "$log" 2>&1 || status=$?
       ;;
   esac
+  if [ "$status" -eq 0 ]; then
+    "$WINESERVER" -p60 >> "$log" 2>&1 || true
+  fi
+  np_timing helper-finished
   echo "=== helper exited status=$status ===" >> "$log" 2>&1 || true
   exit $status
 fi
@@ -1699,6 +1968,15 @@ game_name_xml=$(printf '%s' "$game_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g
 loader_root="$HOME/Library/Application Support/notproton/launchers/$app_id"
 mkdir -p "$loader_root"
 loader_app="$loader_root/$bundle_name.app"
+np_bundle_cache="$loader_root/.notproton-bundle-cache.json"
+np_bundle_parameters="$game_name|$meta_icon|$meta_clienticon|${NOTPROTON_HIDE_LAUNCHER_TILE:-0}|$WINELOADER"
+np_bundle_stamp() {
+  np_cache "$1" "$np_bundle_cache" "$np_bundle_parameters" "$2" "$0" "$loader_app" "$wine_unix" "$loader_root/game.icns" "$loader_root/notproton-icon.source" "$client_root/appcache/librarycache/$app_id"
+}
+if np_cached_env=$(np_bundle_stamp read ""); then
+  eval "$np_cached_env"
+  np_timing bundle-cache-reused
+else
 find "$loader_root" -maxdepth 1 -name '.build.*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 loader_work=$(mktemp -d "$loader_root/.build.XXXXXX")
 loader_stage="$loader_work/new/$bundle_name.app"
@@ -1777,12 +2055,36 @@ if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
 fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
-"$WINELOADER" "\$@"
-exit \$?
+exec "$WINELOADER" "\$@"
 LAUNCHER
 chmod +x "$loader_macos/launcher"
 
 bundle_listing() {
+  # Compare in one process instead of spawning stat/cksum/readlink per entry.
+  if [ -x /usr/bin/python3 ] && /usr/bin/python3 -I - "$1" <<'NP_BUNDLE_CHECK'
+import os, sys, stat, hashlib, json
+root = sys.argv[1]
+entries = []
+for directory, dirs, files in os.walk(root, followlinks=False):
+    for name in dirs + files:
+        path = os.path.join(directory, name)
+        rel = os.path.relpath(path, root)
+        info = os.lstat(path)
+        if stat.S_ISLNK(info.st_mode):
+            entries.append((rel, 'l', os.readlink(path)))
+        elif stat.S_ISDIR(info.st_mode):
+            entries.append((rel, 'd'))
+        elif stat.S_ISREG(info.st_mode):
+            with open(path, 'rb') as stream:
+                digest = hashlib.sha256(stream.read()).hexdigest()
+            entries.append((rel, 'f', stat.S_IMODE(info.st_mode), digest))
+        else:
+            raise ValueError('unsupported bundle entry')
+print(json.dumps(sorted(entries), ensure_ascii=True))
+NP_BUNDLE_CHECK
+  then
+    return 0
+  fi
   (cd "$1" && find . | LC_ALL=C sort | while IFS= read -r p; do
     if [ -L "$p" ]; then
       printf 'l %s %s\n' "$p" "$(readlink "$p")"
@@ -1843,7 +2145,11 @@ install_bundle() (
   fi
   rm -rf "$loader_work" || true
 )
+np_timing bundle-install
 install_bundle
+np_timing bundle-ready
+np_bundle_stamp write "WINELOADER=$WINELOADER" || true
+fi
 
 kill_wine_prefix() {
   "$WINESERVER" -k >> "$log" 2>&1 || true
@@ -2141,9 +2447,16 @@ set -- \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
-[ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+# Register only a new or changed bundle, keeping repeated launches off this path.
+registration_stamp="$loader_root/.launchservices-registered"
+if [ ! -f "$registration_stamp" ] || [ "$loader_app/Contents/Info.plist" -nt "$registration_stamp" ]; then
+  if [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1; then
+    touch "$registration_stamp" || true
+  fi
+fi
 np_started=$(date +%s)
 np_terminated=0
+np_timing launching-bundle
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
 open_pid=$!
 /usr/bin/caffeinate -d -i -w "$open_pid" >> "$log" 2>&1 &

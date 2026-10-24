@@ -36,10 +36,10 @@ route() {
 	case_dir=$(mktemp -d "$work/case.XXXXXX")
 	: > "$case_dir/calls"
 	: > "$case_dir/log"
-	env WINELOADER="$work/wine" STEAM_COMPAT_INSTALL_PATH=/g \
+	env WINELOADER="$work/wine" WINESERVER=/usr/bin/true STEAM_COMPAT_INSTALL_PATH=/g \
 		FAKE_STATUS="${FAKE_STATUS:-0}" FAKE_CALLS="$case_dir/calls" \
 		log="$case_dir/log" body="$body" verb="$verb" \
-		sh -ec 'eval "$body"; echo "fell through foreground=$foreground"' \
+		sh -ec 'np_timing() { :; }; eval "$body"; echo "fell through foreground=$foreground"' \
 		"$verb" "$@" > "$case_dir/out" 2>&1 || true
 }
 calls() { cat "$case_dir/calls"; }
