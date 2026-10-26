@@ -1,6 +1,8 @@
 // Enables Steam Play in the UI/enables the Compatibility tab in game properties
 #include "webpatch.h"
+#include "conf.c"
 #include "nativeplatform.h"
+#include "../util/file.h"
 #include "../util/log.h"
 
 #include <dirent.h>
@@ -31,6 +33,8 @@
 // MSCXReady and MSCXFeat.
 #define NP_READY "\027"
 #define NP_FEATS "\030"
+// Stands for the runner variants read from the support directory.
+#define NP_VARS "\031"
 
 #define NP_TOOL_NAME_MAX 128
 
@@ -92,6 +96,11 @@ void np_webpatch_set_fex_tools(const char *const *names, size_t count) {
 
 static int has_suffix(const char *s, const char *suf);
 
+static void feat_trim_tail(char *v) {
+    size_t n = strlen(v);
+    while (n && (v[n - 1] == ' ' || v[n - 1] == '\t')) v[--n] = 0;
+}
+
 // "Developer" section rows are declared in ~/Library/Application Support/notproton/plugins/*.conf,
 // one "key = value" per line, applied at launch by compat_run.sh.
 #define NP_FEAT_DIR      "Library/Application Support/notproton/plugins"
@@ -99,6 +108,8 @@ static int has_suffix(const char *s, const char *suf);
 #define NP_FEAT_REQ_MAX  4
 #define NP_FEAT_STR      192
 #define NP_FEAT_DESC     512
+#define NP_FEAT_CH_MAX   16
+#define NP_FEAT_CH_BUF   512
 
 typedef struct {
     char key[NP_FEAT_STR];
@@ -110,6 +121,13 @@ typedef struct {
     char depends[NP_FEAT_STR];
     char req[NP_FEAT_REQ_MAX][NP_FEAT_STR];
     int  nreq;
+    // A row is a toggle unless it says otherwise: "choice" is a dropdown, "slider" is a
+    // slider over a min/max range or over the values below.
+    char type[12];
+    char ch[NP_FEAT_CH_BUF];   // "value\0label\0" repeated
+    int  nch, chlen;
+    char min[24], max[24], step[24], dflt[24], suffix[24];
+    char don[NP_FEAT_DESC];    // lines shown only while the row is on, newline-separated
 } np_feat_t;
 
 static int feat_exists(const char *home, const char *rel) {
@@ -122,148 +140,94 @@ static int feat_exists(const char *home, const char *rel) {
 }
 
 // isspace() without the locale, to match [[:space:]] in compat_run.sh.
-static int feat_space(char c) {
-    return c == ' ' || (c >= '\t' && c <= '\r');
-}
-
-static void feat_trim(char *v) {
-    size_t n = strlen(v);
-    while (n && feat_space(v[n - 1])) v[--n] = 0;
-}
-
-// compat_run.sh ignores keys that aren't valid shell variable names, so the compatibility panel does the same thing
-static int feat_key_ok(const char *k) {
-    if (strncmp(k, "NOTPROTON_", 10) != 0 || !k[10]) return 0;
-    for (k += 10; *k; k++)
-        if (!((*k >= 'A' && *k <= 'Z') || (*k >= '0' && *k <= '9') || *k == '_')) return 0;
-    return 1;
-}
-
-// Takes the first value when a setting appears twice so as to match compat_run.sh.
-static void feat_set(char *dst, size_t size, const char *v, int *bad) {
-    if (*dst) return;
-    if (strlen(v) >= size) *bad = 1;
-    snprintf(dst, size, "%s", v);
-}
-
 static np_feat_t *feat_find(np_feat_t *list, int n, const char *key) {
     for (int i = 0; i < n; i++)
         if (strcmp(list[i].key, key) == 0) return &list[i];
     return NULL;
 }
 
-// Unknown fields are ignored so a plugin file written for a later version still loads.
-static void feat_read_file(const char *path, np_feat_t *list, int *count) {
-    char line[2048];
+typedef struct { np_feat_t *list; int count; const char *where; } feat_ctx_t;
+
+// What the grammar in conf.c does not know: where each field lands in np_feat_t. The
+// record has already been checked against the plugin schema by the time this runs.
+static const char *feat_take(const np_conf_rec_t *rec, void *ctx, const char **detail) {
+    feat_ctx_t *fc = ctx;
     np_feat_t f;
-    int bad = 0;
-    FILE *fp = fopen(path, "r");
-    if (!fp) return;
+    const char *n, *v;
+    int it = 0;
+
+    (void)detail;
+    if (feat_find(fc->list, fc->count, rec->id)) return NP_CONF_DUP_ID;
+    if (fc->count >= NP_FEAT_MAX) return NP_CONF_LIMIT;
     memset(&f, 0, sizeof(f));
-    while (fgets(line, sizeof(line), fp)) {
-        char *eq, *v, *k = line;
-        size_t len = strcspn(line, "\n");
-        if (len >= sizeof(line) - 1) {
-            NP_WARN("plugins: %s has a line over %zu bytes, ignored", path, sizeof(line) - 2);
-            fclose(fp);
-            return;
+    snprintf(f.key, sizeof(f.key), "%s", rec->id);
+    while (np_conf_next(rec, &it, &n, &v)) {
+        if (strcmp(n, "label") == 0) snprintf(f.label, sizeof(f.label), "%s", v);
+        else if (strcmp(n, "description") == 0) snprintf(f.desc, sizeof(f.desc), "%s", v);
+        else if (strcmp(n, "section") == 0) snprintf(f.section, sizeof(f.section), "%s", v);
+        else if (strcmp(n, "on") == 0) snprintf(f.on, sizeof(f.on), "%s", v);
+        else if (strcmp(n, "off") == 0) snprintf(f.off, sizeof(f.off), "%s", v);
+        else if (strcmp(n, "depends") == 0) snprintf(f.depends, sizeof(f.depends), "%s", v);
+        else if (strcmp(n, "type") == 0) snprintf(f.type, sizeof(f.type), "%s", v);
+        else if (strcmp(n, "min") == 0) snprintf(f.min, sizeof(f.min), "%s", v);
+        else if (strcmp(n, "max") == 0) snprintf(f.max, sizeof(f.max), "%s", v);
+        else if (strcmp(n, "step") == 0) snprintf(f.step, sizeof(f.step), "%s", v);
+        else if (strcmp(n, "default") == 0) snprintf(f.dflt, sizeof(f.dflt), "%s", v);
+        else if (strcmp(n, "suffix") == 0) snprintf(f.suffix, sizeof(f.suffix), "%s", v);
+        else if (strcmp(n, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
+            snprintf(f.req[f.nreq++], NP_FEAT_STR, "%s", v);
+        else if (strcmp(n, "description_on") == 0) {
+            size_t used = strlen(f.don);
+            snprintf(f.don + used, sizeof(f.don) - used, "%s%s", used ? "\n" : "", v);
+        } else if (strcmp(n, "choice") == 0 && f.nch < NP_FEAT_CH_MAX) {
+            // "value = label", split at the first = as "env = NAME=VALUE" is.
+            char val[NP_FEAT_STR], *lab = val, *eq;
+            snprintf(val, sizeof(val), "%s", v);
+            if ((eq = strchr(val, '='))) {
+                *eq = 0;
+                lab = eq + 1;
+                feat_trim_tail(val);
+                while (*lab == ' ' || *lab == '\t') lab++;
+            }
+            if (f.chlen + (int)strlen(val) + (int)strlen(lab) + 2 <= NP_FEAT_CH_BUF) {
+                memcpy(f.ch + f.chlen, val, strlen(val) + 1);
+                f.chlen += (int)strlen(val) + 1;
+                memcpy(f.ch + f.chlen, lab, strlen(lab) + 1);
+                f.chlen += (int)strlen(lab) + 1;
+                f.nch++;
+            }
         }
-        line[len] = 0;
-        while (feat_space(*k)) k++;
-        if (*k == '#' || !(eq = strchr(k, '='))) continue;
-        *eq = 0;
-        v = eq + 1;
-        feat_trim(k);
-        while (feat_space(*v)) v++;
-        feat_trim(v);
-        if (!*v) continue;
-        if (strcmp(k, "key") == 0) feat_set(f.key, sizeof(f.key), v, &bad);
-        else if (strcmp(k, "label") == 0) feat_set(f.label, sizeof(f.label), v, &bad);
-        else if (strcmp(k, "description") == 0) feat_set(f.desc, sizeof(f.desc), v, &bad);
-        else if (strcmp(k, "section") == 0) feat_set(f.section, sizeof(f.section), v, &bad);
-        else if (strcmp(k, "on") == 0) feat_set(f.on, sizeof(f.on), v, &bad);
-        else if (strcmp(k, "off") == 0) feat_set(f.off, sizeof(f.off), v, &bad);
-        else if (strcmp(k, "depends") == 0) feat_set(f.depends, sizeof(f.depends), v, &bad);
-        else if (strcmp(k, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
-            feat_set(f.req[f.nreq++], NP_FEAT_STR, v, &bad);
-    }
-    fclose(fp);
-    if (bad) {
-        NP_WARN("plugins: %s has a value that's too long, ignored", path);
-        return;
     }
     if (!*f.on) snprintf(f.on, sizeof(f.on), "1");
     if (!*f.section) snprintf(f.section, sizeof(f.section), "dev");
-    if (!*f.key) {
-        NP_WARN("plugins: %s has no key, ignored", path);
-        return;
-    }
-    if (!feat_key_ok(f.key)) {
-        NP_WARN("plugins: %s has an invalid key %s, ignored", path, f.key);
-        return;
-    }
-    if (!*f.label) {
-        NP_WARN("plugins: %s has no label, ignored", path);
-        return;
-    }
-    if (strcmp(f.section, "dev") != 0) {
-        NP_WARN("plugins: %s is not in the dev section, ignored", path);
-        return;
-    }
-    if (feat_find(list, *count, f.key)) {
-        NP_WARN("plugins: %s repeats key %s, ignored", path, f.key);
-        return;
-    }
-    if (*count >= NP_FEAT_MAX) {
-        NP_WARN("plugins: %s is over the %d plugin limit, ignored", path, NP_FEAT_MAX);
-        return;
-    }
-    list[(*count)++] = f;
+    fc->list[fc->count++] = f;
+    return NULL;
+}
+
+static void feat_refused(const char *scope, const char *code, const char *detail, void *ctx) {
+    (void)ctx;
+    NP_WARN("plugins: %s refused, %s%s%s", scope, code, detail ? ":" : "", detail ? detail : "");
 }
 
 static int feat_load(const char *home, np_feat_t *list) {
+    const np_conf_sink_t sink = { feat_take, feat_refused, NULL };
+    feat_ctx_t fc = { list, 0, NULL };
     char dir[2048];
-    struct dirent *de;
-    DIR *d;
-    int count = 0;
-    char **names = NULL;
-    int nnames = 0;
 
     if (snprintf(dir, sizeof(dir), "%s/" NP_FEAT_DIR, home) >= (int)sizeof(dir)) return 0;
-    if ((d = opendir(dir))) {
-        while ((de = readdir(d))) {
-            char **grown;
-            if (de->d_name[0] == '.' || strchr(de->d_name, '\n')) continue;
-            if (!has_suffix(de->d_name, ".conf")) continue;
-            grown = realloc(names, (size_t)(nnames + 1) * sizeof(*names));
-            if (!grown) break;
-            names = grown;
-            names[nnames] = strdup(de->d_name);
-            if (!names[nnames]) break;
-            nnames++;
-        }
-        closedir(d);
-        for (int i = 1; i < nnames; i++)
-            for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
-                char *t = names[j - 1]; names[j - 1] = names[j]; names[j] = t;
-            }
-        for (int i = 0; i < nnames; i++) {
-            char path[4096];
-            if (snprintf(path, sizeof(path), "%s/%s", dir, names[i]) < (int)sizeof(path))
-                feat_read_file(path, list, &count);
-            free(names[i]);
-        }
-        free(names);
-    }
-
-    return count;
+    np_conf_read_dir(dir, NULL, NP_CONF_PLUGIN, &sink, &fc);
+    return fc.count;
 }
 
 static _Thread_local char g_feat_ready[NP_FEAT_MAX * (NP_FEAT_STR + 8) + 4] = "{}";
-static _Thread_local char g_feat_rows[NP_FEAT_MAX * (2 * (3 * NP_FEAT_STR + NP_FEAT_DESC + 64) + 32) + 4] = "[]";
+static _Thread_local char g_feat_rows[NP_FEAT_MAX *
+    (2 * (3 * NP_FEAT_STR + 2 * NP_FEAT_DESC + NP_FEAT_CH_BUF + 192) + 32) + 4] = "[]";
 static _Thread_local int  g_feat_ready_done;
 static _Thread_local int  g_feat_pinned;
+static _Thread_local char g_var_rows[8192] = "[]";
+static _Thread_local int  g_var_done;
 static void feat_build(void);
+static void var_build(void);
 
 static const char *marker_text(char c) {
     if (c == NP_FALLBACK_TOOL[0]) return g_fallback_tool;
@@ -271,6 +235,10 @@ static const char *marker_text(char c) {
     if (c == NP_READY[0] || c == NP_FEATS[0]) {
         if (!g_feat_ready_done) feat_build();
         return c == NP_READY[0] ? g_feat_ready : g_feat_rows;
+    }
+    if (c == NP_VARS[0]) {
+        if (!g_var_done) var_build();
+        return g_var_rows;
     }
     return NULL;
 }
@@ -402,6 +370,65 @@ static void feat_build(void) {
         if (!out_put(&rows, ",off:", 5) || !out_jsstr(&rows, list[i].off)) goto done;
         if (!out_put(&rows, ",dep:", 5) || !out_jsstr(&rows, list[i].depends)) goto done;
         if (!out_put(&rows, ",d:", 3) || !out_jsstr(&rows, list[i].desc)) goto done;
+        if (*list[i].don) {
+            char line[NP_FEAT_DESC];
+            const char *p = list[i].don;
+            int wrotel = 0;
+            if (!out_put(&rows, ",dn:[", 5)) goto done;
+            while (*p) {
+                const char *nl = strchr(p, '\n');
+                size_t len = nl ? (size_t)(nl - p) : strlen(p);
+                if (len >= sizeof(line)) len = sizeof(line) - 1;
+                memcpy(line, p, len);
+                line[len] = 0;
+                if (wrotel++ && !out_put(&rows, ",", 1)) goto done;
+                if (!out_jsstr(&rows, line)) goto done;
+                p = nl ? nl + 1 : p + strlen(p);
+            }
+            if (!out_put(&rows, "]", 1)) goto done;
+        }
+        if (*list[i].type) {
+            if (!out_put(&rows, ",ty:", 4) || !out_jsstr(&rows, list[i].type)) goto done;
+        }
+        // Declared values serve a dropdown and a snapping slider alike.
+        if (list[i].nch) {
+            const char *p = list[i].ch;
+            if (!out_put(&rows, ",ch:[", 5)) goto done;
+            for (int c = 0; c < list[i].nch; c++) {
+                const char *val = p; p += strlen(p) + 1;
+                const char *lab = p; p += strlen(p) + 1;
+                if (c && !out_put(&rows, ",", 1)) goto done;
+                if (!out_put(&rows, "{v:", 3) || !out_jsstr(&rows, val)) goto done;
+                if (!out_put(&rows, ",l:", 3) || !out_jsstr(&rows, *lab ? lab : val)) goto done;
+                if (!out_put(&rows, "}", 1)) goto done;
+            }
+            if (!out_put(&rows, "]", 1)) goto done;
+            // One of the declared values, so it stays a string the slider can match.
+            if (*list[i].dflt) {
+                if (!out_put(&rows, ",df:", 4) || !out_jsstr(&rows, list[i].dflt)) goto done;
+            }
+        } else if (strcmp(list[i].type, "slider") == 0) {
+            // Validated at load, so %g here only reformats numbers already parsed.
+            double mn = 0, mx = 0, step = 0, dflt = 0;
+            char nums[128];
+            int nlen;
+            mn = conf_dbl(list[i].min);
+            mx = conf_dbl(list[i].max);
+            nlen = snprintf(nums, sizeof(nums), ",mn:%g,mx:%g", mn, mx);
+            if (nlen < 0 || nlen >= (int)sizeof(nums) || !out_put(&rows, nums, (size_t)nlen))
+                goto done;
+            if (conf_num(list[i].step) && (step = conf_dbl(list[i].step), 1)) {
+                nlen = snprintf(nums, sizeof(nums), ",st:%g", step);
+                if (nlen < 0 || !out_put(&rows, nums, (size_t)nlen)) goto done;
+            }
+            if (conf_num(list[i].dflt) && (dflt = conf_dbl(list[i].dflt), 1)) {
+                nlen = snprintf(nums, sizeof(nums), ",df:%g", dflt);
+                if (nlen < 0 || !out_put(&rows, nums, (size_t)nlen)) goto done;
+            }
+            if (*list[i].suffix) {
+                if (!out_put(&rows, ",sf:", 4) || !out_jsstr(&rows, list[i].suffix)) goto done;
+            }
+        }
         if (!out_put(&rows, "}", 1)) goto done;
     }
     if (!out_put(&ready, "}", 1) || !out_put(&rows, "]", 1)) goto done;
@@ -421,6 +448,197 @@ void np_webpatch_set_features(const char *ready, const char *rows) {
     snprintf(g_feat_rows, sizeof(g_feat_rows), "%s", rows ? rows : "[]");
     g_feat_ready_done = 1;
     g_feat_pinned = 1;
+}
+
+// Runner variants are declared in the support directory's variants/*.conf and assembled by
+// compat_run.sh at launch.
+#define NP_VAR_MAX  24
+#define NP_VAR_STR  192
+
+typedef struct {
+    char name[NP_VAR_STR];
+    char label[NP_VAR_STR];
+    char variant[NP_VAR_STR];
+    char src[1024];
+    char dst[NP_VAR_STR];
+} np_var_t;
+
+#define NP_VAR_TOOLS_MAX 8
+static _Thread_local char g_var_tool[NP_VAR_TOOLS_MAX][NP_TOOL_NAME_MAX];
+static _Thread_local char g_var_build[NP_VAR_TOOLS_MAX][NP_TOOL_NAME_MAX];
+static _Thread_local char g_var_arch[NP_VAR_TOOLS_MAX][NP_TOOL_NAME_MAX];
+static _Thread_local size_t g_var_tools;
+
+void np_webpatch_set_tool_builds(const char *const *names, const char *const *builds,
+                                 const char *const *archs, size_t count) {
+    g_var_tools = 0;
+    for (size_t i = 0; i < count && g_var_tools < NP_VAR_TOOLS_MAX; i++) {
+        if (!names[i] || !*names[i] || !builds[i] || !*builds[i]) continue;
+        if (!is_tool_name(names[i]) || !is_tool_name(builds[i])) continue;
+        snprintf(g_var_tool[g_var_tools], NP_TOOL_NAME_MAX, "%s", names[i]);
+        snprintf(g_var_build[g_var_tools], NP_TOOL_NAME_MAX, "%s", builds[i]);
+        snprintf(g_var_arch[g_var_tools], NP_TOOL_NAME_MAX, "%s",
+                 archs && archs[i] ? archs[i] : "");
+        g_var_tools++;
+    }
+}
+
+// A directory named for an architecture, such as x86_64-windows, only serves the tool
+// that runs that architecture
+static const char *var_arch_of(const char *dir) {
+    static const char *const known[] = { "x86_64", "aarch64", "i386", "arm64ec" };
+    for (size_t i = 0; i < sizeof(known) / sizeof(*known); i++) {
+        size_t n = strlen(known[i]);
+        if (strncmp(dir, known[i], n) == 0 && (dir[n] == 0 || dir[n] == '-'))
+            return known[i];
+    }
+    return NULL;
+}
+
+static int var_is_dir(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+// Every directory in src that holds a file, relative to src; "" is src itself. Bounded,
+// since this runs while Steam waits for a page.
+static int var_dirs(const char *root, const char *rel, char dirs[][NP_VAR_STR], int n,
+                    int depth) {
+    char path[2048];
+    struct dirent *de;
+    DIR *d;
+    int files = 0;
+
+    if (depth > 3 || n >= 16) return n;
+    if (snprintf(path, sizeof(path), "%s%s%s", root, *rel ? "/" : "", rel) >= (int)sizeof(path))
+        return n;
+    if (!(d = opendir(path))) return n;
+    while ((de = readdir(d))) {
+        char sub[NP_VAR_STR];
+        if (de->d_name[0] == '.') continue;
+        if (snprintf(sub, sizeof(sub), "%s%s%s", rel, *rel ? "/" : "", de->d_name)
+            >= (int)sizeof(sub)) continue;
+        if (snprintf(path, sizeof(path), "%s/%s", root, sub) >= (int)sizeof(path)) continue;
+        if (var_is_dir(path)) n = var_dirs(root, sub, dirs, n, depth + 1);
+        else files = 1;
+    }
+    closedir(d);
+    if (files && n < 16) snprintf(dirs[n++], NP_VAR_STR, "%s", rel);
+    return n;
+}
+
+typedef struct { np_var_t *list; int count; const char *home; } var_ctx_t;
+
+static const char *var_take(const np_conf_rec_t *rec, void *ctx, const char **detail) {
+    var_ctx_t *vc = ctx;
+    np_var_t v;
+    const char *n, *val;
+    int it = 0;
+
+    (void)detail;
+    for (int i = 0; i < vc->count; i++)
+        if (strcmp(vc->list[i].name, rec->id) == 0) return NP_CONF_DUP_ID;
+    if (vc->count >= NP_VAR_MAX) return NP_CONF_LIMIT;
+    memset(&v, 0, sizeof(v));
+    snprintf(v.name, sizeof(v.name), "%s", rec->id);
+    while (np_conf_next(rec, &it, &n, &val)) {
+        if (strcmp(n, "label") == 0) snprintf(v.label, sizeof(v.label), "%s", val);
+        else if (strcmp(n, "variant") == 0) snprintf(v.variant, sizeof(v.variant), "%s", val);
+        else if (strcmp(n, "src") == 0) snprintf(v.src, sizeof(v.src), "%s", val);
+        else if (strcmp(n, "dst") == 0) snprintf(v.dst, sizeof(v.dst), "%s", val);
+    }
+    if (!*v.label) snprintf(v.label, sizeof(v.label), "%s", v.name);
+    if (!*v.variant) snprintf(v.variant, sizeof(v.variant), "%s", v.name);
+    if (v.src[0] != '/') {
+        char abs[1024];
+        if (snprintf(abs, sizeof(abs), "%s/%s", vc->home, v.src) >= (int)sizeof(abs))
+            return NP_CONF_LIMIT;
+        snprintf(v.src, sizeof(v.src), "%s", abs);
+    }
+    vc->list[vc->count++] = v;
+    return NULL;
+}
+
+static void var_refused(const char *scope, const char *code, const char *detail, void *ctx) {
+    (void)ctx;
+    NP_WARN("variants: %s refused, %s%s%s", scope, code, detail ? ":" : "", detail ? detail : "");
+}
+
+static int var_load(const char *home, np_var_t *list) {
+    const np_conf_sink_t sink = { var_take, var_refused, NULL };
+    var_ctx_t vc = { list, 0, home };
+    char dir[2048];
+
+    np_support_path(dir, sizeof(dir), home, "variants");
+    np_conf_read_dir(dir, NULL, NP_CONF_VARIANT, &sink, &vc);
+    return vc.count;
+}
+
+static void var_build(void) {
+    const char *home = getenv("HOME");
+    np_var_t list[NP_VAR_MAX];
+    np_out_t rows = { 0 };
+    int n, wrote = 0;
+
+    g_var_done = 1;
+    if (!home) return;
+    n = var_load(home, list);
+    if (!out_put(&rows, "[", 1)) goto done;
+    for (int i = 0; i < n; i++) {
+        char dirs[16][NP_VAR_STR];
+        int ndirs = var_dirs(list[i].src, "", dirs, 0, 0);
+        int fits = 0;
+
+        if (!ndirs) {
+            NP_WARN("variants: %s holds no files at %s, not offered",
+                    list[i].name, list[i].src);
+            continue;
+        }
+        if (wrote && !out_put(&rows, ",", 1)) goto done;
+        if (!out_put(&rows, "{k:", 3) || !out_jsstr(&rows, list[i].name)) goto done;
+        if (!out_put(&rows, ",l:", 3) || !out_jsstr(&rows, list[i].label)) goto done;
+        if (!out_put(&rows, ",v:", 3) || !out_jsstr(&rows, list[i].variant)) goto done;
+        if (!out_put(&rows, ",t:[", 4)) goto done;
+        for (size_t t = 0; t < g_var_tools; t++) {
+            char runner[2048];
+            int lands = 0, named = 0, matched = 0;
+            np_support_path(runner, sizeof(runner), home, "runners");
+            for (int j = 0; j < ndirs; j++) {
+                char at[2048];
+                const char *arch = var_arch_of(dirs[j]);
+                if (snprintf(at, sizeof(at), "%s/crossover-%s/CrossOver/%s%s%s", runner,
+                             g_var_build[t], list[i].dst, *dirs[j] ? "/" : "", dirs[j])
+                    >= (int)sizeof(at)) continue;
+                if (arch) named = 1;
+                if (!var_is_dir(at)) continue;
+                lands = 1;
+                // A FEX runner holds both slots, so a directory landing is not enough:
+                // arm64 Wine reads the aarch64 one and never looks at the other.
+                if (arch && strcmp(arch, g_var_arch[t]) == 0) matched = 1;
+            }
+            if (!lands || (named && !matched)) continue;
+            if (fits++ && !out_put(&rows, ",", 1)) goto done;
+            if (!out_jsstr(&rows, g_var_tool[t])) goto done;
+        }
+        if (!out_put(&rows, "]}", 2)) goto done;
+        wrote++;
+        if (!fits)
+            NP_LOG("variants: %s fits no installed runner, so it is offered nowhere",
+                   list[i].name);
+    }
+    if (!out_put(&rows, "]", 1)) goto done;
+    if (rows.len < sizeof(g_var_rows))
+        snprintf(g_var_rows, sizeof(g_var_rows), "%.*s", (int)rows.len, rows.buf);
+    else
+        NP_WARN("variants: descriptors are too large to render, ignoring them");
+done:
+    free(rows.buf);
+}
+
+// A check supplies the list rather than reading whatever an install happens to carry
+void np_webpatch_set_variants(const char *rows) {
+    snprintf(g_var_rows, sizeof(g_var_rows), "%s", rows ? rows : "[]");
+    g_var_done = 1;
 }
 
 static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
@@ -536,7 +754,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXPanel .MSCXRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
     ".MSCXPanel .MSCXRowDesc{flex-wrap:wrap;align-items:center}" \
     ".MSCXPanel .MSCXRowDesc>:last-child{flex-basis:100%}" \
-    ".MSCXNoBottomGap{margin-bottom:0}\""
+    ".MSCXNoBottomGap{margin-bottom:0}" \
+    ".MSCXKeys{margin-top:5px;opacity:.75}\""
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
@@ -545,9 +764,70 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
     "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,s=L.s," \
-    "MSCXReady=" NP_READY ",MSCXFeat=" NP_FEATS "," \
+    "MSCXReady=" NP_READY ",MSCXFeat=" NP_FEATS ",MSCXVar=" NP_VARS "," \
+    /* A toggle parent is satisfied by its on value; one that holds a value, such as a
+       dropdown or a slider, by holding one at all rather than sitting on Default. */ \
     "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
-    "return!!p&&n<32&&MSCXReady[k]!==0&&g(k)===p.on&&(!p.dep||on1(p.dep,n+1))}," \
+    "return!!p&&n<32&&MSCXReady[k]!==0&&(p.ty?\"\"!==g(k):g(k)===p.on)" \
+    "&&(!p.dep||on1(p.dep,n+1))}," \
+    /* How deep the chain of parents runs, so a sub-option of a sub-option indents twice. */ \
+    "dl=(k,n)=>{const p=MSCXFeat.find(x=>x.k===k);" \
+    "return n<32&&p&&p.dep?dl(p.dep,n+1):n}," \
+    "vav=MSCXVar.filter(v=>v.t.indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0)," \
+    "vcur=g(\"NOTPROTON_RUNNER_VARIANT\").split(\"+\").filter(x=>x)," \
+    "vids=vav.map(v=>v.v).filter((d,i,a)=>a.indexOf(d)===i)," \
+    "vset=(id,val)=>{const keep=vcur.filter(x=>MSCXVar.some(v=>v.k===x&&v.v!==id))," \
+    "all=(val?keep.concat([val]):keep).filter((x,i,a)=>a.indexOf(x)===i).sort();" \
+    "s([[\"NOTPROTON_RUNNER_VARIANT\",all.join(\"+\")]])}," \
+    "V=id=>{const vd=vav.filter(v=>v.v===id)," \
+    "sel=vcur.find(x=>vd.some(v=>v.k===x))||\"\";" \
+    "return(0," RT ".jsx)(" BARREL ".m," \
+    "{label:id+npL(\" Variant\",\" 变体\",\" Variant\")," \
+    "layout:\"inline\"," \
+    "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
+    ".concat(vd.map(v=>({data:v.k,label:v.l})))," \
+    "selectedOption:sel,onChange:x=>vset(id,x.data)},id)}," \
+    "TD=(k,l,on,off,d,lv)=>{const rd=MSCXReady[k]!==0;" \
+    "return(0," RT ".jsx)(" BARREL ".y4," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined,checked:rd&&g(k)===on," \
+    "indentLevel:lv||undefined," \
+    "onChange:v=>s([[k,v?on:(off||\"\")]])},k)}," \
+    /* A row that holds one of its declared values, with Default for none of them. */ \
+    "TC=(k,l,d,lv,ch)=>{const rd=MSCXReady[k]!==0;" \
+    "return(0," RT ".jsx)(" BARREL ".m," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined,layout:\"inline\"," \
+    "indentLevel:lv||undefined," \
+    "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
+    ".concat(ch.map(c=>({data:c.v,label:c.l})))," \
+    "selectedOption:g(k),onChange:x=>s([[k,x.data]])},k)}," \
+    /* The handle follows the drag on its own; only the finished value is written, and
+       the declared default is written as no value at all so launch options stay clean. */ \
+    "TS=(k,l,d,lv,mn,mx,st,df,sf)=>{const rd=MSCXReady[k]!==0,v=g(k)," \
+    "n=\"\"===v||isNaN(+v)?(undefined===df?mn:df):+v;" \
+    "return(0," RT ".jsx)(" BARREL ".d3," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined," \
+    "indentLevel:lv||undefined," \
+    "value:n,min:mn,max:mx,step:st||undefined,showValue:true," \
+    "valueSuffix:sf||undefined," \
+    "onChangeComplete:x=>{const r=+(+x).toFixed(4);" \
+    "s([[k,r===df?\"\":String(r)]])}},k)}," \
+    /* The same slider snapped to declared values: the control steps by notch and hands
+       back the value itself, so a key holding none of them starts at the default. Its
+       own notches are two unlabelled bookends, and ours are spread after them. */ \
+    "TL=(k,l,d,lv,ch,df)=>{const rd=MSCXReady[k]!==0,V=ch.map(c=>c.v),v=g(k)," \
+    "n=V.indexOf(v)>=0?v:(undefined===df?V[0]:df);" \
+    "return(0," RT ".jsx)(" BARREL ".gz," \
+    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:d||undefined," \
+    "indentLevel:lv||undefined," \
+    "rValues:V,value:n,showValue:true," \
+    "notchCount:V.length,notchTicksVisible:true," \
+    "notchLabels:ch.map((c,i)=>({notchIndex:i,label:c.l}))," \
+    "renderValue:x=>{const c=ch.find(y=>y.v===x);return c?c.l:String(x)}," \
+    "onChangeComplete:x=>s([[k,x===df?\"\":x]])},k)}," \
     "T=(ks,l,on,off,d,r)=>{const rd=r!==0;" \
     "return(0," RT ".jsx)(" BARREL ".Yh," \
     "{className:\"MSCXRow\"+(d?\" MSCXRowDesc\":\"\")," \
@@ -605,9 +885,19 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),\"1\",\"\")," \
     "T([\"NOTPROTON_DISABLE_HIDRAW\"],npL(\"Disable hidraw\",\"停用 hidraw\",\"Disable hidraw\"),\"1\",\"\")" \
     "]},\"ctl\")," \
-    "(MSCXFeat.length?(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
-    "children:MSCXFeat.filter(f=>!f.dep||on1(f.dep))" \
-    ".map(f=>T([f.k],f.l,f.on,f.off,f.d,MSCXReady[f.k]))},\"dev\"):null)" \
+    "(MSCXFeat.length||vids.length?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
+    "children:vids.map(V).concat(MSCXFeat.filter(f=>!f.dep||on1(f.dep))" \
+    /* Lines a plugin only wants read once the row is on, such as the keys that
+       change the rest of a feature in game, sit under its description while it is. */ \
+    ".map(f=>{const lv=f.dep?dl(f.dep,1):0," \
+    "d=f.dn&&on1(f.k)?(0," RT ".jsxs)(\"div\",{children:[f.d]" \
+    ".concat(f.dn.map((x,i)=>(0," RT ".jsx)(\"div\"," \
+    "{className:\"MSCXKeys\",children:x},i)))}):f.d;" \
+    "return\"choice\"===f.ty?TC(f.k,f.l,d,lv,f.ch)" \
+    ":\"slider\"===f.ty?(f.ch?TL(f.k,f.l,d,lv,f.ch,f.df)" \
+    ":TS(f.k,f.l,d,lv,f.mn,f.mx,f.st,f.df,f.sf))" \
+    ":TD(f.k,f.l,f.on,f.off,d,lv)}))})},\"dev\"):null)" \
     "]})})}"
 
 #define NP_CX_OPTIONS_CAPTURE(RT, BARREL) \

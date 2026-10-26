@@ -19,7 +19,7 @@ for (const form of Object.keys(FORMS)) {
     const tool = fex ? 'notproton-fex' : 'notproton-rosetta';
     const nodes = opts =>
       walk(P({ details: details(opts + ' %command%', { strCompatToolName: tool }) }));
-    const toggles = ns => ns.filter(x => x.type === 'Toggle').map(x => x.props.label);
+    const toggles = ns => ns.filter(x => x.type === 'Checkbox').map(x => x.props.label);
     const backends = ns => ns.find(x => x.type === 'Dropdown').props.rgOptions.map(o => o.data);
 
     let r = nodes('');
@@ -53,7 +53,7 @@ for (const form of Object.keys(FORMS)) {
     written.length = 0;
     const kept = 'ROSETTA_ADVERTISE_AVX=1 CX_GRAPHICS_BACKEND=dxvk';
     r = nodes(kept);
-    r.find(x => x.type === 'Toggle' && x.props.label === 'Metal HUD').props.onChange(true);
+    r.find(x => x.type === 'Checkbox' && x.props.label === 'Metal HUD').props.onChange(true);
     t.ok(written[written.length - 1].opts.includes('ROSETTA_ADVERTISE_AVX=1'),
          'editing another row keeps the AVX2 value');
     failed += t.failed;

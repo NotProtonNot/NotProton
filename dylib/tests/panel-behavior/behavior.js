@@ -10,7 +10,7 @@ for (const form of Object.keys(FORMS)) {
   const { render: P, written } = panel(emit, form);
   const t = runner(form);
   const nodes = opts => walk(P({ details: details(opts + ' %command%') }));
-  const toggles = ns => ns.filter(x => x.type === 'Toggle').map(x => x.props.label);
+  const toggles = ns => ns.filter(x => x.type === 'Checkbox').map(x => x.props.label);
   const sections = ns => ns.filter(x => x.type === 'Section').map(x => x.props.label.split(' ')[0]);
   const last = () => (written.length ? written[written.length - 1].opts : '');
 
@@ -78,7 +78,7 @@ for (const form of Object.keys(FORMS)) {
 
   const root = P({ details: details('') });
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
-  const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
+  const classes = nodes('').filter(x => x.type === 'Checkbox').map(x => x.props.className);
   t.ok(classes.length === 7 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
   const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
@@ -121,16 +121,106 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!hasZero(P({ details: details('') })),
        'no plugins renders nothing rather than a literal 0');
 
+  // Lines that only appear once the row is on.
+  const KEYS = JSON.stringify([
+    { k: 'NOTPROTON_HUD', l: 'Hud', on: '1', off: '', dep: '', d: 'Draws a HUD.',
+      dn: ['Ctrl+Opt+H hides it.', 'Ctrl+Opt+G draws the graph.'] },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PK } = panel(emit, form, undefined, { feats: KEYS });
+  const hud = opts => walk(PK({ details: details(opts) }))
+    .find(x => x.props && x.props.label === 'Hud');
+  const text = n => typeof n === 'string' ? n
+    : !n || typeof n !== 'object' ? ''
+    : [].concat(n.props && n.props.children).map(text).join('|');
+
+  t.ok(hud('').props.description === 'Draws a HUD.',
+       'an off row shows its description alone');
+  t.ok(text(hud('NOTPROTON_HUD=1 %command%').props.description)
+       === 'Draws a HUD.|Ctrl+Opt+H hides it.|Ctrl+Opt+G draws the graph.',
+       'and an on row shows the extra lines under it, in order');
+
+  // A slider given values instead of a range snaps to them, and a row can hang off one
+  // holding a value at all -- which is what makes a sub-option of a dropdown or slider work.
+  const LADDER = JSON.stringify([
+    { k: 'NOTPROTON_ENV_HZ', l: 'Target', on: '1', off: '', dep: '', d: 'Rate.',
+      ty: 'slider', df: 'off',
+      ch: [{ v: 'off', l: 'Off' }, { v: '30', l: '30 Hz' }, { v: '60', l: '60 Hz' }] },
+    { k: 'NOTPROTON_ENV_MODE', l: 'Mode', on: '1', off: '', dep: 'NOTPROTON_ENV_HZ', d: '',
+      ty: 'choice', ch: [{ v: 'attime', l: 'Scheduled' }] },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PL, written: lwritten } = panel(emit, form, undefined, { feats: LADDER });
+  const lnodes = opts => walk(PL({ details: details(opts) }));
+  const snap = opts => lnodes(opts).find(x => x.type === 'SnapSlider');
+
+  t.ok(snap('') !== undefined, 'a slider with values renders as a snapping slider');
+  t.ok(snap('').props.rValues.join(',') === 'off,30,60',
+       'stepping through the declared values');
+  t.ok(snap('').props.value === 'off', 'an unset key sits at the declared default');
+  t.ok(snap('NOTPROTON_ENV_HZ=60 %command%').props.value === '60',
+       'a launch option picks its notch');
+  // vr() logs an error of its own and jumps to the first value when it cannot find one.
+  t.ok(snap('NOTPROTON_ENV_HZ=57 %command%').props.value === 'off',
+       'a value that is not on the ladder falls back to the default');
+  t.ok(snap('').props.renderValue('30') === '30 Hz', 'the notch reads as its label');
+  t.ok(snap('').props.notchCount === 3 && snap('').props.notchTicksVisible === true,
+       'a tick is drawn for every value');
+  t.ok(snap('').props.notchLabels.map(n => n.notchIndex + ':' + n.label).join(',')
+       === '0:Off,1:30 Hz,2:60 Hz',
+       'each tick carries its own label, matched by notch index');
+  lwritten.length = 0;
+  snap('').props.onChangeComplete('30');
+  t.ok(lwritten[0].opts === 'NOTPROTON_ENV_HZ=30 %command%', 'moving it writes the value');
+  lwritten.length = 0;
+  snap('NOTPROTON_ENV_HZ=30 %command%').props.onChangeComplete('off');
+  t.ok(lwritten[0].opts === '', 'and sliding back to the default clears the key');
+
+  const labels = opts => lnodes(opts).filter(x => x.props && x.props.label)
+                                     .map(x => x.props.label);
+  t.ok(!labels('').includes('Mode'),
+       'a row under a value-holding parent is hidden while that parent is on Default');
+  t.ok(labels('NOTPROTON_ENV_HZ=30 %command%').includes('Mode'),
+       'and appears once the parent holds a value');
+  t.ok(lnodes('NOTPROTON_ENV_HZ=30 %command%')
+         .find(x => x.props.label === 'Mode').props.indentLevel === 1,
+       'indented under it');
+  // The parent is itself hidden with FrameScope off, so the child cannot outlive it.
+  const DEEP = JSON.stringify([
+    { k: 'NOTPROTON_HUD', l: 'Hud', on: '1', off: '', dep: '', d: '' },
+    { k: 'NOTPROTON_ENV_HZ', l: 'Target', on: '1', off: '', dep: 'NOTPROTON_HUD', d: '',
+      ty: 'slider', df: 'off',
+      ch: [{ v: 'off', l: 'Off' }, { v: '30', l: '30 Hz' }] },
+    { k: 'NOTPROTON_ENV_MODE', l: 'Mode', on: '1', off: '', dep: 'NOTPROTON_ENV_HZ', d: '',
+      ty: 'choice', ch: [{ v: 'attime', l: 'Scheduled' }] },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PD } = panel(emit, form, undefined, { feats: DEEP });
+  const dlabels = opts => walk(PD({ details: details(opts) }))
+    .filter(x => x.props && x.props.label).map(x => x.props.label);
+  t.ok(!dlabels('NOTPROTON_ENV_HZ=30 %command%').includes('Target')
+       && !dlabels('NOTPROTON_ENV_HZ=30 %command%').includes('Mode'),
+       'a whole chain stays hidden while the row at the top of it is off');
+  t.ok(dlabels('NOTPROTON_HUD=1 NOTPROTON_ENV_HZ=30 %command%').includes('Mode'),
+       'and the chain appears once the top is on');
+  t.ok(walk(PD({ details: details('NOTPROTON_HUD=1 NOTPROTON_ENV_HZ=30 %command%') }))
+         .find(x => x.props.label === 'Mode').props.indentLevel === 2,
+       'a sub-option of a sub-option indents twice');
+
   const { render: PF } = panel(emit, form, undefined,
                               { ready: '{"NOTPROTON_ALPHA":0}', feats: FEATS });
   const fnodes = opts => walk(PF({ details: details(opts) }));
   const frows = opts => fnodes(opts).filter(x => x.type === 'Toggle');
+  const grows = opts => fnodes(opts).filter(x => x.type === 'Checkbox');
   const flabels = opts => frows(opts).map(x => x.props.label);
   const alpha = o => frows(o).find(x => x.props.label.startsWith('Alpha'));
 
   t.ok(fnodes('').filter(x => x.type === 'Section')
          .some(x => x.props.label === 'Developer'),
        'plugins add a Developer section');
+  // y4 is the theme's ToggleField, the switch Steam's own settings rows use. Yh is
+  // DialogCheckbox, which nothing in Steam's UI renders any more.
+  t.ok(frows('').length > 0 && frows('').every(x => x.type === 'Toggle'),
+       'Developer rows render as toggles, not checkboxes');
+  t.ok(grows('').length > 0,
+       'the Graphics and Controllers rows keep the checkbox they always had');
   t.ok(!flabels('').some(l => l.startsWith('Beta:')),
        'a dependent row stays hidden while its parent is off');
   t.ok(flabels('NOTPROTON_BETA=1 %command%').some(l => l.startsWith('Beta:')),
@@ -147,10 +237,25 @@ for (const form of Object.keys(FORMS)) {
        'only that one is disabled');
   t.ok(frows('').find(x => x.props.label === 'Beta').props.disabled === false,
        'a plugin with no readiness entry stays enabled');
-  t.ok(frows('').find(x => x.props.label === 'Beta').props.className === 'MSCXRow MSCXRowDesc',
-       'a row with a description opts out of the row-direction rule');
-  t.ok(frows('').find(x => x.props.label.startsWith('Alpha')).props.className === 'MSCXRow',
-       'a row without one keeps the plain row class');
+  // The ToggleField lays out label, description and the switch itself, so a Developer
+  // row carries no class of ours -- the row CSS used to wrap the control onto its own
+  // line, which is what made the switch sit under the description.
+  t.ok(frows('').every(x => x.props.className === undefined),
+       'Developer rows bring no styling of their own');
+  // Without this provider BARREL.m resolves to a bare fallback that ignores layout,
+  // description and the fixed-width container -- which is what TODO 19 was chasing.
+  t.ok(fnodes('').some(x => x.type === 'FieldProvider'),
+       'the Developer section is wrapped in the field provider');
+  t.ok(!nodes('').some(x => x.type === 'FieldProvider'),
+       'and the Graphics dropdowns are left outside it');
+  // A row that only exists while its parent is on is a sub-setting, and the field
+  // indents it the way Steam's own nested settings are shown.
+  t.ok(frows('NOTPROTON_BETA=1 %command%')
+         .find(x => x.props.label.startsWith('Beta:')).props.indentLevel === 1,
+       'a dependent row is indented under its parent');
+  t.ok(frows('NOTPROTON_BETA=1 %command%')
+         .find(x => x.props.label === 'Beta').props.indentLevel === undefined,
+       'and a top-level row is not');
   t.ok(frows('').find(x => x.props.label === 'Beta').props.description === 'Why Beta.',
        "a plugin's description reaches the row");
   t.ok(frows('').find(x => x.props.label.startsWith('Alpha')).props.description === undefined,
@@ -180,6 +285,105 @@ for (const form of Object.keys(FORMS)) {
   t.ok(walk(PB({ details: details('') })).filter(x => x.type === 'Toggle')
          .every(x => x.props.disabled !== true),
        'readiness never disables a built-in row');
+
+  // Runner variants are a single choice per dimension, so they render as a dropdown
+  // rather than as toggles: nothing has to keep two rows from being on at once, and the
+  // value written is the one compat_run.sh resolves.
+  const VARS = JSON.stringify([
+    { k: 'one', l: 'Build one', v: 'Backend', t: ['notproton'] },
+    { k: 'two', l: 'Build two', v: 'Backend', t: ['notproton', 'notproton-26.3'] },
+    { k: 'three', l: 'Build three', v: 'Loader', t: ['notproton'] },
+    { k: 'elsewhere', l: 'For another runner', v: 'Backend', t: ['notproton-26.3'] },
+  ]).replace(/"(\w+)":/g, '$1:');
+
+  const { render: PV, written: vwritten } = panel(emit, form, undefined, { vars: VARS });
+  const vnodes = opts => walk(PV({ details: details(opts) }));
+  // The picker is the DropDownField itself: it lays out its own label, so there is no
+  // wrapper row to look inside.
+  const vpicks = opts => vnodes(opts).filter(
+    x => x.type === 'Dropdown' && typeof x.props.label === 'string'
+         && x.props.label.endsWith(' Variant'));
+  const vdrop = (opts, id) =>
+    vpicks(opts).find(x => x.props.label === id + ' Variant');
+  const vwrite = (opts, id, data) => {
+    vwritten.length = 0;
+    vdrop(opts, id).props.onChange({ data });
+    return vwritten.length ? vwritten[0].opts : null;
+  };
+
+  t.ok(vpicks('').length === 2, 'one row per variant the tool has builds for');
+  t.ok(vpicks('').map(x => x.props.label).join(',') === 'Backend Variant,Loader Variant',
+       'each row is labelled for the variant it chooses');
+  // Inside the provider the field lays itself out, so none of the hard spaces or row
+  // CSS that stood in for that survives.
+  t.ok(vpicks('').every(x => !/\u00a0/.test(x.props.label)),
+       'with no hard spaces faking a gap');
+  t.ok(vpicks('').every(x => x.props.layout === 'inline'),
+       'the label sits beside the control rather than above it');
+  t.ok(vpicks('').every(x => x.props.strClassName === undefined),
+       'and no row class faking a flex row');
+  t.ok(vnodes('').filter(x => x.type === 'Section')
+         .some(x => x.props.label === 'Developer'),
+       'variants alone are enough for a Developer section');
+  t.ok(vdrop('', 'Backend').props.rgOptions.map(o => o.data).join(',') === ',one,two',
+       'it offers the default and that variant’s builds, in descriptor order');
+  t.ok(vdrop('', 'Backend').props.rgOptions[1].label === 'Build one',
+       'a build is named by its label, not its key');
+  t.ok(!vdrop('', 'Backend').props.rgOptions.some(o => o.data === 'elsewhere'),
+       'a variant that does not fit this tool is not offered');
+  t.ok(vdrop('', 'Backend').props.rgOptions[0].label === 'Default',
+       'the empty choice is named for what it means: whatever the runner ships');
+  t.ok(vdrop('', 'Loader').props.rgOptions.map(o => o.data).join(',') === ',three',
+       'the other variant offers only its own');
+  t.ok(vdrop('', 'Backend').props.selectedOption === '',
+       'nothing selected shows as the default');
+  t.ok(vdrop('NOTPROTON_RUNNER_VARIANT=two %command%', 'Backend')
+         .props.selectedOption === 'two',
+       'a launch option selects its variant');
+  t.ok(vdrop('NOTPROTON_RUNNER_VARIANT=two %command%', 'Loader')
+         .props.selectedOption === '',
+       'and leaves another variant alone');
+
+  t.ok(vwrite('', 'Backend', 'one') === 'NOTPROTON_RUNNER_VARIANT=one %command%',
+       'picking one writes the launch option');
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=one %command%', 'Backend', '') === '',
+       'picking the default clears it');
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=one %command%', 'Backend', 'two')
+         === 'NOTPROTON_RUNNER_VARIANT=two %command%',
+       'picking another build of the same variant replaces it');
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=one %command%', 'Loader', 'three')
+         === 'NOTPROTON_RUNNER_VARIANT=one+three %command%',
+       'a second variant joins rather than replaces');
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=one+three %command%', 'Backend', '')
+         === 'NOTPROTON_RUNNER_VARIANT=three %command%',
+       'clearing one variant keeps the other');
+  // compat_run.sh sorts the names before naming the runner, so the panel sorts too and
+  // one combination cannot end up with two runner directories.
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=three %command%', 'Backend', 'one')
+         === 'NOTPROTON_RUNNER_VARIANT=one+three %command%',
+       'the written order is sorted, whichever order it was picked in');
+  // A build that exists but belongs to another runner is kept: switching the compat tool
+  // back has to restore it.
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=elsewhere %command%', 'Loader', 'three')
+         === 'NOTPROTON_RUNNER_VARIANT=elsewhere+three %command%',
+       'a build for another runner is left in place');
+  // One no descriptor exists for is not: it can never be chosen or restored here, and
+  // leaving it in made every later choice resolve to nothing at all.
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=missing %command%', 'Backend', 'one')
+         === 'NOTPROTON_RUNNER_VARIANT=one %command%',
+       'a name with no descriptor is dropped');
+  t.ok(vwrite('NOTPROTON_RUNNER_VARIANT=elsewhere %command%', 'Backend', 'one')
+         === 'NOTPROTON_RUNNER_VARIANT=one %command%',
+       'and so is another runner\u2019s build of the variant being set');
+
+  t.ok(!css[0].props.children.includes('MSCXRowPick'),
+       'no hand-rolled picker row styling survives');
+  // layout:"inline" does not reach this field in the compat page -- without MSCXRow's
+  // display:flex the label stacks above the control -- so the flex row has to stay.
+  t.ok(/\.MSCXRow\{[^}]*display:flex/.test(css[0].props.children),
+       'the row keeps the flex that actually puts label and control on one line');
+  t.ok(!sections(nodes('')).includes('Developer'),
+       'no variants and no descriptors still means no Developer section');
 
   const { render: S } = panel(emit, form, undefined, { names: ['o', 't'] });
   const shadowed = walk(S({ details: details('CX_GRAPHICS_BACKEND=dxmt %command%') }));
