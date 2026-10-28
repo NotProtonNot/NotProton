@@ -834,8 +834,14 @@ plan_hidden_controllers() {
   owned=""
   [ ! -f "$controllers_file" ] || owned=$(sed -n '/^[0-9a-f]\{4\}\/[0-9a-f]\{4\}$/p' "$controllers_file")
   in_registry=""
-  [ ! -f "$WINEPREFIX/system.reg" ] || in_registry=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
-    | sed -n 's/^\[system\\\\controlset001\\\\services\\\\winebus\\\\devices\\\\\([0-9a-f]\{4\}\/[0-9a-f]\{4\}\)\].*/\1/p' \
+  [ ! -f "$WINEPREFIX/system.reg" ] || in_registry=$(LC_ALL=C awk '
+    /^\[/ {
+      line = tolower($0)
+      prefix = "[system\\\\controlset001\\\\services\\\\winebus\\\\devices\\\\"
+      if (index(line, prefix) != 1) next
+      id = substr(line, length(prefix) + 1, 9)
+      if (id ~ /^[0-9a-f]{4}\/[0-9a-f]{4}$/ && substr(line, length(prefix) + 10, 1) == "]") print id
+    }' "$WINEPREFIX/system.reg" \
     | sort -u)
   if [ "$NOTPROTON_RAW_CONTROLLERS" != "1" ]; then
     controllers_wanted=$(ids_without "$(controller_ids "$SDL_GAMECONTROLLER_IGNORE_DEVICES")" \
@@ -860,9 +866,9 @@ plan_disable_hidraw() {
   hidraw_value=""
   [ -n "$STEAM_COMPAT_DATA_PATH" ] && [ ! -L "$hidraw_file" ] || return 1
   hidraw_set=""
-  [ ! -f "$WINEPREFIX/system.reg" ] || hidraw_set=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
-    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\services\\\\winebus]") == 1; next }
-      s && $0 == "\"disablehidraw\"=dword:00000001" { print 1; exit }')
+  [ ! -f "$WINEPREFIX/system.reg" ] || hidraw_set=$(LC_ALL=C awk '
+      /^\[/ { s = index(tolower($0), "[system\\\\controlset001\\\\services\\\\winebus]") == 1; next }
+      s && tolower($0) == "\"disablehidraw\"=dword:00000001" { print 1; exit }' "$WINEPREFIX/system.reg")
   if [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ]; then
     [ -n "$hidraw_set" ] || hidraw_value='"DisableHidraw"=dword:00000001'
   elif [ -f "$hidraw_file" ] && [ -n "$hidraw_set" ]; then
@@ -879,19 +885,24 @@ winebus_lines() {
 plan_logpixels() {
   dpi_value=""
   new_dpi=""
+  dpi_registry=/dev/null
+  [ ! -f "$WINEPREFIX/user.reg" ] || dpi_registry="$WINEPREFIX/user.reg"
   read -r retina_was dpi <<EOF
-$({ [ ! -f "$WINEPREFIX/user.reg" ] || tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/user.reg"; } | awk '
+$(LC_ALL=C awk '
   /^\[/ { s = 0
-    if (index($0, "[software\\\\wine\\\\mac driver]") == 1) s = 1
-    else if (index($0, "[control panel\\\\desktop]") == 1) s = 2
+    line = tolower($0)
+    if (index(line, "[software\\\\wine\\\\mac driver]") == 1) s = 1
+    else if (index(line, "[control panel\\\\desktop]") == 1) s = 2
     next }
+  s { $0 = tolower($0) }
   s == 1 && $0 ~ /^"retinamode"="[yt1]/ { r = 1 }
   s == 2 && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { d = substr($0, 19) }
-  END { print r + 0, d }')
+  END { print r + 0, d }' "$dpi_registry")
 EOF
-  [ -n "$dpi" ] || [ ! -f "$WINEPREFIX/system.reg" ] || dpi=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
-    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\hardware profiles\\\\current\\\\software\\\\fonts]") == 1; next }
-      s && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { print substr($0, 19); exit }')
+  [ -n "$dpi" ] || [ ! -f "$WINEPREFIX/system.reg" ] || dpi=$(LC_ALL=C awk '
+      /^\[/ { s = index(tolower($0), "[system\\\\controlset001\\\\hardware profiles\\\\current\\\\software\\\\fonts]") == 1; next }
+      s { $0 = tolower($0) }
+      s && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { print substr($0, 19); exit }' "$WINEPREFIX/system.reg")
   dpi=$((0x${dpi:-0}))
   [ "$dpi" -gt 0 ] || dpi=96
   if [ "$NOTPROTON_RETINA" = "1" ]; then
@@ -1594,7 +1605,7 @@ install_legacycompat() {
   mkdir -p "$dst" || return 0
   for f in "$src"/*; do
     [ -f "$f" ] || continue
-    b=$(basename "$f")
+    b=${f##*/}
     cmp -s "$f" "$dst/$b" && continue
     if cp -c -f "$f" "$dst/$b" 2>> "$log"; then
       echo "=== installed legacycompat/$b ===" >> "$log" 2>&1 || true
@@ -1689,9 +1700,10 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   fi
   for f in "$prefix_steam"/*.dll "$prefix_steam"/*.so "$prefix_steam"/*.exe; do
     [ -f "$f" ] || continue
+    base=${f##*/}
     case " $bridge_files " in
-      *" $(basename "$f") "*) ;;
-      *) rm -f "$f" && echo "=== pruned stale $(basename "$f") ===" >> "$log" 2>&1 ;;
+      *" $base "*) ;;
+      *) rm -f "$f" && echo "=== pruned stale $base ===" >> "$log" 2>&1 ;;
     esac
   done
   # Needed for CEG 'platform survey'.
@@ -1816,14 +1828,20 @@ $icon_arg
 PLIST
 
 # Invokes macOS Game Mode
-for f in "$wine_unix"/*; do
-  [ -e "$f" ] || continue
-  base=${f##*/}
-  case "$base" in
-    wine|wine.app) continue ;;
-  esac
-  ln -sfn "$f" "$loader_macos/$base"
-done
+# One ln process creates the same links in the private staging bundle. The
+# subshell keeps its argument list separate from the game's launch arguments.
+(
+  set --
+  for f in "$wine_unix"/*; do
+    [ -e "$f" ] || continue
+    base=${f##*/}
+    case "$base" in
+      wine|wine.app) continue ;;
+    esac
+    set -- "$@" "$f"
+  done
+  [ "$#" -eq 0 ] || ln -sfn "$@" "$loader_macos/"
+)
 ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
 if [ -x "$loader_macos/wine" ]; then
   WINELOADER="$loader_app/Contents/MacOS/wine"
@@ -1865,13 +1883,26 @@ bundle_listing() {
     fi
   done)
 }
+bundle_matches() {
+  # The existing native helper checks content, file modes, names and symlink
+  # targets on every launch. Older helpers and read failures retain the shell
+  # comparison; no cached state is used to skip validation.
+  if [ -x "$np_support/appinfo" ]; then
+    if "$np_support/appinfo" --same-bundle "$1" "$2" 2>/dev/null; then
+      return 0
+    else
+      case "$?" in 1) return 1 ;; esac
+    fi
+  fi
+  [ "$(bundle_listing "$1")" = "$(bundle_listing "$2")" ]
+}
 install_bundle() (
   exec 7>> "$loader_root/.lock"
   /usr/bin/lockf -s -t 30 7 || exit 1
   same=""
   for b in "$loader_root"/*.app; do
     if [ "$b" = "$loader_app" ] && [ -d "$b" ] && [ ! -L "$b" ] &&
-       [ "$(bundle_listing "$b")" = "$(bundle_listing "$loader_stage")" ]; then
+       bundle_matches "$b" "$loader_stage"; then
       same=1
     fi
   done

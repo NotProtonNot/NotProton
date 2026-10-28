@@ -10,6 +10,45 @@
 import Foundation
 
 let args = CommandLine.arguments
+
+// Compare the live bundle trees in one process. Do not follow symlinks or use
+// timestamps as evidence of equal file contents. Directory modes, like those
+// in compat_run.sh's bundle_listing, do not affect the comparison.
+func sameBundle(_ left: String, _ right: String) throws -> Bool {
+    let fm = FileManager.default
+    let a = try fm.attributesOfItem(atPath: left)
+    let b = try fm.attributesOfItem(atPath: right)
+    guard let kind = a[.type] as? FileAttributeType,
+          kind == b[.type] as? FileAttributeType else { return false }
+    switch kind {
+    case .typeSymbolicLink:
+        return try fm.destinationOfSymbolicLink(atPath: left)
+            == fm.destinationOfSymbolicLink(atPath: right)
+    case .typeDirectory:
+        let names = try fm.contentsOfDirectory(atPath: left)
+        guard Set(names) == Set(try fm.contentsOfDirectory(atPath: right)) else { return false }
+        for name in names {
+            guard try sameBundle((left as NSString).appendingPathComponent(name),
+                                 (right as NSString).appendingPathComponent(name)) else { return false }
+        }
+        return true
+    case .typeRegular:
+        guard (a[.posixPermissions] as? NSNumber) == (b[.posixPermissions] as? NSNumber) else { return false }
+        return fm.contentsEqual(atPath: left, andPath: right)
+    default:
+        // Unknown entries go through the shell implementation instead.
+        throw CocoaError(.fileReadUnknown)
+    }
+}
+
+if args.count == 4, args[1] == "--same-bundle" {
+    do {
+        exit(try sameBundle(args[2], args[3]) ? 0 : 1)
+    } catch {
+        exit(2)
+    }
+}
+
 let platforms = args.count == 3 && args[2] == "--platforms"
 guard args.count == 3, platforms || UInt32(args[2]) != nil else {
     fputs("usage: appinfo <appinfo.vdf> <appid>|--platforms\n", stderr)
