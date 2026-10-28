@@ -598,6 +598,9 @@ struct StatusView: View {
         if row.copy == .ready || row.copy == .unpatched {
             let names = tools.filter { $0.build == row.buildID }.map(\.display)
             lines.append(contentsOf: names)
+            if let d3dm = D3DMetalTools.d3dMetalVersion(forBuild: row.buildID) {
+                lines.append(String(localized: "DirectX 12 (D3DMetal) \(d3dm)"))
+            }
         }
         if row.copy == .none, row.licensed == false { lines.append("\(String(localized: "Open CrossOver to activate it.")) \(CrossOverLicense.trialUnsupported)") }
         if let install = row.install {
@@ -643,6 +646,53 @@ struct StatusView: View {
                 help: String(localized: "Copy \(row.title) again."),
                 isEnabled: status.canInstall && row.canSetUp
             ) { Task { await status.requestCompatibilityTool(from: install, replacingExisting: true) } })
+
+            let currentVer = D3DMetalTools.d3dMetalVersion(forBuild: row.buildID)
+            let cached = D3DMetalTools.cachedVersions(forBuild: row.buildID)
+
+            // 1-Click update from auto-discovered mounted Evaluation Environment / DMG (if not already cached)
+            if let discovered = D3DMetalTools.discoverSource(),
+               discovered.version != currentVer,
+               !cached.contains(discovered.version) {
+                items.append(StatusAction(
+                    label: String(localized: "Update DirectX 12 to GPTK \(discovered.version)"),
+                    help: String(localized: "Upgrade CrossOver's DirectX 12 engine from Apple's Game Porting Toolkit directly in 1 click."),
+                    isEnabled: status.canInstall
+                ) { Task { await status.updateD3DMetalFromDiscovered(for: row.buildID, source: discovered) } })
+            }
+
+            // 1-Click switch to any other cached versions
+            for ver in cached where ver != currentVer {
+                items.append(StatusAction(
+                    label: String(localized: "Switch DirectX 12 to \(ver)"),
+                    help: String(localized: "Switch immediately to cached DirectX 12 / D3DMetal \(ver) in 1 click."),
+                    isEnabled: status.canInstall
+                ) { Task { await status.switchToCachedD3DMetal(version: ver, for: row.buildID) } })
+            }
+
+            // 1-Click restore stock CrossOver D3DMetal (e.g. 3.0)
+            if let install, D3DMetalTools.canRestoreStock(forBuild: row.buildID, install: install) {
+                let stockVer = D3DMetalTools.stockD3DMetalVersion(for: install) ?? "Stock"
+                if !cached.contains(stockVer) {
+                    items.append(StatusAction(
+                        label: String(localized: "Restore Stock DirectX 12 (\(stockVer))"),
+                        help: String(localized: "Restore the stock DirectX 12 engine bundled with CrossOver in 1 click."),
+                        isEnabled: status.canInstall
+                    ) { Task { await status.restoreStockD3DMetal(for: row.buildID, install: install) } })
+                }
+            }
+
+            items.append(StatusAction(
+                label: String(localized: "Select Apple GPTK Folder\u{2026}"),
+                help: String(localized: "Manually select an Apple Game Porting Toolkit disk image or folder to update DirectX 12."),
+                isEnabled: status.canInstall
+            ) { Task { await status.updateD3DMetal(for: row.buildID) } })
+
+            items.append(StatusAction(
+                label: String(localized: "Clear Shader Cache"),
+                help: String(localized: "Clear all DirectX 12 / D3DMetal shader caches."),
+                isEnabled: status.isIdle
+            ) { Task { await status.clearShaderCache() } })
         }
         let shown = install?.bundle
             ?? (row.copy == .none ? nil : SupportPaths.runnerRoot(forBuild: row.buildID))

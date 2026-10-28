@@ -284,6 +284,75 @@ final class SystemStatus {
         await refresh()
     }
 
+    func updateD3DMetal(for buildID: String) async {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Update")
+        panel.message = String(localized: "Select Apple's Game Porting Toolkit (GPTK) disk image (.dmg) or mounted volume to update DirectX 12.")
+
+        guard panel.runModal() == .OK, let picked = panel.url else { return }
+
+        let runnerRoot = SupportPaths.clonedRoot(forBuild: buildID)
+        await perform(from: String(localized: "Updating DirectX 12 (D3DMetal)")) { _ in
+            let prefixes = PrefixStore.all()
+            let result = try D3DMetalTools.update(runnerRoot: runnerRoot, from: picked, prefixes: prefixes)
+            AppLog.note("D3DMetal updated for build \(buildID) from \(picked.path(percentEncoded: false))")
+            var message = String(localized: "Updated DirectX 12 (D3DMetal) successfully.")
+            if result.prefixesUpdated > 0 {
+                message += " " + String(localized: "MetalFX prepared for \(result.prefixesUpdated) prefix(es).")
+            }
+            return message
+        }
+    }
+
+    func updateD3DMetalFromDiscovered(for buildID: String, source: D3DMetalTools.DiscoveredSource) async {
+        let runnerRoot = SupportPaths.clonedRoot(forBuild: buildID)
+        await perform(from: String(localized: "Updating DirectX 12 to GPTK \(source.version)")) { _ in
+            let prefixes = PrefixStore.all()
+            let result = try D3DMetalTools.update(runnerRoot: runnerRoot, from: source.url, prefixes: prefixes)
+            AppLog.note("D3DMetal auto-updated for build \(buildID) to \(source.version)")
+            var message = String(localized: "Updated DirectX 12 to GPTK \(source.version) successfully.")
+            if result.prefixesUpdated > 0 {
+                message += " " + String(localized: "MetalFX prepared for \(result.prefixesUpdated) prefix(es).")
+            }
+            return message
+        }
+    }
+
+    func switchToCachedD3DMetal(version: String, for buildID: String) async {
+        await perform(from: String(localized: "Switching DirectX 12 to \(version)")) { _ in
+            let result = try D3DMetalTools.switchToCachedVersion(version, forBuild: buildID)
+            AppLog.note("D3DMetal switched to cached version \(version) for build \(buildID)")
+            var message = String(localized: "Switched DirectX 12 to \(version) successfully.")
+            if result.prefixesUpdated > 0 {
+                message += " " + String(localized: "MetalFX prepared for \(result.prefixesUpdated) prefix(es).")
+            }
+            return message
+        }
+    }
+
+    func restoreStockD3DMetal(for buildID: String, install: CrossOverInstall) async {
+        let stockVer = D3DMetalTools.stockD3DMetalVersion(for: install) ?? ""
+        await perform(from: String(localized: "Restoring stock DirectX 12")) { _ in
+            try D3DMetalTools.restoreStock(forBuild: buildID, install: install)
+            AppLog.note("D3DMetal restored to stock for build \(buildID)")
+            return String(localized: "Restored stock DirectX 12 (\(stockVer)) successfully.")
+        }
+    }
+
+    func clearShaderCache() async {
+        await perform(from: String(localized: "Clearing shader cache")) { _ in
+            let count = try D3DMetalTools.clearAllShaderCaches()
+            if count > 0 {
+                return String(localized: "Cleared \(count) DirectX 12 shader cache(s).")
+            } else {
+                return String(localized: "No DirectX 12 shader caches found.")
+            }
+        }
+    }
+
     func chooseSteam() async {
         let current = SupportPaths.Steam.app
         let panel = NSOpenPanel()
