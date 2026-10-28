@@ -229,7 +229,23 @@ func getHexGuidForUID(uid: String, input: Bool) -> String? {
     return String(guid)
 }
 
-func getUIDFromCoreAudioDefaultDevice(input: Bool) -> String? {
+func getStringProperty(device obj: AudioObjectID, sel: AudioObjectPropertySelector) -> String? {
+    var addr = AudioObjectPropertyAddress(
+        mSelector: sel,
+        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+    )
+    var string: Unmanaged<CFString>?
+    var stringSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.stride)
+    let status = AudioObjectGetPropertyData(obj, &addr, 0, nil, &stringSize, &string)
+    guard status == noErr, let string else {
+        print("[ERROR] Audiowatch: Cannot get \(sel) for audio device")
+        return nil
+    }
+    let cfString = string.takeRetainedValue()
+    return String(cfString)
+}
+
+func getUIDAndNameFromCoreAudioDefaultDevice(input: Bool) -> (uid: String, name: String)? {
     // yay CoreAudio APIs. First let's ask for the Device
     var addr = AudioObjectPropertyAddress(
         mSelector: input
@@ -238,7 +254,7 @@ func getUIDFromCoreAudioDefaultDevice(input: Bool) -> String? {
 
     var dev = AudioDeviceID(kAudioObjectUnknown)
     var devSize = UInt32(MemoryLayout<AudioObjectID>.stride)
-    var status = AudioObjectGetPropertyData(
+    let status = AudioObjectGetPropertyData(
         AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &devSize, &dev)
     if (status != noErr) || (dev == kAudioDeviceUnknown) {
         print("[ERROR] Audiowatch: Unable to get the current audio device")
@@ -246,30 +262,31 @@ func getUIDFromCoreAudioDefaultDevice(input: Bool) -> String? {
     }
 
     //Now let's ask for the UID
-    var uid: Unmanaged<CFString>?
-    var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.stride)
-
-    addr.mSelector = kAudioDevicePropertyDeviceUID
-    status = AudioObjectGetPropertyData(dev, &addr, 0, nil, &uidSize, &uid)
-    guard status == noErr, let unmanagedUID = uid else {
-        print("[ERROR] Audiowatch: Cannot get uid for audio device")
+    guard let uid = getStringProperty(device: dev, sel: kAudioDevicePropertyDeviceUID) else {
+        print("[ERROR] Audiowatch: Unable to get the current audio device uid")
         return nil
     }
-    let cfUID = unmanagedUID.takeRetainedValue()
-    if verboseLogging { print("[DEBUG] audiowatch: uid is: \(cfUID)") }
-    return String(cfUID)
+
+    guard let name = getStringProperty(device: dev, sel: kAudioObjectPropertyName) else {
+        print("[ERROR] Audiowatch: Unable to get the current audio device name")
+        return nil
+    }
+
+    print("audiowatch: Setting \(name) as the Default \(input ? "input": "output") device")
+
+    if verboseLogging {
+        print("[DEBUG] audiowatch: uid is: \(uid)")
+        print("[DEBUG] audiowatch: uid is: \(name)")
+    }
+    return (uid, name)
 }
 
 func handleAudioDeviceChange(input: Bool) {
-    let uidForDefaultDevice = getUIDFromCoreAudioDefaultDevice(input: input)
-    if verboseLogging {
-        print(
-            "uid from main for \(input ? "Mic":"Speakers") is: \(uidForDefaultDevice ?? "Nothing???")"
-        )
-    }
-
-    guard let uid = uidForDefaultDevice else {
-        print("[ERROR] audioWatch: Couldn't unwrap uidForDefaultDevice")
+    guard
+        let (uid, name) = getUIDAndNameFromCoreAudioDefaultDevice(
+            input: input)
+    else {
+        //Error was already printed in calling function
         return
     }
 
@@ -285,7 +302,7 @@ func handleAudioDeviceChange(input: Bool) {
 
     if deviceState != .active {
         print(
-            "[ERROR] audiowatch: device isn't active in wine. Not swapping to it. Make sure it was connected during wine launch"
+            "[ERROR] audiowatch: device \(name) isn't active in wine. Not swapping to it. Make sure it was connected during wine launch"
         )
         return
     }
