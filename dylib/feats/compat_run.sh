@@ -2149,6 +2149,13 @@ np_terminated=0
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
 open_pid=$!
 /usr/bin/caffeinate -d -i -w "$open_pid" >> "$log" 2>&1 &
+np_audiowatch="$np_support/audiowatch"
+if [ -x "$np_audiowatch" ]; then
+  env -u DYLD_INSERT_LIBRARIES -u DYLD_LIBRARY_PATH -u DYLD_FRAMEWORK_PATH \
+    "$np_audiowatch" -w "$open_pid" >> "$log" 2>&1 &
+else
+  echo "=== no audiowatch, audio stays on the launch-time device ===" >> "$log" 2>&1 || true
+fi
 status=0
 wait "$open_pid" || status=$?
 echo "=== game exited status=$status, killing wine prefix ===" >> "$log" 2>&1 || true

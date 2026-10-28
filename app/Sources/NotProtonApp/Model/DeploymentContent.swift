@@ -159,6 +159,7 @@ enum DeploymentContent {
     static func files(
         payload: InstallPayload.Located, bridgePayload: BridgePayload.Located,
         app: URL, bridge: URL, signatures: URL, fonts: URL, overlayShim: URL, iconmaker: URL, appinfo: URL,
+        audiowatch: URL,
         compatTools: URL, tools: [InstalledTool], runners: URL
     ) -> [File] {
         var files = [
@@ -167,6 +168,7 @@ enum DeploymentContent {
             File(source: payload.overlayShim, destination: overlayShim, name: "overlay-shim.dylib"),
             File(source: payload.iconmaker, destination: iconmaker, name: "iconmaker", executable: true),
             File(source: payload.appinfo, destination: appinfo, name: "appinfo", executable: true),
+            File(source: payload.audiowatch, destination: audiowatch, name: "audiowatch", executable: true),
         ]
         files += payload.signatures.map {
             File(source: $0, destination: signatures.appending(path: $0.lastPathComponent),
@@ -208,7 +210,8 @@ enum DeploymentContent {
                               bridge: SupportPaths.bridge, signatures: SupportPaths.signatures,
                               fonts: SupportPaths.fonts,
                               overlayShim: SupportPaths.overlayShim, iconmaker: SupportPaths.iconmaker,
-                              appinfo: SupportPaths.appinfo, compatTools: SupportPaths.Steam.compatTools,
+                              appinfo: SupportPaths.appinfo, audiowatch: SupportPaths.audiowatch,
+                              compatTools: SupportPaths.Steam.compatTools,
                               tools: CompatToolList.installed(), runners: SupportPaths.runners)
             return try inspect(files: files, bundled: Build(version: version, builtAt: payload.builtAt),
                                installed: readBuild(at: record(beside: SupportPaths.deployedVersion)),
