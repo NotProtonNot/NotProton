@@ -1269,20 +1269,20 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".concat((f.ev||[]).map(e=>[e.slice(0,e.indexOf(\"=\")),v?e.slice(e.indexOf(\"=\")+1):\"\"])),1)," \
     "TP=(f,d,lv)=>{const rd=MSCXReady[f.k]!==0;" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
-    "{label:rd?f.l:f.l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?f.l:f.l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&npHas(f)," \
     "indentLevel:lv||undefined," \
     "onChange:v=>npSet(f,v)},f.k)}," \
     "TD=(k,l,on,off,d,lv)=>{const rd=MSCXReady[k]!==0;" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&G(k)===on," \
     "indentLevel:lv||undefined," \
     "onChange:v=>s([[k,v?on:(off||\"\")]])},k)}," \
     /* A row that holds one of its declared values, with Default for none of them. */ \
     "TC=(k,l,d,lv,ch,pe)=>{const rd=MSCXReady[k]!==0,v=G(k);" \
     "return(0," RT ".jsx)(" BARREL ".m," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,layout:\"inline\"," \
     "indentLevel:lv||undefined," \
     "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
@@ -1293,7 +1293,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "TS=(k,l,d,lv,mn,mx,st,df,sf,pe)=>{const rd=MSCXReady[k]!==0,v=G(k)," \
     "n=!rd||\"\"===v.trim()||!isFinite(+v)?(undefined===df?mn:df):+v;" \
     "return(0," RT ".jsx)(" BARREL ".d3," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined," \
     "indentLevel:lv||undefined," \
     "value:n,min:mn,max:mx,step:st||undefined,showValue:true," \
@@ -1306,7 +1306,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "TL=(k,l,d,lv,ch,df,pe)=>{const rd=MSCXReady[k]!==0,V=ch.map(c=>c.v),v=G(k)," \
     "n=rd&&V.indexOf(v)>=0?v:(undefined===df?V[0]:df);" \
     "return(0," RT ".jsx)(" BARREL ".gz," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined," \
     "indentLevel:lv||undefined," \
     "rValues:V,value:n,showValue:true," \
@@ -1393,7 +1393,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"0\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
     "ours&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
-    "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let games read controllers directly (May break Steam Input. Not recommended)\"," \
+    "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let Games Read Controllers Directly (May break Steam Input. Not recommended)\"," \
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"))," \
     "T(\"NOTPROTON_DISABLE_HIDRAW\",npL(\"Disable hidraw\",\"停用 hidraw\",\"Disattiva hidraw\"))" \

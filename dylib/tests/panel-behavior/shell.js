@@ -13,7 +13,7 @@ const TOGGLES = {
   'MSync': 'WINEMSYNC',
   'High Resolution': 'NOTPROTON_RETINA',
   'Advertise AVX2 to Rosetta': 'ROSETTA_ADVERTISE_AVX',
-  'Let games read controllers directly (May break Steam Input. Not recommended)': 'NOTPROTON_RAW_CONTROLLERS',
+  'Let Games Read Controllers Directly (May break Steam Input. Not recommended)': 'NOTPROTON_RAW_CONTROLLERS',
   'Disable hidraw': 'NOTPROTON_DISABLE_HIDRAW',
 };
 const ON_UNLESS_0 = { ROSETTA_ADVERTISE_AVX: true };

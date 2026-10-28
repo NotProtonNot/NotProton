@@ -29,7 +29,7 @@ for (const form of Object.keys(FORMS)) {
       assert(nodes.some(n => n.props.label === t('Graphics', '图形', 'Grafica')));
       assert(nodes.some(n => n.props.label === t('Controllers', '控制器', 'Controller')));
       const raw = nodes.find(n => n.props.label === t(
-        'Let games read controllers directly (May break Steam Input. Not recommended)',
+        'Let Games Read Controllers Directly (May break Steam Input. Not recommended)',
         '允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）',
         'Lascia che i giochi leggano direttamente i controller (può interferire con Steam Input, sconsigliato)'));
       assert(nodes.some(n => n.props.label === t('Disable hidraw', '停用 hidraw', 'Disattiva hidraw')));
@@ -59,7 +59,7 @@ for (const form of Object.keys(FORMS)) {
         ready: '{"NOTPROTON_X":0}', feats: '[{k:"NOTPROTON_X",l:"X",on:"1",off:"",dep:"",d:""}]' });
       const fnodes = walk(feats.render({ details: details('') }));
       assert(fnodes.some(n => n.props.label === t('Developer', '开发者', 'Developer')));
-      assert(fnodes.some(n => n.props.label === 'X' + t(' (not installed)', ' (未安装)', ' (not installed)')));
+      assert(fnodes.some(n => n.props.label === 'X' + t(' (Not Installed)', ' (未安装)', ' (Not Installed)')));
       raw.props.onChange(true);
       assert.equal(written.at(-1).opts, 'NOTPROTON_RAW_CONTROLLERS=1 CX_GRAPHICS_BACKEND=dxmt %command%');
       const hud = nodes.find(n => n.props.label === t('Metal HUD', 'Metal 性能监视器', 'Metal HUD'));
