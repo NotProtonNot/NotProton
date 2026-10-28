@@ -61,11 +61,9 @@ if verboseLogging {
 
 func getChildEnvironmentProcess() -> [String: String] {
     let environment = ProcessInfo.processInfo.environment
-    var filtered = environment.filter { (key, _) in
+    return environment.filter { (key, _) in
         !key.hasPrefix("DYLD_")
     }
-
-    return filtered
 }
 
 func runWineProcess(arguments args: [String]) -> (output: String, status: Int32)? {
@@ -81,10 +79,9 @@ func runWineProcess(arguments args: [String]) -> (output: String, status: Int32)
 
     do {
         try process.run()
-
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8) ?? ""
         return (output, process.terminationStatus)
 
@@ -130,7 +127,7 @@ func setRegistryDefaultValue(valueName: String, value: String) {
         print("[ERROR] audioWatch: Failed to set value_name (\(valueName) on wine")
         return
     }
-    print("audioWatch: Set default value on \(valueName)")
+    print("audioWatch: Set default value on \(valueName) : \(value)")
 }
 
 func getHexGuidForUID(uid: String, input: Bool) -> String? {
