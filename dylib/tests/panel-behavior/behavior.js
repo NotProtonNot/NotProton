@@ -80,7 +80,7 @@ for (const form of Object.keys(FORMS)) {
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
   t.ok(classes.length === 7 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
-  const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly (May break Steam Input. Not recommended)');
+  const raw = o => nodes(o).find(x => x.props.label === 'Let Games Read Controllers Directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
   written.length = 0;
@@ -139,7 +139,7 @@ for (const form of Object.keys(FORMS)) {
        'a parent at its off value does not count as on');
   t.ok(alpha('') && alpha('').props.disabled === true,
        'a plugin whose assets are missing renders disabled');
-  t.ok(alpha('').props.label.endsWith('(not installed)'),
+  t.ok(alpha('').props.label.endsWith('(Not Installed)'),
        'it says why it cannot be used');
   t.ok(alpha('NOTPROTON_ALPHA=1 %command%').props.checked === false,
        'a stale launch option does not show it as on');

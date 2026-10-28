@@ -812,7 +812,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "P=f=>{const rd=MSCXReady[f.k]!==0;" \
     "return(0," RT ".jsx)(" BARREL ".Yh," \
     "{className:\"MSCXRow\"+(f.d?\" MSCXRowDesc\":\"\")," \
-    "label:rd?f.l:f.l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "label:rd?f.l:f.l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:f.d||undefined," \
     "checked:rd&&G(f.k)===f.on," \
     "onChange:v=>s([[f.k,v?f.on:(f.off||\"\")]])},f.k)}," \
@@ -887,7 +887,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"0\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
-    "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let games read controllers directly (May break Steam Input. Not recommended)\"," \
+    "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let Games Read Controllers Directly (May break Steam Input. Not recommended)\"," \
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"))," \
     "T(\"NOTPROTON_DISABLE_HIDRAW\",npL(\"Disable hidraw\",\"停用 hidraw\",\"Disattiva hidraw\"))" \
