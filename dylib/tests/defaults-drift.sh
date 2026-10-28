@@ -72,12 +72,14 @@ panel_rosetta_backends=$(printf '%s\n' "$panel_src" | grep -oE 'x\.data!==\\"[a-
 c_backends="$(field values CX_GRAPHICS_BACKEND) $(field rosetta-values CX_GRAPHICS_BACKEND)"
 c_rosetta_backends=$(field rosetta-values CX_GRAPHICS_BACKEND)
 c_factors=$(field values DXMT_CONFIG)
+c_fps=$(field values D3DM_MAX_FPS)
 same "backends in defaults.c and compat_run.sh" "$c_backends" "$sh_backends"
 same "backends in defaults.c and the panel" "$c_backends" "$(panel_list B)"
 same "Rosetta-only backends in defaults.c and compat_run.sh" "$c_rosetta_backends" "$sh_rosetta_backends"
 same "Rosetta-only backends in defaults.c and the panel" "$c_rosetta_backends" "$panel_rosetta_backends"
 same "upscale factors in defaults.c and compat_run.sh" "$c_factors" "$sh_factors"
 same "upscale factors in defaults.c and the panel" "$c_factors" "$(panel_list U)"
+same "frame rate limits in defaults.c and the panel" "$c_fps" "$(panel_list M)"
 
 if [ "$fail" -ne 0 ]; then
     exit 1

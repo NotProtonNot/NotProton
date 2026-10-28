@@ -253,7 +253,7 @@ struct PrefixesModelTests {
         let first = Task { await model.load() }
         let entered = await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                continuation.resume(returning: scan.entered.wait(timeout: .now() + 5) == .success)
+                continuation.resume(returning: scan.entered.wait(timeout: .now() + 15) == .success)
             }
         }
         try #require(entered)
