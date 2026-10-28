@@ -1,31 +1,6 @@
 import CoreAudio
 import Foundation
 
-if ProcessInfo.processInfo.environment["AUDIOWATCH_DEBUG_ENV"] != nil {
-    let home = NSHomeDirectory()
-    let cx =
-        "\(home)/Library/Application Support/notproton/runners/crossover-27.0.0.41073-fex/CrossOver"
-    let pfx =
-        "\(home)/Library/Application Support/CrossOver/Bottles/Steam/drive_c/Program Files (x86)/Steam/steamapps/compatdata/2075800/pfx"
-
-    let wineEnv: [String: String] = [
-        "PATH": "\(cx)/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        "CX_ROOT": cx,
-        "CX_HOME": "\(home)/Library/Application Support/CrossOver",
-        "WINELOADER":
-            "\(home)/Library/Application Support/notproton/launchers/2075800/STAR WARS Zero Company™.app/Contents/MacOS/wine",
-        "WINESERVER": "\(cx)/bin/wineserver-x86",
-        "WINEPREFIX": pfx,
-        "WINEMSYNC": "1",
-        "WINEDEBUG": "err+all,fixme-all",
-        "WINEDLLPATH":
-            "\(pfx)/drive_c/Program Files (x86)/Steam:\(cx)/lib/wine/x86_64-windows:\(cx)/lib/wine/x86_64-unix",
-    ]
-    for (key, value) in wineEnv {
-        setenv(key, value, 1)
-    }
-}
-
 guard let gloader = ProcessInfo.processInfo.environment["WINELOADER"] else {
     print("WINELOADER isn't set in environment")
     exit(1)
