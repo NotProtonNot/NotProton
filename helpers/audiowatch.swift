@@ -92,8 +92,7 @@ func runWineProcess(arguments args: [String]) -> (output: String, status: Int32)
 }
 
 // This Byte ordering was using AI :)
-
-func getEndpointId(forGuidHex hex: String, input: Bool) -> String? {
+func buildGuid(forGuidHex hex: String) -> String? {
     let chars = Array(hex.uppercased())
     guard chars.count == 32, chars.allSatisfy(\.isHexDigit) else {
         print("[ERROR] audioWatch: guid \"\(hex)\" is not 32 hex digits")
@@ -110,8 +109,79 @@ func getEndpointId(forGuidHex hex: String, input: Bool) -> String? {
         bytes([8, 9]),  // Data4[0...1], in order
         bytes(Array(10...15)),  // Data4[2...7], in order
     ].joined(separator: "-")
+    return guid
+}
 
+func getEndpointId(forGuidHex hex: String, input: Bool) -> String? {
+
+    guard let guid = buildGuid(forGuidHex: hex) else {
+        return nil
+    }
     return "{0.0.\(input ? 1 : 0).00000000}.{\(guid)}"
+}
+
+enum WineAudioDeviceState: Int {
+    case active = 0x1
+    case disabled = 0x2
+    case notPresent = 0x4
+    case unplugged = 0x8
+}
+
+let mmKey = #"HKLM\Software\Microsoft\Windows\CurrentVersion\MMDevices\Audio"#
+
+func getToken(after sentinel: String, in s: String) -> Substring? {
+    let fields = s.split(whereSeparator: \.isWhitespace)
+    guard let i = fields.firstIndex(where: { $0 == sentinel }), i + 1 < fields.count
+    else { return nil }
+    return fields[i + 1]
+}
+
+func getDeviceState(forGuidHex: String, input: Bool) -> WineAudioDeviceState? {
+    guard let guid = buildGuid(forGuidHex: forGuidHex) else {
+        print("[ERROR] audiowatch: unable to build guid from provided hex guid")
+        return nil
+    }
+
+    let key = #"\#(mmKey)\\#(input ? "Capture" : "Render")\{\#(guid)}"#
+
+    let args: [String] = [
+        "reg", "query", key,
+        "/v", "DeviceState",
+    ]
+
+    let result = runWineProcess(arguments: args)
+    if verboseLogging {
+        print(
+            "[DEBUG] audioWatch: Output from runWineProcess: \n \(result?.output ?? "no output was captured")"
+        )
+    }
+
+    guard let result else {
+        print("[ERROR] audiowatch, wine couldn't start")
+        return nil
+    }
+
+    if result.status != 0 {
+        print("audiowatch: Device isn't available in mm")
+        return .notPresent
+    }
+    let output = result.output
+
+    // we try to parse the output DWORD here
+    guard var hexDigits = getToken(after: "REG_DWORD", in: output) else {
+        print("[ERROR] audiowatch: couldn't find REG_DWORD in output")
+        return nil
+    }
+
+    if hexDigits.lowercased().hasPrefix("0x") {
+        hexDigits = hexDigits.dropFirst(2)
+    }
+
+    guard let code = Int(hexDigits, radix: 16), let code = WineAudioDeviceState(rawValue: code)
+    else {
+        return nil
+    }
+    return code
 }
 
 let driverKey = #"HKCU\Software\Wine\Drivers\winecoreaudio.drv"#
@@ -149,21 +219,14 @@ func getHexGuidForUID(uid: String, input: Bool) -> String? {
     // trying to get GUID out of something like
     // guid    REG_BINARY    B7BDFD16E6EEF345B212B490F21956FB
 
-    guard let sentinelRange = output.range(of: "REG_BINARY") else {
+    guard let guid = getToken(after: "REG_BINARY", in: output) else {
+        print("[ERROR] audiowatch: couldn't find REG_BINARY in output")
         return nil
     }
-    var currentIndex = sentinelRange.upperBound
-    while currentIndex < output.endIndex && output[currentIndex].isWhitespace {
-        currentIndex = output.index(after: currentIndex)
-    }
-    if currentIndex == output.endIndex { return nil }
-    let wordStart = currentIndex
-    while currentIndex < output.endIndex && !output[currentIndex].isWhitespace {
-        currentIndex = output.index(after: currentIndex)
-    }
-    let guid = String(output[wordStart..<currentIndex])
+
     if verboseLogging { print("[DEBUG] audioWatch: extracted guid \(guid) from wine output") }
-    return guid
+
+    return String(guid)
 }
 
 func getUIDFromCoreAudioDefaultDevice(input: Bool) -> String? {
@@ -212,6 +275,18 @@ func handleAudioDeviceChange(input: Bool) {
 
     guard let hexGuid = getHexGuidForUID(uid: uid, input: input) else {
         print("[ERROR] audioWatch: couldn't extract hexGuid from output from wine")
+        return
+    }
+
+    guard let deviceState = getDeviceState(forGuidHex: hexGuid, input: input) else {
+        print("[ERROR] audiowatch: couldn't get the audio device state from wine")
+        return
+    }
+
+    if deviceState != .active {
+        print(
+            "[ERROR] audiowatch: device isn't active in wine. Not swapping to it. Make sure it was connected during wine launch"
+        )
         return
     }
 
