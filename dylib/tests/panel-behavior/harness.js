@@ -44,8 +44,15 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
   const body = expand(raw, { [f.react]: names[0], [f.barrel]: names[1] });
   const src = form === 'component' ? 'var ' + body.replace(/,$/, '') : body.replace(/;$/, '');
   const written = [];
+  // A file dialog answers synchronously with the next entry in `files`, and rejects like Steam's when there is none.
+  const dialogs = [], files = [];
   const SteamClient = {
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
+    System: { OpenFileDialog: q => {
+      dialogs.push(q);
+      const p = files.shift();
+      return { then: (f, r) => p === undefined ? r && r({ result: 2 }) : f(p) };
+    } },
   };
   const build = new Function(names[0], names[1], 'SteamClient', 'globalThis',
     src + '\nreturn { MSCXOpts, MSCXPick: typeof MSCXPick === "function" ? MSCXPick : null,' +
@@ -54,7 +61,7 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
   const { MSCXOpts, MSCXPick, MSCXToolQuery, MSCXDefaultsPage } =
     build(react, barrel, SteamClient, globals);
   return { render: MSCXOpts, pick: MSCXPick, toolQuery: MSCXToolQuery,
-           defaultsPage: MSCXDefaultsPage, written, globals };
+           defaultsPage: MSCXDefaultsPage, written, globals, dialogs, files };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the
