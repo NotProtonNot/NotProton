@@ -1,6 +1,5 @@
 import CoreAudio
 import Foundation
-import System
 
 if ProcessInfo.processInfo.environment["AUDIOWATCH_DEBUG_ENV"] != nil {
     let home = NSHomeDirectory()
@@ -162,7 +161,6 @@ func getDeviceState(forGuidHex: String, input: Bool) -> WineAudioDeviceState? {
     }
 
     if result.status != 0 {
-        print("audiowatch: Device isn't available in mm")
         return .notPresent
     }
     let output = result.output
@@ -272,11 +270,9 @@ func getUIDAndNameFromCoreAudioDefaultDevice(input: Bool) -> (uid: String, name:
         return nil
     }
 
-    print("audiowatch: Setting \(name) as the Default \(input ? "input": "output") device")
-
     if verboseLogging {
         print("[DEBUG] audiowatch: uid is: \(uid)")
-        print("[DEBUG] audiowatch: uid is: \(name)")
+        print("[DEBUG] audiowatch: name is: \(name)")
     }
     return (uid, name)
 }
@@ -350,7 +346,7 @@ while i < arguments.count {
         i += 1
     } else {
         print("[ERROR] Unknown argument: \(arg)")
-        print("Usage: audiowatch -w <pid> [--once]")
+        print("Usage: audiowatch [-w <pid>] [--once]")
         exit(1)
     }
 }
