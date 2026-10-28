@@ -42,6 +42,9 @@ struct SteamInstallerTests {
 
         let appinfo = root.appending(path: "appinfo")
         try FileManager.default.copyItem(at: dylib, to: appinfo)
+
+        let audiowatch = root.appending(path: "audiowatch")
+        try FileManager.default.copyItem(at: dylib, to: audiowatch)
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: root.appending(path: "run"))
         try Data("100\n".utf8).write(to: root.appending(path: "build-time"))
 
@@ -68,6 +71,7 @@ struct SteamInstallerTests {
         var overlayShim: URL { support.appending(path: "overlay-shim.dylib") }
         var iconmaker: URL { support.appending(path: "iconmaker") }
         var appinfo: URL { support.appending(path: "appinfo") }
+        var audiowatch: URL { support.appending(path: "audiowatch") }
         var deployedVersion: URL { support.appending(path: "dylib.version") }
         var backups: URL { support.appending(path: "backups") }
         var bridge: URL { support.appending(path: "bridge") }
@@ -116,6 +120,7 @@ struct SteamInstallerTests {
             overlayShim: fixture.overlayShim,
             iconmaker: fixture.iconmaker,
             appinfo: fixture.appinfo,
+            audiowatch: fixture.audiowatch,
             deployedVersion: fixture.deployedVersion,
             backups: fixture.backups,
             compatTools: fixture.work.appending(path: "compatibilitytools.d"),
@@ -621,7 +626,8 @@ struct SteamInstallerTests {
         let files = DeploymentContent.files(payload: fixture.payload, bridgePayload: bridge, app: fixture.app,
                                             bridge: fixture.bridge, signatures: fixture.signatures,
                                             fonts: fixture.fonts, overlayShim: fixture.overlayShim, iconmaker: fixture.iconmaker,
-                                            appinfo: fixture.appinfo, compatTools: work.appending(path: "compatibilitytools.d"),
+                                            appinfo: fixture.appinfo, audiowatch: fixture.audiowatch,
+                                            compatTools: work.appending(path: "compatibilitytools.d"),
                                             tools: tools, runners: runners)
         #expect(try files.allSatisfy { try $0.matches() })
     }
