@@ -21,7 +21,7 @@ for (const form of Object.keys(FORMS)) {
        'a shortcut renders the panel before a tool name reaches the page');
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 3, 'automatic shows seven toggles in three sections');
+  t.ok(toggles(r).length === 7 && sections(r).length === 4, 'automatic shows seven toggles in four sections');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
