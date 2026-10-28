@@ -73,7 +73,7 @@ DEPS := $(OBJS:.o=.d)
         featcheck featstagecheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
-        appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
+        appinfo audiowatch helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
         compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck launch-shell activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
@@ -561,10 +561,20 @@ $(APPINFO): helpers/appinfo.swift
 	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) -o $@ $<
 	@echo "==> Built $@"
 
-helpers-install: $(ICONMAKER) $(APPINFO)
+AUDIOWATCH := $(OUT_DIR)/audiowatch
+
+audiowatch: $(AUDIOWATCH)
+
+$(AUDIOWATCH): helpers/audiowatch.swift
+	@mkdir -p $(OUT_DIR)
+	swiftc -O -target $(ARCH)-apple-macos$(MIN_VER) -o $@ $<
+	@echo "==> Built $@"
+
+helpers-install: $(ICONMAKER) $(APPINFO) $(AUDIOWATCH)
 	$(call install_atomically,$(ICONMAKER),$(SUPPORT_DIR)/iconmaker)
 	$(call install_atomically,$(APPINFO),$(SUPPORT_DIR)/appinfo)
-	@echo "==> Installed: $(SUPPORT_DIR)/{iconmaker,appinfo}"
+	$(call install_atomically,$(AUDIOWATCH),$(SUPPORT_DIR)/audiowatch)
+	@echo "==> Installed: $(SUPPORT_DIR)/{iconmaker,appinfo,audiowatch}"
 
 dobby:
 	@mkdir -p $(DOBBY_DIR)
@@ -635,13 +645,14 @@ bridge:
 fonts:
 	fonts/build.sh
 
-app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
+app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO) $(AUDIOWATCH)
 	@mkdir -p "$(APP_PAYLOAD)/signatures/macos.arm64"
 	@mkdir -p "$(APP_PAYLOAD)/bridge"
 	cp -f $(TARGET) "$(APP_PAYLOAD)/notproton.dylib"
 	cp -f $(OVERLAY_SHIM) "$(APP_PAYLOAD)/overlay-shim.dylib"
 	cp -f $(ICONMAKER) "$(APP_PAYLOAD)/iconmaker"
 	cp -f $(APPINFO) "$(APP_PAYLOAD)/appinfo"
+	cp -f $(AUDIOWATCH) "$(APP_PAYLOAD)/audiowatch"
 	cp -f dylib/feats/compat_run.sh "$(APP_PAYLOAD)/run"
 	cp -f signatures/macos.arm64/*.json "$(APP_PAYLOAD)/signatures/macos.arm64/"
 	@set -e; for spec in $(BRIDGE_FILES); do \
