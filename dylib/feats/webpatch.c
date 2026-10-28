@@ -1038,7 +1038,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "as=w=>/^[A-Za-z_]\\w*=/.test(o.slice(w.start,w.end))," \
     "b=G.length>1&&ev(G[0])&&(as(G[1])||m(G[1]))?1:0," \
     "n=G.slice(b).findIndex(w=>m(w)||!as(w));" \
-    "return{p:G[b].start,e:G.slice(b,n<0?G.length:b+n),ev:1===b}})(),"
+    "return{p:G[b].start,e:G.slice(b,n<0?G.length:b+n),ev:1===b,c:G.find(m)}})(),"
 
 // Rewrites KEY=value entries before %command% and leaves the rest of the text byte for byte.
 #define NP_CX_LAUNCH \
@@ -1055,7 +1055,24 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "E.e.forEach(w=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",w.start))){" \
     "r+=o.slice(at,w.start);at=w.end;while(o[at]===\" \"||o[at]===\"\\t\")at++}});r+=o.slice(at)}" \
     "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)};" \
-    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0])}}"
+    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0]),c:E.c}}"
+
+// The chosen program replaces the argument after waitforexitandrun and starts in its own folder, which Mod Engine 2's .bat needs. Other verbs run unchanged.
+#define NP_CX_TARGET \
+    "(o,id,home)=>{" \
+    "const q=v=>\"'\"+v.replace(/'/g,\"'\\\\''\").replace(/%(?=command%)/gi,\"%'\\\"\\\"'\")+\"'\"," \
+    "h=\"sh -c \"+q('exe=$1 dir=$2 found= prev=; shift 2; for arg in \"$@\"; do shift; '+" \
+    "'if [ -z \"$found\" ] && [ \"$prev\" = waitforexitandrun ]; then arg=$exe found=1; fi; prev=$arg; set -- \"$@\" \"$arg\"; done; '+" \
+    "'if [ \"$found\" ]; then cd \"${dir:-${exe%/*}/}\" || exit; fi; exec \"$@\"')+\" sh \"," \
+    "at=o.indexOf(h)," \
+    "m=at<0?null:/^('(?:[^']|'\\\\''|'\"\"')*') ('(?:[^']|'\\\\''|'\"\"')*') %command%/.exec(o.slice(at+h.length))," \
+    "rd=v=>v.slice(1,-1).replace(/'\\\\''|'\"\"'/g,x=>x[1]===\"\\\\\"?\"'\":\"\")," \
+    "b=m?o.slice(0,at)+\"%command%\"+o.slice(at+h.length+m[0].length):o;" \
+    "return{home,ex:m?rd(m[1]):\"\",sd:m?rd(m[2]):\"\",write:(e,d)=>{" \
+    "const B=/%command%/i.test(b)?b:\"%command%\"+(b.trim()?\" \"+b:\"\"),c=MSCXLaunch(B,id).c;" \
+    "if(!c||!/^%command%$/i.test(B.slice(c.start,c.end)))return;" \
+    "const r=B.slice(0,c.start)+(e?h+q(e)+\" \"+q(d)+\" %command%\":\"%command%\")+B.slice(c.end);" \
+    "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)}}}"
 
 #define NP_CX_PICK \
     "(t,n)=>{const o=t.strLaunchOptions||\"\";" \
@@ -1208,7 +1225,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_PANEL(RT, BARREL) \
-    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,dflt,dev,tool,ours=1})=>{" \
+    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,dflt,dev,tool,ours=1,target:X})=>{" \
     "const npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     /* A plugin may name the tools it is for. Filtered here rather than at render, so the
        dependency chain and the indent depth see what the panel shows and nothing else. */ \
@@ -1302,6 +1319,25 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "checked:\"1\"===G(k),onChange:v=>s([[k,w(k,v?\"1\":\"0\",\"0\")]])},k)," \
     "D=(k,l)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:\"0\"!==G(k),onChange:v=>s([[k,w(k,v?\"1\":\"0\",\"1\")]])},k)," \
+    "SL=(k,en)=>globalThis.LocalizationManager?.LocalizeString?.(k,!0)??en," \
+    "ex=X?X.ex:\"\",exd=ex.replace(/\\/[^\\/]*$/,\"\")||\"/\",sd=X&&X.sd||exd," \
+    "pk=(q,f)=>SteamClient.System.OpenFileDialog(q).then(p=>p&&f(p),()=>{})," \
+    "bt=(l,f,k)=>(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXSetBtn\",onClick:f,children:l},k)," \
+    "br=SL(\"#AppProperties_Shortcut_BrowseFiles\",\"Browse...\")," \
+    "XF=(k,l,d,c)=>(0," RT ".jsx)(" BARREL ".D0,{label:l,description:d,childrenContainerWidth:\"min\"," \
+    "children:(0," RT ".jsx)(\"div\",{className:\"MSCXBtns\",children:c})},k)," \
+    "exe=X&&(ours||ex)&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Launch Executable\",\"Launch Executable\",\"Launch Executable\"),children:[" \
+    "XF(\"target\",npL(\"Executable\",\"Executable\",\"Executable\"),ex||undefined,[" \
+    "ex&&bt(SL(\"#Button_Remove\",\"Remove\"),()=>X.write(\"\",\"\"),\"remove\")," \
+    "ours&&bt(br,()=>pk({strTitle:npL(\"Choose a Program to Launch\",\"选择要启动的程序\",\"Scegli il programma da avviare\")," \
+    "rgFilters:[{strFileTypeName:npL(\"Windows Programs (*.exe, *.bat)\",\"Windows 程序 (*.exe, *.bat)\"," \
+    "\"Programmi Windows (*.exe, *.bat)\"),rFilePatterns:[\"*.exe\",\"*.bat\"],bUseAsDefault:!0}]," \
+    "strInitialFile:ex||X.home},p=>X.write(p,\"\")),\"pick\")])," \
+    "ours&&ex&&XF(\"dir\",npL(\"Start Executable From\",\"Start Executable From\",\"Start Executable From\"),sd,[" \
+    "sd!==exd&&bt(SL(\"#AppProperties_Customization_Reset\",\"Reset\"),()=>X.write(ex,\"\"),\"reset\")," \
+    "bt(br,()=>pk({strTitle:SL(\"#AppProperties_Shortcut_ChooseStartDirectoryDialogTitle\",\"Choose Start Directory\")," \
+    "strInitialFile:sd,bChooseDirectory:!0},p=>{const n=p.replace(/\\/+$/,\"\")||\"/\";X.write(ex,n===exd?\"\":n)}),\"pick\")])" \
+    "]},\"exe\")," \
     "bv=G(\"CX_GRAPHICS_BACKEND\"),b=\"auto\"===bv||fex&&\"d3dmetal\"===bv?\"\":bv," \
     "dm=!fex&&(\"\"===b||\"d3dmetal\"===b)," \
     "dx=\"\"===b||\"dxmt\"===b," \
@@ -1364,7 +1400,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "]},\"ctl\")," \
     "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \
-    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")," \
+    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\"),exe," \
     "dev&&(npRows.length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
     "children:vids.map(V).concat(npRows.filter(f=>!f.dep||on1(f.dep))" \
@@ -1399,7 +1435,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "&&!t.strCompatToolName)return null;" \
     "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,tool:tn," \
     "ours:tn===\"" NP_FALLBACK_TOOL "\"||" NP_OUR_TOOLS ".indexOf(tn)>=0," \
-    "dflt:lost?null:k=>DF[k],head:" \
+    "dflt:lost?null:k=>DF[k],target:(" NP_CX_TARGET ")(o,t.unAppID,t.strInstallFolder||\"\"),head:" \
     "typeof MSCXPrefixRow==\"function\"&&(0," RT ".jsx)(\"div\",{className:\"MSCXRow\",ref:e=>e&&MSCXPrefixRow(e,t.unAppID)},\"npstate\")" \
     "})}"
 

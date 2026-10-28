@@ -87,7 +87,7 @@ for (const form of Object.keys(FORMS)) {
       ty: 'choice', ch: [{ v: 'x', l: 'Ex' }] },
   ]).replace(/"(\w+)":/g, '$1:');
   {
-    const { render: PV, written: vwritten } = panel(emit, form, undefined, { feats: PVALUES });
+    const { render: PV, written: vwritten, files: vfiles } = panel(emit, form, undefined, { feats: PVALUES });
     const nodesFor = (tool, opts) =>
       walk(PV({ details: details(opts, { strCompatToolName: tool }) }));
     const labelsFor = (tool, opts) => nodesFor(tool, opts)
@@ -112,10 +112,23 @@ for (const form of Object.keys(FORMS)) {
     t.ok(nodesFor('notproton-26.3', 'NOTPROTON_HUD=1 NOTPROTON_ENV_HUD_POS=tl %command%')
            .find(x => x.props.label === 'HUD position').props.selectedOption === 'tl',
          'while under one of ours the key keeps its prefix');
+    t.ok(!labelsFor('fexmac', on).includes('Launch Executable') &&
+         labelsFor('notproton-26.3', '').includes('Launch Executable'),
+         'Launch Executable is offered only for NotProton tools, since its wrapper needs the shell the launch hook runs');
+    vfiles.push('/g/a.exe');
+    nodesFor('notproton-26.3', '').find(x => x.props.children === 'Browse...').props.onClick();
+    const picked = vwritten.at(-1).opts;
+    const other = nodesFor('fexmac', picked);
+    t.ok(JSON.stringify(other.filter(x => x.type === 'Button').map(x => x.props.children)) === '["Remove"]' &&
+         other.some(x => x.props.label === 'Executable' && x.props.description === '/g/a.exe') &&
+         !other.some(x => x.props.label === 'Start Executable From'),
+         'a pick made under one of ours still shows on another tool, with only Remove');
+    other.find(x => x.props.children === 'Remove').props.onClick();
+    t.ok(vwritten.at(-1).opts === '', 'and Remove there takes the wrapper out');
   }
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 3, 'automatic shows seven toggles in three sections');
+  t.ok(toggles(r).length === 7 && sections(r).length === 4, 'automatic shows seven toggles in four sections');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
