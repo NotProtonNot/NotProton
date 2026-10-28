@@ -1317,6 +1317,13 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
+    "M=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
+    "{data:\"30\",label:\"30 FPS\"}," \
+    "{data:\"60\",label:\"60 FPS\"}," \
+    "{data:\"90\",label:\"90 FPS\"}," \
+    "{data:\"120\",label:\"120 FPS\"}," \
+    "{data:\"144\",label:\"144 FPS\"}," \
+    "{data:\"240\",label:\"240 FPS\"}]," \
     "B=[{data:\"\",label:npL(\"Automatic\",\"自动\",\"Automatico\")}," \
     "{data:\"d3dmetal\",label:\"D3DMetal\"}," \
     "{data:\"dxmt\",label:\"DXMT\"}," \
@@ -1337,17 +1344,28 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "ours&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",w(\"CX_GRAPHICS_BACKEND\",v.data||\"auto\",\"auto\")]]" \
-    ".concat(!clearUnused||\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]])" \
+    ".concat(!clearUnused||\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]" \
+    ",[\"D3DM_SUPPORT_DXR\",\"\"]" \
+    ",[\"D3DM_MTL4\",\"\"]" \
+    ",[\"D3DM_MAX_FPS\",\"\"]" \
+    "])" \
     ".concat(!clearUnused||\"\"===v.data||\"dxmt\"===v.data?[]:" \
     "[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]])" \
     ".concat(!clearUnused||\"dxmt\"===v.data?[]:[[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
     "T(\"MTL_HUD_ENABLED\",npL(\"Metal HUD\",\"Metal 性能监视器\",\"Metal HUD\"))," \
     "dm&&T(\"D3DM_ENABLE_METALFX\",\"DLSS\")," \
     "\"dxmt\"===b&&T(\"DXMT_ENABLE_NVEXT\",\"DLSS\")," \
+    "dm&&T(\"D3DM_SUPPORT_DXR\",npL(\"DirectX Raytracing (DXR)\",\"DirectX 光线追踪 (DXR)\",\"DirectX Raytracing (DXR)\"))," \
+    "dm&&D(\"D3DM_MTL4\",npL(\"Metal 4 Backend\",\"Metal 4 后端\",\"Backend Metal 4\"))," \
     "!fex&&D(\"ROSETTA_ADVERTISE_AVX\",npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"))," \
     "T(\"WINEMSYNC\",\"MSync\")," \
     "T(\"NOTPROTON_RETINA\",npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"))" \
     "]},\"gfx\")," \
+    "ours&&dm&&(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:npL(\"D3DMetal Frame Rate Limit\",\"D3DMetal 帧率限制\",\"Limite fotogrammi D3DMetal\")," \
+    "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:M," \
+    "selectedOption:(M.find(m=>m.data===G(\"D3DM_MAX_FPS\"))||{data:\"\"}).data," \
+    "onChange:v=>s([[\"D3DM_MAX_FPS\",w(\"D3DM_MAX_FPS\",v.data,\"\")]])})},\"fps\")," \
     "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
     "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione del gioco)\")," \

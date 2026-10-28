@@ -21,6 +21,7 @@ static const char *const g_bools[]    = { "0", "1", NULL };
 static const char *const g_backends[] = { "dxmt", "dxvk", "wined3d", NULL };
 static const char *const g_d3dmetal[] = { "d3dmetal", NULL };
 static const char *const g_factors[]  = { "1.5", "1.72", "2.0", "3.0", NULL };
+static const char *const g_fps[]      = { "30", "60", "90", "120", "144", "240", NULL };
 
 static const struct {
     const char        *key;
@@ -32,6 +33,9 @@ static const struct {
     { "CX_GRAPHICS_BACKEND",            ROSETTA | FEX, "", g_backends, g_d3dmetal },
     { "MTL_HUD_ENABLED",                ROSETTA | FEX, "", g_bools, NULL },
     { "D3DM_ENABLE_METALFX",            ROSETTA,       "", g_bools, NULL },
+    { "D3DM_SUPPORT_DXR",               ROSETTA,       "", g_bools, NULL },
+    { "D3DM_MTL4",                      ROSETTA,       "", g_bools, NULL },
+    { "D3DM_MAX_FPS",                   ROSETTA,       "", g_fps, NULL },
     { "DXMT_ENABLE_NVEXT",              ROSETTA | FEX, "", g_bools, NULL },
     { "ROSETTA_ADVERTISE_AVX",          ROSETTA,       "", g_bools, NULL },
     { "WINEMSYNC",                      ROSETTA | FEX, "", g_bools, NULL },

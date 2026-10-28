@@ -173,6 +173,16 @@ struct PrefixesView: View {
         }
         .disabled(model.isLoading)
         .help("List the prefixes again and update their sizes.")
+
+        Menu {
+            Button("Clear All Shader Caches") {
+                model.clearAllShaderCaches()
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+        }
+        .disabled(model.isBusy)
+        .help("Additional prefix management actions.")
     }
 
     private func lastUsed(_ prefix: WinePrefix) -> String {
@@ -367,6 +377,9 @@ struct PrefixesView: View {
         }
         Button("Winetricks…") {
             winetricksPrefix = prefix
+        }
+        Button("Clear Shader Cache") {
+            if let prefix { model.clearShaderCache(for: prefix) }
         }
         Divider()
         ForEach(WineTool.allCases, id: \.self) { tool in

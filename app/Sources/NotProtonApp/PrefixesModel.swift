@@ -144,6 +144,31 @@ final class PrefixesModel {
         }
     }
 
+    func clearShaderCache(for prefix: WinePrefix) {
+        act(on: prefix) {
+            let count = try PrefixTools.clearShaderCache(for: prefix)
+            if count > 0 {
+                return String(localized: "Cleared DirectX 12 shader cache for \(prefix.title).")
+            } else {
+                return String(localized: "No DirectX 12 shader cache found for \(prefix.title).")
+            }
+        }
+    }
+
+    func clearAllShaderCaches() {
+        forgetOutcome()
+        do {
+            let count = try PrefixTools.clearAllShaderCaches()
+            if count > 0 {
+                outcome = String(localized: "Cleared \(count) DirectX 12 shader cache(s).")
+            } else {
+                outcome = String(localized: "No DirectX 12 shader caches found.")
+            }
+        } catch {
+            report = FailureReport([error])
+        }
+    }
+
     func reveal(_ prefix: WinePrefix) {
         PrefixTools.reveal(prefix)
     }

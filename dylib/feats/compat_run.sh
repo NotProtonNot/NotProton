@@ -1014,7 +1014,7 @@ if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_de
     value=${line#*=}
     case "$line" in
       CX_GRAPHICS_BACKEND=dxmt | CX_GRAPHICS_BACKEND=dxvk | CX_GRAPHICS_BACKEND=wined3d) ;;
-      CX_GRAPHICS_BACKEND=d3dmetal | D3DM_ENABLE_METALFX=[01] | ROSETTA_ADVERTISE_AVX=[01])
+      CX_GRAPHICS_BACKEND=d3dmetal | D3DM_ENABLE_METALFX=[01] | D3DM_SUPPORT_DXR=[01] | D3DM_MTL4=[01] | D3DM_MAX_FPS=[0-9]* | ROSETTA_ADVERTISE_AVX=[01])
         [ "${wine_unix##*/}" != aarch64-unix ] || continue ;;
       FEX_X87REDUCEDPRECISION=[01])
         [ "${wine_unix##*/}" = aarch64-unix ] || continue ;;
@@ -2439,6 +2439,35 @@ install_legacy_steam_dll() {
   fi
 }
 
+install_metalfx_dlls() {
+  [ "${D3DM_ENABLE_METALFX:-0}" = 1 ] || return 0
+  [ "${CX_GRAPHICS_BACKEND:-d3dmetal}" = d3dmetal ] || return 0
+  sys32="$WINEPREFIX/drive_c/windows/system32"
+  [ -d "$sys32" ] || return 0
+  for dll in nvngx.dll nvapi64.dll; do
+    src=""
+    for dir in \
+      "$CX_ROOT/lib64/apple_gptk/wine/x86_64-windows" \
+      "$CX_ROOT/lib/apple_gptk/wine/x86_64-windows" \
+      "$CX_ROOT/lib/wine/x86_64-windows" \
+      "$CX_ROOT/lib/dxmt/x86_64-windows"; do
+      if [ -f "$dir/$dll" ]; then
+        src="$dir/$dll"
+        break
+      elif [ "$dll" = "nvngx.dll" ] && [ -f "$dir/nvngx-on-metalfx.dll" ]; then
+        src="$dir/nvngx-on-metalfx.dll"
+        break
+      fi
+    done
+    [ -n "$src" ] || continue
+    dst="$sys32/$dll"
+    cmp -s "$src" "$dst" && continue
+    if cp -fp "$src" "$dst" 2>> "$log"; then
+      echo "=== installed MetalFX $dll into system32 ===" >> "$log" 2>&1 || true
+    fi
+  done
+}
+
 # Steam runs a Windows game's installscript.vdf by invoking the standalone
 # evaluator through the compat tool, the same way the linux client does, but
 # the binaries are missing on macOS, so...
@@ -2558,6 +2587,7 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
     exit 1
   fi
   install_legacy_steam_dll
+  install_metalfx_dlls
   export WINEDLLPATH="$prefix_steam:$WINEDLLPATH"
   # If the same DLL appears twice in WINEDLLOVERRIDES, the last entry wins.
   vc_overrides=$(native_vc_runtime)
