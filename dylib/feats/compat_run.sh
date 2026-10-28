@@ -910,6 +910,69 @@ video_lines() {
   printf '%s\r\n' '[HKEY_CURRENT_USER\Control Panel\Desktop]' "$dpi_value" ''
 }
 
+prefix_up_to_date() {
+  [ -r "$WINEPREFIX/.update-timestamp" ] || return 1
+  read -r stamp _ < "$WINEPREFIX/.update-timestamp" || return 1
+  stamp=${stamp%"$(printf '\r')"}
+  case "$stamp" in '' | *[!0-9]*) return 1 ;; esac
+  [ "$stamp" = "$(stat -f %m "$CX_ROOT/share/wine/wine.inf" 2>/dev/null)" ]
+}
+
+# Proton only writes the registry when its prefix version changes.
+settings_already_applied() {
+  prefix_up_to_date || return 1
+  [ -f "$WINEPREFIX/system.reg" ] && [ -f "$WINEPREFIX/user.reg" ] || return 1
+  LC_ALL=C awk '
+    function double(s,   out, i) {
+      out = ""
+      while ((i = index(s, "\\")) > 0) { out = out substr(s, 1, i) "\\"; s = substr(s, i + 1) }
+      return out s
+    }
+    FNR == 1 {
+      file++
+      root = file == 2 ? "hkey_local_machine\\" : "hkey_current_user\\"
+      key = ""
+    }
+    { sub(/\r$/, "") }
+    /^\[/ {
+      key = ""
+      end = index($0, "]")
+      if (!end) { if (file == 1) bad = 1; next }
+      name = tolower(substr($0, 2, end - 2))
+      if (file == 1) {
+        deleted = sub(/^-/, "", name)
+        ccs = "hkey_local_machine\\system\\currentcontrolset\\"
+        if (index(name, ccs) == 1)
+          name = "hkey_local_machine\\system\\controlset001\\" substr(name, length(ccs) + 1)
+        split(name, part, "\\")
+        name = substr(name, 1, length(part[1]) + 1) double(substr(name, length(part[1]) + 2))
+        if (deleted) gone[name] = 1
+        else { key = name; wanted[name] = 1 }
+        next
+      }
+      name = root name
+      for (g in gone) if (name == g || index(name, g "\\\\") == 1) bad = 1
+      if (name in wanted) key = name
+      next
+    }
+    key == "" || !match($0, /^("([^"\\]|\\.)*"|@)=/) { next }
+    {
+      name = tolower(substr($0, 1, RLENGTH - 1))
+      value = substr($0, RLENGTH + 1)
+      if (file == 1) want[key, name] = value
+      else have[key, name] = value
+    }
+    END {
+      if (file != 3) exit 1
+      for (kv in want) {
+        if (want[kv] == "-") { if (kv in have) bad = 1 }
+        else if (!(kv in have) || have[kv] != want[kv]) bad = 1
+      }
+      exit bad
+    }
+  ' "$settings_file" "$WINEPREFIX/system.reg" "$WINEPREFIX/user.reg"
+}
+
 import_prefix_settings() {
   if [ "$NOTPROTON_RETINA" = "1" ]; then
     retina_line='"RetinaMode"="y"'
@@ -959,8 +1022,13 @@ import_prefix_settings() {
     without_lock_fds "$WINELOADER" wineboot --init >> "$log" 2>&1 || true
     return 0
   fi
-  without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
-    && import_status=0 || import_status=$?
+  if settings_already_applied; then
+    import_status=0
+    echo "=== prefix settings already applied, skipped the import ===" >> "$log" 2>&1 || true
+  else
+    without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
+      && import_status=0 || import_status=$?
+  fi
   rm -f "$settings_file"
   if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$NOTPROTON_DISABLE_HIDRAW" != "1" ]; then
     rm -f "$hidraw_file"
@@ -1386,12 +1454,14 @@ link_fonts() {
   for dir in "$np_support/fonts" "$CX_ROOT/share/wine/fonts"; do
     for src in "$dir"/*.ttf "$dir"/*.ttc; do
       [ -f "$src" ] || continue
-      name=$(basename "$src")
+      name=${src##*/}
       case "$app_id:$name" in
         1313860:arial.ttf|1506830:arial.ttf) src="$dir/alt/$name" ;;
       esac
       dst="$fonts_dir/$name"
-      if [ -L "$dst" ]; then
+      if [ -L "$dst" ] && [ "$dst" -ef "$src" ]; then
+        :
+      elif [ -L "$dst" ]; then
         rm -f "$dst" && ln -s "$src" "$dst" 2>> "$log" || true
       elif [ ! -e "$dst" ]; then
         ln -s "$src" "$dst" 2>> "$log" || true
@@ -1442,6 +1512,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
     echo "avx: ROSETTA_ADVERTISE_AVX=$ROSETTA_ADVERTISE_AVX from $avx_from" >> "$log" 2>&1 || true
   fi
   without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+  without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
   stage_step="prefix seed"
   seed_prefix_from_template
   stage_step="profile layout"
@@ -1779,8 +1850,7 @@ if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
 fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
-"$WINELOADER" "\$@"
-exit \$?
+exec "$WINELOADER" "\$@"
 LAUNCHER
 chmod +x "$loader_macos/launcher"
 
@@ -2143,7 +2213,12 @@ set -- \
   --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
-[ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+registered="$loader_root/.launchservices-registered"
+if [ ! -f "$registered" ] || [ "$loader_app/Contents/Info.plist" -nt "$registered" ]; then
+  if [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1; then
+    touch "$registered" 2>/dev/null || true
+  fi
+fi
 np_started=$(date +%s)
 np_terminated=0
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
