@@ -242,6 +242,7 @@ without_lock_fds() {
   "$@" 8>&- 9>&-
 }
 
+user_dllpath="${WINEDLLPATH:-}"
 # If two WINEDLLPATH directories have the same DLL, Wine uses the one listed first.
 export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
 export PATH="$CX_ROOT/bin:$PATH"
@@ -1799,10 +1800,31 @@ if resolve_icon && cp -f "$icon_cache" "$loader_res/game.icns"; then
 fi
 [ -n "$icon_arg" ] || echo "no icon resolved, launching without one" >> "$log" 2>&1 || true
 
+game_runner=""
+bundle_exec=launcher
+display_name_xml=$game_name_xml
+localized_arg=""
 uielement_arg=""
-if [ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
+if [ -z "$user_dllpath" ]; then
+  game_runner="$loader_root/runner"
+  game_app="$game_runner/lib/wine/${wine_unix##*/}/wine.app"
+  bundle_exec=wine
+  # Begone, unwanted Wine processes! Stay out of my dock!
+  uielement_arg="  <key>LSUIElement</key><true/>"
+  # Trickery so that the running application (as shown in the dock) is shown with the game's name
+  display_name_xml=wine
+  localized_arg="  <key>LSHasLocalizedDisplayName</key><true/>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>"
+elif [ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
   uielement_arg="  <key>LSUIElement</key><true/>"
   echo "launcher tile hidden by NOTPROTON_HIDE_LAUNCHER_TILE" >> "$log" 2>&1 || true
+fi
+if [ -n "$localized_arg" ]; then
+  game_name_strings=$(printf '%s' "$game_name" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  for lproj in en Base; do
+    mkdir -p "$loader_res/$lproj.lproj"
+    printf '"CFBundleDisplayName" = "%s";\n' "$game_name_strings" > "$loader_res/$lproj.lproj/InfoPlist.strings"
+  done
 fi
 cat > "$loader_contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1810,9 +1832,9 @@ cat > "$loader_contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key><string>$game_name_xml</string>
-  <key>CFBundleDisplayName</key><string>$game_name_xml</string>
+  <key>CFBundleDisplayName</key><string>$display_name_xml</string>
   <key>CFBundleIdentifier</key><string>com.notproton.launcher.$app_id</string>
-  <key>CFBundleExecutable</key><string>launcher</string>
+  <key>CFBundleExecutable</key><string>$bundle_exec</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
@@ -1822,33 +1844,35 @@ cat > "$loader_contents/Info.plist" <<PLIST
   <key>NSCameraUsageDescription</key><string>This game would like to access your camera.</string>
   <key>NSLocalNetworkUsageDescription</key><string>This game would like to access devices on your local network.</string>
 $uielement_arg
+$localized_arg
 $icon_arg
 </dict>
 </plist>
 PLIST
 
 # Invokes macOS Game Mode
-(
-  set --
-  for f in "$wine_unix"/*; do
-    [ -e "$f" ] || continue
-    base=${f##*/}
-    case "$base" in
-      wine|wine.app) continue ;;
-    esac
-    set -- "$@" "$f"
-  done
-  [ "$#" -eq 0 ] || ln -sfn "$@" "$loader_macos/"
-)
-ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
-if [ -x "$loader_macos/wine" ]; then
-  WINELOADER="$loader_app/Contents/MacOS/wine"
-  echo "loader staged in bundle for game mode" >> "$log" 2>&1 || true
-else
-  echo "loader staging failed, game mode unavailable" >> "$log" 2>&1 || true
-fi
+if [ -z "$game_runner" ]; then
+  (
+    set --
+    for f in "$wine_unix"/*; do
+      [ -e "$f" ] || continue
+      base=${f##*/}
+      case "$base" in
+        wine|wine.app) continue ;;
+      esac
+      set -- "$@" "$f"
+    done
+    [ "$#" -eq 0 ] || ln -sfn "$@" "$loader_macos/"
+  )
+  ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
+  if [ -x "$loader_macos/wine" ]; then
+    WINELOADER="$loader_app/Contents/MacOS/wine"
+    echo "loader staged in bundle for game mode" >> "$log" 2>&1 || true
+  else
+    echo "loader staging failed, game mode unavailable" >> "$log" 2>&1 || true
+  fi
 
-cat > "$loader_macos/launcher" <<LAUNCHER
+  cat > "$loader_macos/launcher" <<LAUNCHER
 #!/bin/sh
 export WINELOADER="$WINELOADER"
 wine_log="$loader_root/notproton-wine.log"
@@ -1868,7 +1892,8 @@ fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 exec "$WINELOADER" "\$@"
 LAUNCHER
-chmod +x "$loader_macos/launcher"
+  chmod +x "$loader_macos/launcher"
+fi
 
 bundle_listing() {
   (cd "$1" && find . | LC_ALL=C sort | while IFS= read -r p; do
@@ -1941,7 +1966,65 @@ install_bundle() (
   fi
   rm -rf "$loader_work" || true
 )
-install_bundle
+runner_stamp() {
+  if [ -d "$wine_unix/wine.app" ]; then
+    set -- "$wine_unix/wine.app/Contents" "$wine_unix/wine.app/Contents/MacOS" \
+      "$wine_unix/wine.app/Contents/MacOS/wine"
+  else
+    set -- "$wine_unix/wine"
+  fi
+  stat -f '%N %i %Fm' "$CX_ROOT/lib/wine" "$CX_ROOT/lib/wine"/* "$@"
+}
+install_game_runner() (
+  exec 7>> "$loader_root/.lock"
+  /usr/bin/lockf -s -t 30 7 || exit 1
+  trap 'rm -rf "$loader_work"' EXIT
+  stamp=$(runner_stamp) || exit 1
+  if [ "$(cat "$game_runner/.stamp" 2>/dev/null)" != "$stamp" ]; then
+    clone="$loader_work/runner"
+    mkdir -p "$clone/lib" || exit 1
+    for f in "$CX_ROOT"/*; do
+      [ "${f##*/}" = lib ] || ln -s "$f" "$clone/${f##*/}" || exit 1
+    done
+    for f in "$CX_ROOT/lib"/*; do
+      [ "${f##*/}" = wine ] || ln -s "$f" "$clone/lib/${f##*/}" || exit 1
+    done
+    cp -cR "$CX_ROOT/lib/wine" "$clone/lib/wine" || exit 1
+    clone_app="$clone/lib/wine/${wine_unix##*/}/wine.app"
+    if [ ! -d "$clone_app" ]; then
+      mkdir -p "$clone_app/Contents/MacOS" || exit 1
+      cp -c "$wine_unix/wine" "$clone_app/Contents/MacOS/wine" || exit 1
+    fi
+    rm -rf "$clone_app/Contents/_CodeSignature" || exit 1
+    if [ -d "$clone/lib/wine/aarch64-windows" ]; then
+      cp -c "$clone/lib/wine/x86_64-windows/lsteamclient.dll" "$clone/lib/wine/aarch64-windows/" || exit 1
+    fi
+    printf '%s\n' "$stamp" > "$clone/.stamp" || exit 1
+    rm -rf "$game_runner" && mv "$clone" "$game_runner" || exit 1
+    /usr/bin/tmutil addexclusion "$game_runner" >> "$log" 2>&1 || true
+    echo "cloned $CX_ROOT for this game" >> "$log" 2>&1 || true
+  fi
+  contents="$game_app/Contents"
+  if cmp -s "$loader_contents/Info.plist" "$contents/Info.plist" &&
+     [ "$(bundle_listing "$loader_res")" = "$(bundle_listing "$contents/Resources")" ]; then
+    echo "game's wine.app already up to date" >> "$log" 2>&1 || true
+  else
+    rm -rf "$contents/Resources" || exit 1
+    cp -R "$loader_res" "$contents/Resources" || exit 1
+    cp "$loader_contents/Info.plist" "$contents/Info.plist" || exit 1
+    echo "game's wine.app updated" >> "$log" 2>&1 || true
+  fi
+  for b in "$loader_root"/*.app "$loader_root"/.[!.]*.app; do
+    if [ -e "$b" ] || [ -L "$b" ]; then rm -rf "$b" || true; fi
+  done
+)
+if [ -z "$game_runner" ]; then
+  install_bundle
+  rm -rf "$loader_root/runner" 2>> "$log" || true
+elif ! install_game_runner; then
+  show_alert "Couldn't start the game" "NotProton ran into an error. Please check the notproton-run.log in this game's prefix for details."
+  exit 1
+fi
 
 kill_wine_prefix() {
   "$WINESERVER" -k >> "$log" 2>&1 || true
@@ -2154,6 +2237,7 @@ while IFS= read -r np_feat_entry; do
     fi
     case "${np_feat_env%%=*}" in
       (DYLD_* | PATH | CX_ROOT | CX_HOME | WINE* | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+       UID | EUID | PPID | SHELLOPTS | BASHOPTS | \
        NOTPROTON_FEATURE_DYLIBS | NOTPROTON_GAME_CWD | NOTPROTON_OVERLAY_SHIM)
         np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as the compat_run script sets it"
         continue ;;
@@ -2190,64 +2274,103 @@ if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
 else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
-set -- --args "$shim_exe" "$@"
-# Prepended first so they end up last among the --env args since open keeps the last of a repeated name.
-while IFS= read -r np_feat_env; do
-  [ -n "$np_feat_env" ] && set -- --env "$np_feat_env" "$@"
-done <<NP_FEAT_ENVS
-$np_feat_envs
-NP_FEAT_ENVS
-for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
-  eval "value=\$$name"
-  # shellcheck disable=SC2154 # eval assigns value on the line above
-  set -- --env "$name=$value" "$@"
-done
-
 # Anything this script does not know by name. A launch option NOTPROTON_ENV_FOO=bar gives
 # the game FOO=bar, which is the only per-game way to set one, and Wine and the graphics
 # layers take far more than the prefixes above.
 np_env_passed=$(env | LC_ALL=C sed -nE 's/^NOTPROTON_ENV_([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' \
   | LC_ALL=C sort)
+np_env_names=""
 for name in $np_env_passed; do
   case "$name" in
     (DYLD_* | PATH | HOME | CX_ROOT | CX_HOME | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+     UID | EUID | PPID | SHELLOPTS | BASHOPTS | \
      WINEPREFIX | WINELOADER | WINESERVER | WINEDLLPATH | WINEDLLOVERRIDES | WINEMSYNC | NOTPROTON_*)
       echo "=== NOTPROTON_ENV_$name would replace a setting this launch sets itself, ignored ===" \
         >> "$log" 2>&1 || true
       continue ;;
   esac
-  eval "value=\$NOTPROTON_ENV_$name"
-  set -- --env "$name=$value" "$@"
+  np_env_names="$np_env_names $name"
   echo "=== NOTPROTON_ENV_$name sets $name ===" >> "$log" 2>&1 || true
 done
-set -- \
-  --env CX_ROOT="$CX_ROOT" \
-  --env CX_HOME="$CX_HOME" \
-  --env WINESERVER="$WINESERVER" \
-  --env WINEDLLPATH="$WINEDLLPATH" \
-  --env WINEDLLOVERRIDES="$WINEDLLOVERRIDES" \
-  --env WINEMSYNC="$WINEMSYNC" \
-  --env WINEPREFIX="$WINEPREFIX" \
-  --env WINEDEBUG="$WINEDEBUG" \
-  --env PATH="$PATH" \
-  --env STEAM_COMPAT_DATA_PATH="$STEAM_COMPAT_DATA_PATH" \
-  --env STEAM_COMPAT_INSTALL_PATH="$STEAM_COMPAT_INSTALL_PATH" \
-  --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
-  --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
-  --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
-  --env NOTPROTON_FEATURE_DYLIBS="$np_feat_dylibs" \
-  --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
-registered="$loader_root/.launchservices-registered"
-if [ ! -f "$registered" ] || [ "$loader_app/Contents/Info.plist" -nt "$registered" ]; then
-  if [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1; then
+if [ -n "$game_runner" ]; then
+  launched_app="$game_app"
+  registered="$game_runner/.launchservices-registered"
+else
+  launched_app="$loader_app"
+  registered="$loader_root/.launchservices-registered"
+fi
+if [ ! -f "$registered" ] || [ "$launched_app/Contents/Info.plist" -nt "$registered" ]; then
+  if [ -x "$lsregister" ] && "$lsregister" -f "$launched_app" >> "$log" 2>&1; then
     touch "$registered" 2>/dev/null || true
   fi
 fi
-np_started=$(date +%s)
-np_terminated=0
-open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
+if [ -n "$game_runner" ]; then
+  shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
+  inserts="$STEAM_DYLD_INSERT_LIBRARIES"
+  if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ] && [ -f "$shim" ]; then
+    export NOTPROTON_OVERLAY_SHIM="$shim"
+    inserts="$shim:$inserts"
+  fi
+  # FEX's wine ignores DYLD_INSERT_LIBRARIES, lsteamclient loads the overlay there
+  [ "${wine_unix##*/}" = x86_64-unix ] || inserts=""
+  [ -z "$np_feat_dylibs" ] || inserts="${inserts:+$inserts:}$np_feat_dylibs"
+  np_started=$(date +%s)
+  np_terminated=0
+  (unset WINEDLLPATH WINELOADER; [ -z "$inserts" ] || export DYLD_INSERT_LIBRARIES="$inserts"
+   set -- "$game_app/Contents/MacOS/wine" "$shim_exe" "$@"
+   while IFS= read -r np_feat_pair; do
+     [ -z "$np_feat_pair" ] || set -- "$np_feat_pair" "$@"
+   done <<NP_FEAT_PAIRS
+$np_feat_envs
+NP_FEAT_PAIRS
+   for name in $np_env_names; do
+     eval "value=\$NOTPROTON_ENV_$name"
+     set -- "$name=$value" "$@"
+   done
+   # Can't use env here, it drops DYLD_INSERT_LIBRARIES
+   while [ "${1#/}" = "$1" ]; do export "${1?}"; shift; done
+   exec "$@") \
+    > "$loader_root/notproton-wine.log" 2>&1 &
+else
+  set -- --args "$shim_exe" "$@"
+  # Prepended first so they end up last among the --env args since open keeps the last of a repeated name.
+  while IFS= read -r np_feat_env; do
+    [ -n "$np_feat_env" ] && set -- --env "$np_feat_env" "$@"
+  done <<NP_FEAT_ENVS
+$np_feat_envs
+NP_FEAT_ENVS
+  for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+    eval "value=\$$name"
+    # shellcheck disable=SC2154 # eval assigns value on the line above
+    set -- --env "$name=$value" "$@"
+  done
+  for name in $np_env_names; do
+    eval "value=\$NOTPROTON_ENV_$name"
+    set -- --env "$name=$value" "$@"
+  done
+  set -- \
+    --env CX_ROOT="$CX_ROOT" \
+    --env CX_HOME="$CX_HOME" \
+    --env WINESERVER="$WINESERVER" \
+    --env WINEDLLPATH="$WINEDLLPATH" \
+    --env WINEDLLOVERRIDES="$WINEDLLOVERRIDES" \
+    --env WINEMSYNC="$WINEMSYNC" \
+    --env WINEPREFIX="$WINEPREFIX" \
+    --env WINEDEBUG="$WINEDEBUG" \
+    --env PATH="$PATH" \
+    --env STEAM_COMPAT_DATA_PATH="$STEAM_COMPAT_DATA_PATH" \
+    --env STEAM_COMPAT_INSTALL_PATH="$STEAM_COMPAT_INSTALL_PATH" \
+    --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
+    --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
+    --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
+    --env NOTPROTON_FEATURE_DYLIBS="$np_feat_dylibs" \
+    --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
+  np_started=$(date +%s)
+  np_terminated=0
+  open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
+fi
 open_pid=$!
 /usr/bin/caffeinate -d -i -w "$open_pid" >> "$log" 2>&1 &
 status=0

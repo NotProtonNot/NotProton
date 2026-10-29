@@ -409,5 +409,7 @@ enum PrefixTools {
         try WriteRefused.catching(prefix.root) {
             try FileManager.default.removeItem(at: prefix.root)
         }
+        try? FileManager.default.removeItem(
+            at: SupportPaths.launchers.appending(path: prefix.appID).appending(path: "runner"))
     }
 }

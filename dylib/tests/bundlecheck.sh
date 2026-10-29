@@ -64,7 +64,7 @@ rc=0
 "$helper" --same-bundle "$work/a" "$work/missing" || rc=$?
 if [ "$rc" = 2 ]; then printf '  ok    read failure cannot report equal\n'; else fails=$((fails + 1)); fi
 
-funcs=$(sed -n '/^bundle_listing() {$/,/^install_bundle$/p' "$source" | sed '$d')
+funcs=$(sed -n '/^bundle_listing() {$/,/^)$/p' "$source")
 eval "$funcs"
 mkdir -p "$work/old-helper"
 printf '#!/bin/sh\nexit 2\n' > "$work/old-helper/appinfo"
@@ -79,7 +79,7 @@ else
   fails=$((fails + 1))
 fi
 
-staging=$(sed -n '/^# Invokes macOS Game Mode$/,/^ln "\$WINELOADER"/p' "$source" | sed '$d')
+staging=$(sed -n '/^# Invokes macOS Game Mode$/,/^  )$/p' "$source" | sed 1,2d)
 [ -n "$staging" ]
 wine_unix="$work/runner"
 loader_macos="$work/staged"

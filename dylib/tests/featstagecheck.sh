@@ -230,10 +230,11 @@ run NOTPROTON_DIR=1 > /dev/null
 ok "staging skips a directory in the way" "$(find "$sys32/dxgi.dll" -type f | wc -l | tr -d ' ')|$(cat "$sys32/d3d11.dll")" "0|ours"
 rmdir "$sys32/dxgi.dll"
 
-feat_loop=$(sed -n '/^while IFS= read -r np_feat_env; do$/,/^NP_FEAT_ENVS$/p' "$SRC")
-feat_at=$(grep -n '^while IFS= read -r np_feat_env; do$' "$SRC" | cut -d: -f1)
+# shellcheck disable=SC2016
+feat_at=$(($(grep -n 'set -- --env "$np_feat_env" "$@"$' "$SRC" | cut -d: -f1) - 1))
+feat_loop=$(sed -n "$feat_at,/^NP_FEAT_ENVS\$/p" "$SRC")
 # shellcheck disable=SC2016 # Match the literal $(env.
-forward_at=$(grep -n '^for name in $(env ' "$SRC" | cut -d: -f1)
+forward_at=$(grep -n '^[[:space:]]*for name in $(env .*CX_APPLEGPTK' "$SRC" | cut -d: -f1)
 ok "plugin env is prepended before the forwarded settings" "$([ "$feat_at" -lt "$forward_at" ] && echo yes)" "yes"
 # shellcheck disable=SC2016 # expanded by the inner shell
 args=$(np_feat_envs='LATER=2
@@ -242,7 +243,7 @@ GOOD=a b
 ok "plugin env reaches open in order" "$args" "[--env][GOOD=a b][--env][LATER=2][--args][game]"
 
 # shellcheck disable=SC2016 # Match the literal heredoc.
-launcher=$(sed -n '/^cat > "\$loader_macos\/launcher" <<LAUNCHER$/,/^LAUNCHER$/p' "$SRC")
+launcher=$(sed -n '/^[[:space:]]*cat > "\$loader_macos\/launcher" <<LAUNCHER$/,/^LAUNCHER$/p' "$SRC")
 inject=$(loader_macos="$work" WINELOADER=x loader_root="$work" HOME="$work" \
   sh -c 'eval "$1"; sed -n "/^shim=/,/NOTPROTON_GAME_CWD/p" "$loader_macos/launcher"' sh "$launcher")
 mkdir -p "$work/Library/Application Support/notproton"
