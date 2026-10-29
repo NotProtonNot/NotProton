@@ -370,6 +370,7 @@ mkdir -p "$loader_root"
 runner_build
 is "Rosetta first clone" "cloned $CX_ROOT for this game|game's wine.app updated" "$(paste -sd '|' "$log")"
 is "Rosetta wine.app" "x86 wine" "$(cat "$game_app/Contents/MacOS/wine")"
+is "Rosetta ntdll.so link" "so" "$(cat "$game_app/Contents/MacOS/ntdll.so")"
 is "Rosetta wine copied" no "$([ "$game_app/Contents/MacOS/wine" -ef "$wine_unix/wine" ] && echo yes || echo no)"
 is "Rosetta runner untouched" no "$([ -e "$wine_unix/wine.app" ] && echo yes || echo no)"
 is "Rosetta Info.plist" "plist" "$(cat "$game_app/Contents/Info.plist")"
