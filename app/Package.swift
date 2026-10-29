@@ -1,6 +1,7 @@
 // swift-tools-version: 6.2
 import Foundation
 import PackageDescription
+
 let testsPath = "Tests/NotProtonAppTests"
 let payloadPath = "Sources/NotProtonApp/Resources/payload"
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -17,7 +18,7 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS("15.0")],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")
     ],
     targets: [
         .executableTarget(
@@ -45,14 +46,23 @@ let package = Package(
                 .copy("Resources/detour2-fex-41073.bin"),
                 .copy("Resources/detour32-fex-41073.bin"),
                 .copy("Resources/detour64-fex-41073.bin"),
+                .copy("Resources/winebus-cap-cx26.bin"),
+                .copy("Resources/winebus-cap-40921.bin"),
+                .copy("Resources/winebus-cap-fex-40921.bin"),
+                .copy("Resources/winebus-cap-41069.bin"),
+                .copy("Resources/winebus-cap-fex-41069.bin"),
+                .copy("Resources/winebus-cap-fex-40921-a64.bin"),
+                .copy("Resources/winebus-cap-fex-41069-a64.bin"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
-        ),
-    ] + (hasTests ? [
-        .testTarget(
-            name: "NotProtonAppTests",
-            dependencies: ["NotProtonApp"],
-            path: testsPath
-        ),
-    ] : [])
+        )
+    ]
+        + (hasTests
+            ? [
+                .testTarget(
+                    name: "NotProtonAppTests",
+                    dependencies: ["NotProtonApp"],
+                    path: testsPath
+                )
+            ] : [])
 )
