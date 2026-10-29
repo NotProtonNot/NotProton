@@ -352,6 +352,20 @@ static NTSTATUS steamclient_Steam_BGetCallback( Params *params, bool wow64 )
     return 0;
 }
 
+#ifdef __APPLE__
+/* winemac sadly doesn't honor __wine_steamclient_GameOverlayActivated, soo... */
+static void notify_overlay_shim( const u_CallbackMsg_t *u_msg )
+{
+    void (*set_active)( int );
+
+    if (u_msg->m_iCallback != 0x14b /* GameOverlayActivated_t::k_iCallback */ || u_msg->m_cubParam < 1)
+        return;
+
+    if ((set_active = (void (*)( int ))dlsym( RTLD_DEFAULT, "np_overlay_shim_set_active" )))
+        set_active( *(const uint8_t *)u_msg->m_pubParam );
+}
+#endif /* __APPLE__ */
+
 template< typename Params >
 static NTSTATUS steamclient_callback_message_receive( Params *params, bool wow64 )
 {
@@ -359,6 +373,10 @@ static NTSTATUS steamclient_callback_message_receive( Params *params, bool wow64
     auto *w_msg = &*params->w_msg;
 
     if (!u_msg) return 0;
+
+#ifdef __APPLE__
+    notify_overlay_shim( u_msg );
+#endif
 
     convert_callback_utow( u_msg->m_iCallback, (void *)u_msg->m_pubParam,
                            u_msg->m_cubParam, (void *)w_msg->m_pubParam,

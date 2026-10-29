@@ -961,6 +961,73 @@ static void report_renderer_chain(void)
 	interpose(layer, "nextDrawable", (IMP)hook_next_drawable, (IMP *)&next_layer_drawable);
 }
 
+// Proton drops input while the Steam Overlay is open. Winemac doesn't, that's not acceptable!
+enum {
+	event_left_down = 1,
+	event_left_up = 2,
+	event_right_down = 3,
+	event_right_up = 4,
+	event_mouse_moved = 5,
+	event_left_dragged = 6,
+	event_right_dragged = 7,
+	event_key_down = 10,
+	event_key_up = 11,
+	event_flags_changed = 12,
+	event_scroll_wheel = 22,
+	event_other_down = 25,
+	event_other_up = 26,
+	event_other_dragged = 27,
+};
+
+#define event_bit(type) (1ull << (type))
+
+static const uint64_t overlay_input_mask =
+        event_bit(event_left_down) | event_bit(event_left_up) | event_bit(event_right_down) |
+        event_bit(event_right_up) | event_bit(event_mouse_moved) |
+        event_bit(event_left_dragged) | event_bit(event_right_dragged) |
+        event_bit(event_key_down) | event_bit(event_key_up) | event_bit(event_flags_changed) |
+        event_bit(event_scroll_wheel) | event_bit(event_other_down) | event_bit(event_other_up) |
+        event_bit(event_other_dragged);
+
+static int overlay_active;
+static void (*next_send_event)(id, SEL, id);
+
+static int overlay_blocks(id event)
+{
+	typedef NSUInteger (*event_type_fn)(id, SEL);
+
+	if (!__atomic_load_n(&overlay_active, __ATOMIC_RELAXED) || event == nil)
+		return 0;
+
+	NSUInteger type = ((event_type_fn)objc_msgSend)(event, sel_registerName("type"));
+	return type < 64 && (overlay_input_mask & event_bit(type)) != 0;
+}
+
+static void hook_send_event(id app, SEL selector, id event)
+{
+	if (overlay_blocks(event))
+		return;
+
+	next_send_event(app, selector, event);
+}
+
+// Called by lsteamclient on GameOverlayActivated_t,
+__attribute__((visibility("default"))) void np_overlay_shim_set_active(int active)
+{
+	static dispatch_once_t once;
+
+	dispatch_once(&once, ^{
+		int hooked = interpose(objc_getClass("WineApplication"), "sendEvent:",
+		                       (IMP)hook_send_event, (IMP *)&next_send_event);
+		shim_log("overlay_shim np_overlay_shim_set_active: sendEvent=%s\n",
+		        hooked ? "hooked" : "missed");
+	});
+
+	__atomic_store_n(&overlay_active, active != 0, __ATOMIC_RELAXED);
+	shim_log("overlay_shim np_overlay_shim_set_active: %s game input\n",
+	        active ? "blocking" : "passing");
+}
+
 // FEX specific stuff
 __attribute__((visibility("default"))) void np_overlay_shim_install(void)
 {
