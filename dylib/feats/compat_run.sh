@@ -1971,7 +1971,7 @@ runner_stamp() {
     set -- "$wine_unix/wine.app/Contents" "$wine_unix/wine.app/Contents/MacOS" \
       "$wine_unix/wine.app/Contents/MacOS/wine"
   else
-    set -- "$wine_unix/wine"
+    set -- "$wine_unix/wine" "$wine_unix/ntdll.so"
   fi
   stat -f '%N %i %Fm' "$CX_ROOT/lib/wine" "$CX_ROOT/lib/wine"/* "$@"
 }
@@ -1994,6 +1994,11 @@ install_game_runner() (
     if [ ! -d "$clone_app" ]; then
       mkdir -p "$clone_app/Contents/MacOS" || exit 1
       cp -c "$wine_unix/wine" "$clone_app/Contents/MacOS/wine" || exit 1
+      # CrossOver 26's wine only looks for ntdll.so right next to itself
+      for f in "${clone_app%/*}"/*; do
+        case "${f##*/}" in wine|wine.app) continue ;; esac
+        ln -s "../../../${f##*/}" "$clone_app/Contents/MacOS/${f##*/}" || exit 1
+      done
     fi
     rm -rf "$clone_app/Contents/_CodeSignature" || exit 1
     if [ -d "$clone/lib/wine/aarch64-windows" ]; then
