@@ -4,13 +4,16 @@ set -e
 SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "launchercheck: $SRC not present, skipped"; exit 0; }
 
-funcs=$(sed -n '/^bundle_listing() {$/,/^install_bundle$/p' "$SRC" | sed '$d')
+funcs=$(sed -n '/^bundle_listing() {$/,/^)$/p' "$SRC")
+runner_funcs=$(sed -n '/^runner_stamp() {$/,/^)$/p' "$SRC")
+runner_pick=$(sed -n '/^game_runner=""$/,/^fi$/p' "$SRC")
 name_lines=$(sed -n '/^bundle_name=\$(printf/,/^\[ -n "\$bundle_name" \] || bundle_name=/p' "$SRC")
-launcher_body=$(sed -n '/^cat > "\$loader_macos\/launcher" <<LAUNCHER$/,/^LAUNCHER$/p' "$SRC" | sed 1d)
-loader_line=$(grep -A1 '^if \[ -x "\$loader_macos/wine" \]; then$' "$SRC" | sed -n 2p)
+launcher_body=$(sed -n '/^  cat > "\$loader_macos\/launcher" <<LAUNCHER$/,/^LAUNCHER$/p' "$SRC" | sed 1d)
+loader_line=$(grep -A1 '^  if \[ -x "\$loader_macos/wine" \]; then$' "$SRC" | sed -n 2p)
 [ -n "$funcs" ] || { echo "FAIL: bundle functions not found"; exit 1; }
 [ -n "$name_lines" ] || { echo "FAIL: bundle name lines not found"; exit 1; }
 [ -n "$launcher_body" ] || { echo "FAIL: launcher script not found"; exit 1; }
+[ -n "$runner_funcs" ] && [ -n "$runner_pick" ] || { echo "FAIL: runner copy code not found"; exit 1; }
 eval "$funcs"
 
 fails=0
@@ -49,7 +52,7 @@ leftover() { (cd "$loader_root" && n=0 && for b in .build.*; do [ -e "$b" ] && n
 
 echo "== final paths =="
 case "$launcher_body" in *loader_stage*|*loader_contents*|*loader_macos*|*loader_work*) bad "launcher has no staging paths" "none" "staging path" ;; *) ok "launcher has no staging paths" ;; esac
-is "WINELOADER points at the installed bundle" '  WINELOADER="$loader_app/Contents/MacOS/wine"' "$loader_line"
+is "WINELOADER points at the installed bundle" '    WINELOADER="$loader_app/Contents/MacOS/wine"' "$loader_line"
 
 echo "== bundle names =="
 for pair in '.hack//G.U. Last Recode|hackG.U. Last Recode' '...|Steam Game' '//|Steam Game' 'Half-Life 2|Half-Life 2' 'a.b|a.b'; do
@@ -257,16 +260,15 @@ if [ -d "$np_support/shortcut-icons" ]; then bad "launch leaves shortcut cache a
 
 echo "== session lasts as long as the shim =="
 session_trap=$(sed -n '/^terminate() {$/,/^trap terminate TERM INT HUP$/p' "$SRC")
-session_wait=$(sed -n '/^open -n -W -a "\$loader_app"/,/^exit \$status$/p' "$SRC")
+session_wait=$(sed -n '/^open_pid=\$!$/,/^exit \$status$/p' "$SRC")
 [ -n "$session_trap" ] && [ -n "$session_wait" ] || { echo "FAIL: session code not found"; exit 1; }
 {
   printf 'log=%s\nopen() { sleep "$1"; return "$2"; }\n' "$T/session.log"
   printf 'kill_wine_prefix() { echo kill >> "%s"; }\n' "$T/session.ev"
   printf '%s\n' "$session_trap"
-  printf 'set -- "$1" "$2"\nloader_app=x\n'
-  printf '%s\n' "$session_wait" | sed 's/open -n -W -a "\$loader_app" "\$@"/open "$@"/'
+  printf 'open "$1" "$2" &\n'
+  printf '%s\n' "$session_wait"
 } > "$T/session.sh"
-grep -q '^open "\$@"' "$T/session.sh" || { echo "FAIL: session launch line not rewritten"; exit 1; }
 : > "$T/session.ev"
 start=$(date +%s)
 rc=0; sh "$T/session.sh" 3 7 || rc=$?
@@ -282,6 +284,102 @@ rc=0; wait "$sp" || rc=$?
 is "exit game ends the session" 143 "$rc"
 is "exit game does not wait out the shim" yes "$([ $(($(date +%s) - start)) -lt 5 ] && echo yes || echo no)"
 is "exit game tears the prefix down" yes "$(grep -q kill "$T/session.ev" && echo yes || echo no)"
+
+echo "== runner copy =="
+eval "$runner_funcs"
+pick() {
+  wine_unix="$1"; user_dllpath="$2"; loader_root="$T/game"; NOTPROTON_HIDE_LAUNCHER_TILE=0
+  eval "$runner_pick"
+}
+pick /cx/lib/wine/aarch64-unix ""
+is "FEX runner" "$T/game/runner|wine" "$game_runner|$bundle_exec"
+is "Dock tile hidden" "  <key>LSUIElement</key><true/>" "$uielement_arg"
+pick /cx/lib/wine/aarch64-unix /extra
+is "own WINEDLLPATH" "|launcher" "$game_runner|$bundle_exec"
+pick /cx/lib/wine/x86_64-unix ""
+is "Rosetta runner" "$T/game/runner/lib/wine/x86_64-unix/wine.app|wine" "$game_app|$bundle_exec"
+
+CX_ROOT="$T/cx"
+wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
+mkdir -p "$wine_unix/wine.app/Contents/MacOS" "$wine_unix/wine.app/Contents/_CodeSignature" \
+  "$CX_ROOT/lib/wine/x86_64-windows" "$CX_ROOT/lib/wine/aarch64-windows" "$CX_ROOT/lib/other" "$CX_ROOT/share"
+printf 'wine' > "$wine_unix/wine.app/Contents/MacOS/wine"
+printf 'so' > "$wine_unix/ntdll.so"
+printf 'dll' > "$CX_ROOT/lib/wine/x86_64-windows/lsteamclient.dll"
+loader_root="$T/game"
+game_runner="$loader_root/runner"
+game_app="$game_runner/lib/wine/aarch64-unix/wine.app"
+mkdir -p "$loader_root"
+runner_build() {
+  loader_work=$(mktemp -d "$loader_root/.build.XXXXXX")
+  loader_contents="$loader_work/new/Game.app/Contents"
+  loader_res="$loader_contents/Resources"
+  mkdir -p "$loader_res"
+  printf '%s' "${1:-plist}" > "$loader_contents/Info.plist"
+  printf '%s' "${2:-icon}" > "$loader_res/game.icns"
+  : > "$log"
+  install_game_runner
+}
+mkdir -p "$loader_root/Old.app"
+runner_build
+is "first clone" "cloned $CX_ROOT for this game|game's wine.app updated" "$(paste -sd '|' "$log")"
+is "Info.plist" "plist" "$(cat "$game_app/Contents/Info.plist")"
+is "icon" "icon" "$(cat "$game_app/Contents/Resources/game.icns")"
+is "signature removed" no "$([ -e "$game_app/Contents/_CodeSignature" ] && echo yes || echo no)"
+is "runner still signed" yes "$([ -e "$wine_unix/wine.app/Contents/_CodeSignature" ] && echo yes || echo no)"
+is "lsteamclient in aarch64-windows" "dll" "$(cat "$game_runner/lib/wine/aarch64-windows/lsteamclient.dll")"
+is "lib/wine copied" no "$([ -L "$game_runner/lib/wine" ] && echo yes || echo no)"
+is "ntdll.so copied" no "$([ -L "$game_runner/lib/wine/aarch64-unix/ntdll.so" ] && echo yes || echo no)"
+is "lib symlinks" "$CX_ROOT/lib/other" "$(readlink "$game_runner/lib/other")"
+is "runner symlinks" "$CX_ROOT/share" "$(readlink "$game_runner/share")"
+is "old launcher gone" "" "$(apps)"
+is "cleanup" "0" "$(leftover)"
+before=$(stat -f %i "$game_runner/lib/wine/aarch64-unix/ntdll.so")
+runner_build
+is "reuse" "game's wine.app already up to date" "$(cat "$log")"
+is "clone reused" "$before" "$(stat -f %i "$game_runner/lib/wine/aarch64-unix/ntdll.so")"
+runner_build plist2 icon2
+is "rename" "game's wine.app updated" "$(cat "$log")"
+is "new Info.plist" "plist2" "$(cat "$game_app/Contents/Info.plist")"
+is "new icon" "icon2" "$(cat "$game_app/Contents/Resources/game.icns")"
+printf 'dll2' > "$T/new.dll"
+mv "$T/new.dll" "$CX_ROOT/lib/wine/x86_64-windows/lsteamclient.dll"
+runner_build plist2 icon2
+is "reclone after patch" "cloned $CX_ROOT for this game|game's wine.app updated" "$(paste -sd '|' "$log")"
+is "patched lsteamclient" "dll2" "$(cat "$game_runner/lib/wine/aarch64-windows/lsteamclient.dll")"
+is "cleanup after reclone" "0" "$(leftover)"
+sleep 1
+printf 'restored wine' > "$wine_unix/wine.app/Contents/MacOS/wine"
+runner_build plist2 icon2
+is "reclone after in-place write" "restored wine" "$(cat "$game_app/Contents/MacOS/wine")"
+rm "$CX_ROOT/lib/wine/x86_64-windows/lsteamclient.dll"
+if runner_build plist3; then bad "clone failure" "failure" "success"; else ok "clone failure"; fi
+is "clone failure cleanup" "0" "$(leftover)"
+if /usr/bin/lockf -s -t 0 "$loader_root/.lock" true; then ok "lock released"; else bad "lock released" "free" "held"; fi
+
+
+CX_ROOT="$T/cx-rosetta"
+wine_unix="$CX_ROOT/lib/wine/x86_64-unix"
+mkdir -p "$wine_unix" "$CX_ROOT/lib/wine/x86_64-windows"
+printf 'x86 wine' > "$wine_unix/wine"
+printf 'so' > "$wine_unix/ntdll.so"
+loader_root="$T/game-rosetta"
+game_runner="$loader_root/runner"
+game_app="$game_runner/lib/wine/x86_64-unix/wine.app"
+mkdir -p "$loader_root"
+runner_build
+is "Rosetta first clone" "cloned $CX_ROOT for this game|game's wine.app updated" "$(paste -sd '|' "$log")"
+is "Rosetta wine.app" "x86 wine" "$(cat "$game_app/Contents/MacOS/wine")"
+is "Rosetta wine copied" no "$([ "$game_app/Contents/MacOS/wine" -ef "$wine_unix/wine" ] && echo yes || echo no)"
+is "Rosetta runner untouched" no "$([ -e "$wine_unix/wine.app" ] && echo yes || echo no)"
+is "Rosetta Info.plist" "plist" "$(cat "$game_app/Contents/Info.plist")"
+is "Rosetta no aarch64-windows" no "$([ -e "$game_runner/lib/wine/aarch64-windows" ] && echo yes || echo no)"
+runner_build
+is "Rosetta reuse" "game's wine.app already up to date" "$(cat "$log")"
+printf 'x86 wine 2' > "$T/new-wine"
+mv "$T/new-wine" "$wine_unix/wine"
+runner_build
+is "Rosetta reclone after re-sign" "x86 wine 2" "$(cat "$game_app/Contents/MacOS/wine")"
 
 [ "$fails" -eq 0 ] || { echo "launchercheck: $fails failed"; exit 1; }
 echo "launchercheck: all passed"
