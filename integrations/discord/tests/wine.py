@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="np-discord-wine-") as directory:
         subprocess.run([wine, "wineboot", "-u"], env=env, check=True, timeout=90,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         host = subprocess.Popen(
-            [str(output / "host"), wine, str(output / "notproton-discord.exe")],
+            [str(output / "host"), str(os.getpid()), wine, str(output / "notproton-discord.exe")],
             env=dict(env, NOTPROTON_DISCORD_SOCKET_DIR=str(tmp)),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
@@ -97,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix="np-discord-wine-") as directory:
         client(32, "test-client32.exe")
         # The first-instance guard must leave the existing server untouched.
         duplicate = subprocess.run(
-            [str(output / "host"), wine, str(output / "notproton-discord.exe")],
+            [str(output / "host"), str(os.getpid()), wine, str(output / "notproton-discord.exe")],
             env=dict(env, NOTPROTON_DISCORD_SOCKET_DIR=str(tmp)),
             capture_output=True, timeout=15,
         )

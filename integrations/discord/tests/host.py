@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 host_binary = Path(sys.argv[1]).resolve()
 
@@ -74,7 +75,7 @@ class EchoServer:
         Path(self.path).unlink(missing_ok=True)
 
 
-def start_host(tmp, mode="ready"):
+def start_host(tmp, mode="ready", runner=None):
     endpoint = tmp / "endpoint.json"
     fixture = tmp / "wine"
     fixture.write_text(f'''#!{sys.executable}
@@ -88,6 +89,12 @@ token = os.environ["NOTPROTON_DISCORD_TOKEN"]
 Path(sys.argv[1]).write_text(json.dumps({{"port": port, "token": token, "pid": os.getpid()}}))
 if os.environ.get("FIXTURE_MODE") == "exit":
     sys.exit(7)
+if os.environ.get("FIXTURE_MODE") == "never":
+    import time
+    time.sleep(60)
+if os.environ.get("FIXTURE_MODE") == "cold":
+    import time
+    time.sleep(11)
 with socket.create_connection(("127.0.0.1", port)) as control:
     control.sendall(token.encode() + bytes([0]))
     control.recv(1)
@@ -96,15 +103,16 @@ with socket.create_connection(("127.0.0.1", port)) as control:
     endpoint.unlink(missing_ok=True)
     env = dict(os.environ, NOTPROTON_DISCORD_SOCKET_DIR=str(tmp), FIXTURE_MODE=mode)
     process = subprocess.Popen(
-        [str(host_binary), str(fixture), str(endpoint)], env=env,
+        [str(host_binary), str(runner or os.getpid()), str(fixture), str(endpoint)], env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
-    if mode == "ready":
+    if mode in ("ready", "cold"):
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
-            assert selector.select(5), "host readiness timed out"
+            assert selector.select(20), "host readiness timed out"
         ready = process.stdout.readline()
         assert ready == b"ready\n", f"unexpected readiness output: {ready!r}"
+        assert os.read(process.stderr.fileno(), 64) == b"Discord bridge ready\n", "readiness not logged"
     return process, endpoint
 
 
@@ -183,6 +191,25 @@ with tempfile.TemporaryDirectory(prefix="np-discord-") as directory:
             stop_host(process)
         if server:
             server.close()
+
+    started = time.monotonic()
+    process, endpoint = start_host(tmp, mode="cold")
+    assert time.monotonic() - started > 10, "fixture did not model a cold start"
+    stop_host(process)
+    print("  ok    a helper that needs longer than ten seconds still becomes ready")
+
+    process, _ = start_host(tmp, mode="never")
+    time.sleep(0.5)
+    started = time.monotonic()
+    process.terminate()
+    process.communicate(timeout=6)
+    assert time.monotonic() - started < 1.5, "shutdown waited on a helper that never connected"
+    print("  ok    shutdown does not grant grace to a helper that never became ready")
+
+    process, _ = start_host(tmp, mode="never", runner=1)
+    output, errors = process.communicate(timeout=3)
+    assert process.returncode != 0 and not (tmp / "endpoint.json").exists(), "host ran for a dead runner"
+    print("  ok    a runner that is already gone ends the host before it starts the helper")
 
     process, _ = start_host(tmp, mode="exit")
     output, errors = process.communicate(timeout=6)

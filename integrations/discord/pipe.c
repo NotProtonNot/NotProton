@@ -159,6 +159,8 @@ static DWORD WINAPI serve(void *parameter)
                 pump(&directions[1]);
                 WaitForSingleObject(writer, INFINITE);
                 CloseHandle(writer);
+                // Disconnecting the pipe would drop replies the game has not read yet.
+                if (WaitForSingleObject(stopping, 0) != WAIT_OBJECT_0) FlushFileBuffers(s.pipe);
             }
             CloseHandle(s.closed);
         }
@@ -258,7 +260,7 @@ int main(void)
     for (unsigned i = 0; i < BRIDGE_CLIENTS; ++i) {
         struct listener *listener = &listeners[i];
         if (listener->worker) {
-            WaitForSingleObject(listener->worker, INFINITE);
+            while (WaitForSingleObject(listener->worker, 50) == WAIT_TIMEOUT) CancelSynchronousIo(listener->worker);
             CloseHandle(listener->worker);
         }
         if (listener->pending) {

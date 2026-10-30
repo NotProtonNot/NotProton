@@ -28,7 +28,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-Path(os.environ["FIXTURE_REPORT"]).write_text(json.dumps({{"argv": sys.argv[1:], "env": dict(os.environ), "pid": os.getpid()}}))
+Path(os.environ["FIXTURE_REPORT"]).write_text(json.dumps({{"argv": sys.argv[1:], "ppid": os.getppid(), "env": dict(os.environ), "pid": os.getpid()}}))
 if os.environ.get("FIXTURE_MODE") == "fail":
     sys.exit(1)
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -36,6 +36,7 @@ if os.environ.get("FIXTURE_MODE") == "slow":
     time.sleep(4)
 if os.environ.get("FIXTURE_MODE") != "hang":
     print("ready", flush=True)
+    print("Discord bridge ready", file=sys.stderr, flush=True)
 while True:
     time.sleep(1)
 ''')
@@ -49,7 +50,7 @@ while True:
         assert not list(tmp.glob("notproton-discord.*")), "session directory was leaked"
         if report.exists():
             observed = json.loads(report.read_text())
-            assert observed["argv"] == [env["WINELOADER"], str(installed / "notproton-discord.exe")]
+            assert observed["argv"] == [str(observed["ppid"]), env["WINELOADER"], str(installed / "notproton-discord.exe")]
             assert not any(k in observed["env"] for k in (
                 "DYLD_INSERT_LIBRARIES", "STEAM_DYLD_INSERT_LIBRARIES", "NOTPROTON_GAME_LOADER"))
             try:
@@ -66,6 +67,7 @@ while True:
         if mode != "default":
             settings["NOTPROTON_DISCORD_BRIDGE"] = {"disabled": "0", "invalid": "true"}.get(mode, "1")
         enabled = mode in ("ready", "slow", "fail", "hang")
+        started = time.monotonic()
         result = subprocess.run(
             ["/bin/sh", "-ec", launch + '\nexit 23\n'],
             env=settings, timeout=18, capture_output=True, text=True,
@@ -74,6 +76,10 @@ while True:
         assert report.exists() == enabled
         log = Path(env["log"]).read_text() if Path(env["log"]).exists() else ""
         assert ("Discord bridge ready" in log) == (mode in ("ready", "slow")), log
+        assert ("still starting" in log) == (mode == "hang"), log
+        elapsed = time.monotonic() - started
+        assert mode != "slow" or 3 < elapsed < 8, elapsed
+        assert mode != "hang" or 9 < elapsed < 14, elapsed
         check_cleanup()
         print(f"  ok    Discord session: {mode}, exit status preserved and helper stopped")
 

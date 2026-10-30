@@ -119,6 +119,7 @@ static bool authenticate(struct connection *c, const char *token, bool *ready)
         *ready = true;
         puts("ready");
         fflush(stdout);
+        fputs("Discord bridge ready\n", stderr);
         return true;
     }
     if (c->hello[BRIDGE_TOKEN_LENGTH] != BRIDGE_STREAM) return false;
@@ -157,10 +158,11 @@ static bool relay(struct connection *c, short events[2])
            c->pending[0].start != c->pending[0].end || c->pending[1].start != c->pending[1].end;
 }
 
-static void stop_child(pid_t child)
+static void stop_child(pid_t child, bool ready)
 {
     // Closing the control connection lets the PE cancel pending pipe I/O and exit normally.
-    for (int i = 0; i < 30; ++i) {
+    // A helper that never connected has no control connection to see closing.
+    for (int i = 0; ready && i < 30; ++i) {
         pid_t result = waitpid(child, NULL, WNOHANG);
         if (result == child || (result < 0 && errno == ECHILD)) return;
         struct timespec delay = {0, 100000000};
@@ -179,12 +181,18 @@ static void stop_child(pid_t child)
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) { fprintf(stderr, "usage: discord-host WINELOADER bridge.exe\n"); return 64; }
+    char *end = NULL;
+    long runner = argc == 4 ? strtol(argv[1], &end, 10) : 0;
+    if (argc != 4 || *end || runner <= 0) {
+        fprintf(stderr, "usage: discord-host RUNNER_PID WINELOADER bridge.exe\n");
+        return 64;
+    }
     signal(SIGPIPE, SIG_IGN);
     signal(SIGTERM, stop);
     signal(SIGINT, stop);
     signal(SIGHUP, stop);
-    pid_t parent = getppid();
+    pid_t parent = (pid_t)runner;
+    if (getppid() != parent) return 1;
     int listener = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in address = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
     socklen_t size = sizeof(address);
@@ -209,16 +217,16 @@ int main(int argc, char **argv)
     unsetenv("DYLD_INSERT_LIBRARIES");
     unsetenv("STEAM_DYLD_INSERT_LIBRARIES");
     unsetenv("NOTPROTON_GAME_LOADER");
-    char *arguments[] = {argv[1], argv[2], NULL};
+    char *arguments[] = {argv[2], argv[3], NULL};
     pid_t child;
-    int error = posix_spawn(&child, argv[1], NULL, NULL, arguments, environ);
+    int error = posix_spawn(&child, argv[2], NULL, NULL, arguments, environ);
     unsetenv("NOTPROTON_DISCORD_PORT");
     unsetenv("NOTPROTON_DISCORD_TOKEN");
     if (error) { fprintf(stderr, "NotProton Discord: %s\n", strerror(error)); close(listener); return 1; }
     struct connection clients[BRIDGE_CLIENTS + 1] = {0};
     for (size_t i = 0; i < BRIDGE_CLIENTS + 1; ++i) clients[i].fd[0] = clients[i].fd[1] = -1;
     bool ready = false;
-    double startup_deadline = now() + 10;
+    double startup_deadline = now() + 60;
     int status = 0;
     while (!stopping && getppid() == parent) {
         if (waitpid(child, NULL, WNOHANG) == child) { child = -1; status = 1; break; }
@@ -259,7 +267,7 @@ int main(int argc, char **argv)
     }
     close(listener);
     for (size_t i = 0; i < BRIDGE_CLIENTS + 1; ++i) close_connection(&clients[i]);
-    if (child > 0) stop_child(child);
+    if (child > 0) stop_child(child, ready);
     if (!ready) fprintf(stderr, "NotProton Discord: pipe helper unavailable\n");
     return status;
 }
