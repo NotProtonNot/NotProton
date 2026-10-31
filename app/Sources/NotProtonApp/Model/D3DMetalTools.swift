@@ -590,11 +590,20 @@ enum D3DMetalTools: Sendable {
 
         let confURL = variantsDir.appending(path: "\(variantName).conf")
         let displayLabel = label ?? "D3DMetal \(ver)"
+        let homePath = NSHomeDirectory()
+        let targetPath = targetDir.path(percentEncoded: false)
+        let storedSrc: String
+        if targetPath.hasPrefix(homePath + "/") {
+            storedSrc = String(targetPath.dropFirst(homePath.count + 1))
+        } else {
+            storedSrc = targetPath
+        }
+
         let confContent = """
         # Written by NotProton. The runner is assembled from src at launch.
         [\(variantName)]
         variant = D3DMetal
-        src     = variants/\(variantName)
+        src     = \(storedSrc)
         dst     = lib64/apple_gptk
         label   = \(displayLabel)
 
@@ -655,8 +664,10 @@ enum D3DMetalTools: Sendable {
                     srcURL = URL(filePath: src)
                 } else if src.hasPrefix("~/") {
                     srcURL = URL(filePath: NSString(string: src).expandingTildeInPath)
+                } else if src.hasPrefix("$HOME/") {
+                    srcURL = URL(filePath: NSHomeDirectory()).appending(path: String(src.dropFirst(6)))
                 } else {
-                    srcURL = supportDir.appending(path: src)
+                    srcURL = URL(filePath: NSHomeDirectory()).appending(path: src)
                 }
             } else {
                 srcURL = variantsDir.appending(path: id)

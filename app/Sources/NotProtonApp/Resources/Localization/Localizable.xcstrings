@@ -365,6 +365,34 @@
         }
       }
     },
+    "%@ does not contain D3DMetal libraries (expected external and wine folders)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ enthält keine D3DMetal-Bibliotheken (Ordner «external» und «wine» erwartet)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne contient pas les bibliothèques D3DMetal (dossiers external et wine attendus)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non contiene le librerie D3DMetal (previste le cartelle external e wine)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不包含 D3DMetal 运行库（未找到 external 和 wine 文件夹）。"
+          }
+        }
+      }
+    },
     "%@ does not verify against its own signature. " : {
       "localizations" : {
         "de" : {
@@ -1860,6 +1888,34 @@
         }
       }
     },
+    "Additional prefix management actions." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zusätzliche Präfix-Verwaltungsaktionen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions supplémentaires de gestion des préfixes."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Azioni aggiuntive di gestione del prefisso."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多容器管理操作。"
+          }
+        }
+      }
+    },
     "Allow Client Updates" : {
       "localizations" : {
         "de" : {
@@ -2868,6 +2924,34 @@
         }
       }
     },
+    "Cached version %@ not found or corrupted." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwischengespeicherte Version %@ nicht gefunden oder beschädigt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version en cache %@ introuvable ou corrompue."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versione in cache %@ non trovata o danneggiata."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到缓存版本 %@ 或已损坏。"
+          }
+        }
+      }
+    },
     "Calculating…" : {
       "localizations" : {
         "de" : {
@@ -3232,6 +3316,62 @@
         }
       }
     },
+    "Clear All Shader Caches" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Shader-Caches leeren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer tous les caches de shaders"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella tutte le cache degli shader"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除所有着色器缓存"
+          }
+        }
+      }
+    },
+    "Clear Shader Cache" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shader-Cache leeren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer le cache des shaders"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella la cache degli shader"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除着色器缓存"
+          }
+        }
+      }
+    },
     "Clear Steam's controller permission so macOS asks for it again." : {
       "localizations" : {
         "de" : {
@@ -3256,6 +3396,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除 Steam 的控制器权限，让 macOS 重新询问授权。"
+          }
+        }
+      }
+    },
+    "Clear all DirectX 12 / D3DMetal shader caches." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle DirectX 12- / D3DMetal-Shader-Caches leeren."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacer tous les caches de shaders DirectX 12 / D3DMetal."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancella tutte le cache degli shader DirectX 12 / D3DMetal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除所有 DirectX 12 / D3DMetal 着色器缓存。"
+          }
+        }
+      }
+    },
+    "Cleared %lld DirectX 12 shader cache(s)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld DirectX 12-Shader-Cache(s) geleert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cache(s) de shaders DirectX 12 effacé(s)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancellate %lld cache degli shader DirectX 12."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清除 %lld 个 DirectX 12 着色器缓存。"
+          }
+        }
+      }
+    },
+    "Cleared DirectX 12 shader cache for %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12-Shader-Cache für %@ geleert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache de shaders DirectX 12 effacé pour %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache degli shader DirectX 12 cancellata per %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清除 %@ 的 DirectX 12 着色器缓存。"
+          }
+        }
+      }
+    },
+    "Clearing shader cache" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shader-Cache wird geleert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effacement du cache des shaders"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancellazione della cache degli shader"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在清除着色器缓存"
           }
         }
       }
@@ -4775,6 +5027,34 @@
         }
       }
     },
+    "DirectX 12 (D3DMetal) %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) %@"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "de" : {
@@ -5251,6 +5531,118 @@
         }
       }
     },
+    "Install Apple's Game Porting Toolkit %@ as a runner variant selectable per-game in Steam." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apples Game Porting Toolkit %@ als Runner-Variante installieren, die in Steam pro Spiel ausgewählt werden kann."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer Game Porting Toolkit %@ d'Apple en tant que variante d'exécutable sélectionnable par jeu dans Steam."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installa Game Porting Toolkit %@ di Apple come variante runner selezionabile per ciascun gioco in Steam."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 Apple Game Porting Toolkit %@ 安装为运行器变体，可在 Steam 中针对各个游戏分别选择。"
+          }
+        }
+      }
+    },
+    "Install D3DMetal Variant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3DMetal-Variante installieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer la variante D3DMetal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installa variante D3DMetal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 D3DMetal 变体"
+          }
+        }
+      }
+    },
+    "Install D3DMetal Variant…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3DMetal-Variante installieren…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer la variante D3DMetal…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installa variante D3DMetal…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 D3DMetal 变体…"
+          }
+        }
+      }
+    },
+    "Install GPTK %@ as Variant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPTK %@ als Variante installieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer GPTK %@ comme variante"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installa GPTK %@ come variante"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 GPTK %@ 为变体"
+          }
+        }
+      }
+    },
     "Install NotProton" : {
       "localizations" : {
         "de" : {
@@ -5307,6 +5699,34 @@
         }
       }
     },
+    "Install Variant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Variante installieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installer la variante"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installa variante"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装变体"
+          }
+        }
+      }
+    },
     "Installation is blocked. Refresh Status and use the NotProton app that installed this build." : {
       "localizations" : {
         "de" : {
@@ -5359,6 +5779,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已安装"
+          }
+        }
+      }
+    },
+    "Installed D3DMetal variant '%@'. It is now selectable under Developer in Steam's game compatibility settings." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3DMetal-Variante «%@» installiert. Sie kann nun unter «Entwickler» in den Steam-Kompatibilitätseinstellungen ausgewählt werden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Variante D3DMetal « %@ » installée. Elle est désormais sélectionnable sous Développeur dans les paramètres de compatibilité Steam."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Variante D3DMetal '%@' installata. È ora selezionabile sotto Sviluppatore nelle impostazioni di compatibilità di Steam."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安装 D3DMetal 变体“%@”。现在可以在 Steam 游戏的“开发者”兼容性设置中选择该变体。"
           }
         }
       }
@@ -5443,6 +5891,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在安装"
+          }
+        }
+      }
+    },
+    "Installing D3DMetal Variant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3DMetal-Variante wird installiert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installation de la variante D3DMetal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installazione variante D3DMetal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安装 D3DMetal 变体"
           }
         }
       }
@@ -6035,6 +6511,62 @@
         }
       }
     },
+    "Manually select an Apple Game Porting Toolkit disk image or folder to update DirectX 12." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle manuell ein Apple Game Porting Toolkit-Disk-Image oder einen Ordner aus, um DirectX 12 zu aktualisieren."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionnez manuellement une image disque ou un dossier Apple Game Porting Toolkit pour mettre à jour DirectX 12."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona manualmente un'immagine disco o una cartella di Apple Game Porting Toolkit per aggiornare DirectX 12."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动选择 Apple Game Porting Toolkit 磁盘映像或文件夹以更新 DirectX 12。"
+          }
+        }
+      }
+    },
+    "MetalFX prepared for %lld prefix(es)." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MetalFX für %lld Präfix(e) vorbereitet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MetalFX préparé pour %lld préfixe(s)."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MetalFX preparato per %lld prefisso/i."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已为 %lld 个容器准备 MetalFX。"
+          }
+        }
+      }
+    },
     "Missing components: %@. Run make app-payload and build the app again." : {
       "localizations" : {
         "de" : {
@@ -6311,6 +6843,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂无备份"
+          }
+        }
+      }
+    },
+    "No DirectX 12 shader cache found for %@." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein DirectX 12-Shader-Cache für %@ gefunden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun cache de shaders DirectX 12 trouvé pour %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna cache degli shader DirectX 12 trovata per %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 %@ 的 DirectX 12 着色器缓存。"
+          }
+        }
+      }
+    },
+    "No DirectX 12 shader caches found." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine DirectX 12-Shader-Caches gefunden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun cache de shaders DirectX 12 trouvé."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna cache degli shader DirectX 12 trovata."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 DirectX 12 着色器缓存。"
           }
         }
       }
@@ -7518,6 +8106,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "发行商"
+          }
+        }
+      }
+    },
+    "Quit running Windows applications before changing D3DMetal versions." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beende laufende Windows-Anwendungen, bevor du D3DMetal-Versionen änderst."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quittez les applications Windows en cours d'exécution avant de changer de version de D3DMetal."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiudi le applicazioni Windows in esecuzione prima di modificare le versioni di D3DMetal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改 D3DMetal 版本前，请先退出正在运行的 Windows 应用程序。"
           }
         }
       }
@@ -8810,6 +9426,34 @@
         }
       }
     },
+    "Restore Stock DirectX 12 (%@)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard-DirectX 12 (%@) wiederherstellen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurer DirectX 12 d'origine (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristina DirectX 12 originale (%@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复默认 DirectX 12 (%@)"
+          }
+        }
+      }
+    },
     "Restore the files included with this app." : {
       "localizations" : {
         "de" : {
@@ -8838,6 +9482,62 @@
         }
       }
     },
+    "Restore the stock DirectX 12 engine bundled with CrossOver in 1 click." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die mit CrossOver gebündelte Standard-DirectX 12-Engine mit 1 Klick wiederherstellen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurez le moteur DirectX 12 d'origine inclus avec CrossOver en 1 clic."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristina il motore DirectX 12 originale fornito con CrossOver in 1 clic."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一键恢复 CrossOver 自带的默认 DirectX 12 引擎。"
+          }
+        }
+      }
+    },
+    "Restored stock DirectX 12 (%@) successfully." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard-DirectX 12 (%@) erfolgreich wiederhergestellt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 d'origine (%@) restauré avec succès."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 originale (%@) ripristinato correttamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已成功恢复默认 DirectX 12 (%@)。"
+          }
+        }
+      }
+    },
     "Restoring Steam" : {
       "localizations" : {
         "de" : {
@@ -8862,6 +9562,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在恢复 Steam"
+          }
+        }
+      }
+    },
+    "Restoring stock DirectX 12" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard-DirectX 12 wird wiederhergestellt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restauration de DirectX 12 d'origine"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristino di DirectX 12 originale"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在恢复默认 DirectX 12"
           }
         }
       }
@@ -9146,6 +9874,90 @@
         }
       }
     },
+    "Select Apple GPTK Folder…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple GPTK-Ordner auswählen…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionner le dossier Apple GPTK…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona cartella Apple GPTK…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Apple GPTK 文件夹…"
+          }
+        }
+      }
+    },
+    "Select Apple's Game Porting Toolkit (GPTK) disk image (.dmg) or folder to install as a D3DMetal runner variant." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle ein Apple Game Porting Toolkit (GPTK)-Disk-Image (.dmg) oder einen Ordner aus, um es als D3DMetal-Runner-Variante zu installieren."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionnez une image disque (.dmg) ou un dossier Apple Game Porting Toolkit (GPTK) à installer en tant que variante D3DMetal."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona un'immagine disco (.dmg) o una cartella di Apple Game Porting Toolkit (GPTK) da installare come variante runner D3DMetal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Apple Game Porting Toolkit (GPTK) 磁盘映像 (.dmg) 或文件夹以安装为 D3DMetal 运行器变体。"
+          }
+        }
+      }
+    },
+    "Select Apple's Game Porting Toolkit (GPTK) disk image (.dmg) or mounted volume to update DirectX 12." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle ein Apple Game Porting Toolkit (GPTK)-Disk-Image (.dmg) oder ein gemountetes Volume aus, um DirectX 12 zu aktualisieren."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionnez une image disque (.dmg) ou un volume monté Apple Game Porting Toolkit (GPTK) pour mettre à jour DirectX 12."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona un'immagine disco (.dmg) o un volume montato di Apple Game Porting Toolkit (GPTK) per aggiornare DirectX 12."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Apple Game Porting Toolkit (GPTK) 磁盘映像 (.dmg) 或已挂载卷以更新 DirectX 12。"
+          }
+        }
+      }
+    },
     "Select a copy of CrossOver." : {
       "localizations" : {
         "de" : {
@@ -9170,6 +9982,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请选择一份 CrossOver 应用。"
+          }
+        }
+      }
+    },
+    "Select an Apple Game Porting Toolkit disk image or folder to install as a runner variant." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle ein Apple Game Porting Toolkit-Disk-Image oder einen Ordner aus, um es als Runner-Variante zu installieren."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sélectionnez une image disque ou un dossier Apple Game Porting Toolkit à installer en tant que variante."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleziona un'immagine disco o una cartella di Apple Game Porting Toolkit da installare come variante runner."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Apple Game Porting Toolkit 磁盘映像或文件夹以安装为运行器变体。"
           }
         }
       }
@@ -10293,6 +11133,146 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在停止 Steam"
+          }
+        }
+      }
+    },
+    "Switch D3DMetal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3DMetal wechseln"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changer de D3DMetal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambia D3DMetal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换 D3DMetal"
+          }
+        }
+      }
+    },
+    "Switch DirectX 12 to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 zu %@ wechseln"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer DirectX 12 vers %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa DirectX 12 a %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 DirectX 12 切换为 %@"
+          }
+        }
+      }
+    },
+    "Switch immediately to cached DirectX 12 / D3DMetal %@ in 1 click." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit 1 Klick sofort zu zwischengespeichertem DirectX 12 / D3DMetal %@ wechseln."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculez immédiatement vers DirectX 12 / D3DMetal %@ en cache en 1 clic."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passa immediatamente a DirectX 12 / D3DMetal %@ in cache in 1 clic."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一键立即切换至已缓存的 DirectX 12 / D3DMetal %@。"
+          }
+        }
+      }
+    },
+    "Switched DirectX 12 to %@ successfully." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 erfolgreich zu %@ gewechselt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 basculé vers %@ avec succès."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 passato a %@ correttamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已成功将 DirectX 12 切换为 %@。"
+          }
+        }
+      }
+    },
+    "Switching DirectX 12 to %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 wird zu %@ gewechselt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bascule de DirectX 12 vers %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passaggio di DirectX 12 a %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在将 DirectX 12 切换为 %@"
           }
         }
       }
@@ -11725,6 +12705,62 @@
         }
       }
     },
+    "Update D3DMetal" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D3DMetal aktualisieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettre à jour D3DMetal"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna D3DMetal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新 D3DMetal"
+          }
+        }
+      }
+    },
+    "Update DirectX 12 to GPTK %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 auf GPTK %@ aktualisieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettre à jour DirectX 12 vers GPTK %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna DirectX 12 a GPTK %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 DirectX 12 更新至 GPTK %@"
+          }
+        }
+      }
+    },
     "Update available (%@)." : {
       "localizations" : {
         "de" : {
@@ -11805,6 +12841,146 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新兼容工具"
+          }
+        }
+      }
+    },
+    "Updated DirectX 12 (D3DMetal) successfully." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) erfolgreich aktualisiert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) mis à jour avec succès."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) aggiornato correttamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已成功更新 DirectX 12 (D3DMetal)。"
+          }
+        }
+      }
+    },
+    "Updated DirectX 12 to GPTK %@ successfully." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 erfolgreich auf GPTK %@ aktualisiert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 mis à jour vers GPTK %@ avec succès."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 aggiornato a GPTK %@ correttamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已成功将 DirectX 12 更新至 GPTK %@。"
+          }
+        }
+      }
+    },
+    "Updating DirectX 12 (D3DMetal)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 (D3DMetal) wird aktualisiert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mise à jour de DirectX 12 (D3DMetal)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornamento di DirectX 12 (D3DMetal)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在更新 DirectX 12 (D3DMetal)"
+          }
+        }
+      }
+    },
+    "Updating DirectX 12 to GPTK %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DirectX 12 wird auf GPTK %@ aktualisiert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mise à jour de DirectX 12 vers GPTK %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiornamento di DirectX 12 a GPTK %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在将 DirectX 12 更新至 GPTK %@"
+          }
+        }
+      }
+    },
+    "Upgrade CrossOver's DirectX 12 engine from Apple's Game Porting Toolkit directly in 1 click." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiere die DirectX 12-Engine von CrossOver direkt mit 1 Klick über Apples Game Porting Toolkit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettez à niveau le moteur DirectX 12 de CrossOver directement en 1 clic depuis Game Porting Toolkit d'Apple."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna il motore DirectX 12 di CrossOver direttamente in 1 clic da Game Porting Toolkit di Apple."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一键直接使用 Apple Game Porting Toolkit 升级 CrossOver 的 DirectX 12 引擎。"
           }
         }
       }
@@ -12034,9 +13210,6 @@
       }
     },
     "WineD3D" : {
-      "shouldTranslate" : false
-    },
-    "Winetricks" : {
       "shouldTranslate" : false
     },
     "Winetricks keeps running. The Prefixes window shows when it is done." : {
