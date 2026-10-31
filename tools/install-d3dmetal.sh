@@ -188,6 +188,11 @@ remove_variant() {
     esac
     conf="$conf_dir/$name.conf"
     gone=0
+    src_in_conf=""
+    if [ -f "$conf" ]; then
+        src_in_conf=$(awk -F'=' '/^[ \t]*src[ \t]*=/ { gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit }' "$conf")
+    fi
+
     if [ -f "$conf" ] && written_here "$conf"; then
         rm -f "$conf"
         say "removed $conf"
@@ -196,12 +201,30 @@ remove_variant() {
         say "$conf was not written by this script, so it is left for you"
     fi
 
-    # Also clean up variant storage directory if placed under variants_dir
+    # Clean up variant storage directory if placed under variants_dir
     vdir="$variants_dir/$name"
     if [ -d "$vdir" ]; then
         rm -rf "$vdir"
         say "removed variant files at $vdir"
         gone=1
+    elif [ -n "$src_in_conf" ]; then
+        # Check if src_in_conf resolved under variants_dir or HOME
+        # shellcheck disable=SC2088,SC2016
+        case "$src_in_conf" in
+            ("~/"*) resolved_src="$HOME/${src_in_conf#"~/"}" ;;
+            ('$HOME/'*) resolved_src="$HOME/${src_in_conf#'$HOME/'}" ;;
+            (/*) resolved_src="$src_in_conf" ;;
+            (*) resolved_src="$HOME/$src_in_conf" ;;
+        esac
+        case "$resolved_src" in
+            ("$variants_dir"/*)
+                if [ -d "$resolved_src" ]; then
+                    rm -rf "$resolved_src"
+                    say "removed variant files at $resolved_src"
+                    gone=1
+                fi
+                ;;
+        esac
     fi
 
     list=$(mktemp) || die "cannot make a temp file"
@@ -225,7 +248,7 @@ remove_variant() {
 mount_dmg() {
     dmg=$1
     mount_out=$(hdiutil attach -nobrowse -readonly "$dmg" 2>/dev/null) || die "could not mount $dmg"
-    printf '%s\n' "$mount_out" | awk -F'\t' '/\/Volumes\// {print $NF; exit}'
+    printf '%s\n' "$mount_out" | awk -F'\t' '/\/Volumes\// { v=$NF; sub(/^[ \t\r\n]+/, "", v); sub(/[ \t\r\n]+$/, "", v); print v; exit }'
 }
 
 # Finds the directory holding external/ and wine/ inside a mounted path
@@ -261,10 +284,10 @@ write_descriptor() {
 
     cleanup() {
         if [ -n "$nested_mount" ]; then
-            hdiutil detach "$nested_mount" -quiet 2>/dev/null || true
+            hdiutil detach "$nested_mount" -quiet 2>/dev/null || hdiutil detach "$nested_mount" -force -quiet 2>/dev/null || true
         fi
         if [ -n "$mount_point" ]; then
-            hdiutil detach "$mount_point" -quiet 2>/dev/null || true
+            hdiutil detach "$mount_point" -quiet 2>/dev/null || hdiutil detach "$mount_point" -force -quiet 2>/dev/null || true
         fi
     }
     trap cleanup EXIT INT TERM

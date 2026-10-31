@@ -353,6 +353,28 @@ final class SystemStatus {
         }
     }
 
+    func installD3DMetalVariant(from sourceURL: URL? = nil) async {
+        let pickedURL: URL
+        if let sourceURL {
+            pickedURL = sourceURL
+        } else {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = String(localized: "Install Variant")
+            panel.message = String(localized: "Select Apple's Game Porting Toolkit (GPTK) disk image (.dmg) or folder to install as a D3DMetal runner variant.")
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            pickedURL = url
+        }
+
+        await perform(from: String(localized: "Installing D3DMetal Variant")) { _ in
+            let variant = try D3DMetalTools.installVariant(from: pickedURL)
+            AppLog.note("D3DMetal variant '\(variant.name)' installed from \(pickedURL.path(percentEncoded: false))")
+            return String(localized: "Installed D3DMetal variant '\(variant.label)'. It is now selectable under Developer in Steam's game compatibility settings.")
+        }
+    }
+
     func chooseSteam() async {
         let current = SupportPaths.Steam.app
         let panel = NSOpenPanel()

@@ -650,6 +650,21 @@ struct StatusView: View {
             let currentVer = D3DMetalTools.d3dMetalVersion(forBuild: row.buildID)
             let cached = D3DMetalTools.cachedVersions(forBuild: row.buildID)
 
+            // 1-Click install as a D3DMetal variant from auto-discovered mounted Evaluation Environment / DMG
+            if let discovered = D3DMetalTools.discoverSource() {
+                items.append(StatusAction(
+                    label: String(localized: "Install GPTK \(discovered.version) as Variant"),
+                    help: String(localized: "Install Apple's Game Porting Toolkit \(discovered.version) as a runner variant selectable per-game in Steam."),
+                    isEnabled: status.canInstall
+                ) { Task { await status.installD3DMetalVariant(from: discovered.url) } })
+            }
+
+            items.append(StatusAction(
+                label: String(localized: "Install D3DMetal Variant\u{2026}"),
+                help: String(localized: "Select an Apple Game Porting Toolkit disk image or folder to install as a runner variant."),
+                isEnabled: status.canInstall
+            ) { Task { await status.installD3DMetalVariant() } })
+
             // 1-Click update from auto-discovered mounted Evaluation Environment / DMG (if not already cached)
             if let discovered = D3DMetalTools.discoverSource(),
                discovered.version != currentVer,
