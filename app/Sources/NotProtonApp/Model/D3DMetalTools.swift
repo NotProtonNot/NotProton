@@ -514,4 +514,193 @@ enum D3DMetalTools: Sendable {
             shaderCachesCleared: cleared
         )
     }
+
+    public struct D3DMetalVariant: Sendable, Equatable, Identifiable {
+        public var id: String { name }
+        public let name: String
+        public let label: String
+        public let src: URL
+        public let version: String?
+        public let confURL: URL
+
+        public init(name: String, label: String, src: URL, version: String?, confURL: URL) {
+            self.name = name
+            self.label = label
+            self.src = src
+            self.version = version
+            self.confURL = confURL
+        }
+    }
+
+    /// Installs D3DMetal as a runner variant (variants/<name>.conf) conforming to NotProton's variant grammar.
+    @discardableResult
+    public static func installVariant(
+        from source: URL,
+        name: String? = nil,
+        label: String? = nil,
+        supportDir: URL = SupportPaths.support,
+        cacheDir: URL? = cacheDirectory()
+    ) throws -> D3DMetalVariant {
+        let step = String(localized: "Install D3DMetal Variant")
+        guard let d3dmSource = resolveSource(at: source) else {
+            throw StepFailure(
+                step: step,
+                detail: String(localized: "\(source.lastPathComponent) does not contain D3DMetal libraries (expected external and wine folders).")
+            )
+        }
+
+        let ver = d3dMetalVersion(atLibRoot: d3dmSource) ?? versionFromFilename(source.lastPathComponent) ?? "custom"
+        let variantName: String
+        if let customName = name, !customName.isEmpty {
+            variantName = customName
+        } else {
+            variantName = "d3dmetal-\(ver)"
+        }
+
+        let variantsDir = supportDir.appending(path: "variants")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: variantsDir.path(percentEncoded: false)) {
+            try fm.createDirectory(at: variantsDir, withIntermediateDirectories: true)
+        }
+
+        let targetDir = variantsDir.appending(path: variantName)
+        let extDst = targetDir.appending(path: "external")
+        let wineDst = targetDir.appending(path: "wine")
+
+        try? fm.removeItem(at: targetDir)
+        try fm.createDirectory(at: targetDir, withIntermediateDirectories: true)
+
+        try fm.copyItem(at: d3dmSource.appending(path: "external"), to: extDst)
+        try fm.copyItem(at: d3dmSource.appending(path: "wine"), to: wineDst)
+
+        // Prepare MetalFX integration if nvngx.dll not present
+        let winDir = wineDst.appending(path: "x86_64-windows")
+        let nvngxWinSrc = winDir.appending(path: "nvngx-on-metalfx.dll")
+        let nvngxWinDst = winDir.appending(path: "nvngx.dll")
+        if fm.fileExists(atPath: nvngxWinSrc.path(percentEncoded: false)) && !fm.fileExists(atPath: nvngxWinDst.path(percentEncoded: false)) {
+            try? fm.copyItem(at: nvngxWinSrc, to: nvngxWinDst)
+        }
+
+        let unixDir = wineDst.appending(path: "x86_64-unix")
+        let nvngxUnixSrc = unixDir.appending(path: "nvngx-on-metalfx.so")
+        let nvngxUnixDst = unixDir.appending(path: "nvngx.so")
+        if fm.fileExists(atPath: nvngxUnixSrc.path(percentEncoded: false)) && !fm.fileExists(atPath: nvngxUnixDst.path(percentEncoded: false)) {
+            try? fm.copyItem(at: nvngxUnixSrc, to: nvngxUnixDst)
+        }
+
+        let confURL = variantsDir.appending(path: "\(variantName).conf")
+        let displayLabel = label ?? "D3DMetal \(ver)"
+        let confContent = """
+        # Written by NotProton. The runner is assembled from src at launch.
+        [\(variantName)]
+        variant = D3DMetal
+        src     = variants/\(variantName)
+        dst     = lib64/apple_gptk
+        label   = \(displayLabel)
+
+        """
+        try confContent.write(to: confURL, atomically: true, encoding: .utf8)
+
+        // Invalidate shader cache
+        _ = try? clearAllShaderCaches(cacheDir: cacheDir)
+
+        return D3DMetalVariant(
+            name: variantName,
+            label: displayLabel,
+            src: targetDir,
+            version: ver,
+            confURL: confURL
+        )
+    }
+
+    /// Lists all installed D3DMetal variants in the variants directory.
+    public static func installedVariants(supportDir: URL = SupportPaths.support) -> [D3DMetalVariant] {
+        let variantsDir = supportDir.appending(path: "variants")
+        guard let files = try? FileManager.default.contentsOfDirectory(at: variantsDir, includingPropertiesForKeys: nil) else {
+            return []
+        }
+
+        var variants: [D3DMetalVariant] = []
+        for file in files where file.pathExtension == "conf" {
+            guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            let lines = content.components(separatedBy: .newlines)
+            var currentID: String?
+            var currentLabel: String?
+            var currentSrc: String?
+            var currentDst: String?
+            var currentGroup: String?
+
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                    currentID = String(trimmed.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("variant") && trimmed.contains("=") {
+                    currentGroup = trimmed.split(separator: "=", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("label") && trimmed.contains("=") {
+                    currentLabel = trimmed.split(separator: "=", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("src") && trimmed.contains("=") {
+                    currentSrc = trimmed.split(separator: "=", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("dst") && trimmed.contains("=") {
+                    currentDst = trimmed.split(separator: "=", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)
+                }
+            }
+
+            guard let id = currentID, (currentGroup == "D3DMetal" || currentDst?.contains("apple_gptk") == true) else {
+                continue
+            }
+
+            let srcURL: URL
+            if let src = currentSrc {
+                if src.hasPrefix("/") {
+                    srcURL = URL(filePath: src)
+                } else if src.hasPrefix("~/") {
+                    srcURL = URL(filePath: NSString(string: src).expandingTildeInPath)
+                } else {
+                    srcURL = supportDir.appending(path: src)
+                }
+            } else {
+                srcURL = variantsDir.appending(path: id)
+            }
+
+            let ver = d3dMetalVersion(atLibRoot: srcURL)
+            variants.append(D3DMetalVariant(
+                name: id,
+                label: currentLabel ?? id,
+                src: srcURL,
+                version: ver,
+                confURL: file
+            ))
+        }
+
+        return variants.sorted { $0.name < $1.name }
+    }
+
+    /// Removes a D3DMetal variant descriptor, its tree (if located in variants dir), and any assembled runners.
+    public static func removeVariant(
+        name: String,
+        supportDir: URL = SupportPaths.support,
+        runners: URL = SupportPaths.runners
+    ) throws {
+        let fm = FileManager.default
+        let variantsDir = supportDir.appending(path: "variants")
+        let confURL = variantsDir.appending(path: "\(name).conf")
+        let targetDir = variantsDir.appending(path: name)
+
+        if fm.fileExists(atPath: confURL.path(percentEncoded: false)) {
+            try? fm.removeItem(at: confURL)
+        }
+        if fm.fileExists(atPath: targetDir.path(percentEncoded: false)) {
+            try? fm.removeItem(at: targetDir)
+        }
+
+        // Remove any runners assembled with this variant: crossover-<build>+<name>...
+        if let entries = try? fm.contentsOfDirectory(at: runners, includingPropertiesForKeys: nil) {
+            for entry in entries {
+                let filename = entry.lastPathComponent
+                if filename.contains("+\(name)") {
+                    try? fm.removeItem(at: entry)
+                }
+            }
+        }
+    }
 }
