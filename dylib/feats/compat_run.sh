@@ -2628,6 +2628,12 @@ game_name_xml=$(printf '%s' "$game_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g
 loader_root="$HOME/Library/Application Support/notproton/launchers/$app_id"
 mkdir -p "$loader_root"
 loader_app="$loader_root/$bundle_name.app"
+np_game_host="$np_support/bridge/game-host"
+np_game_client="$np_support/bridge/game-client.dylib"
+np_single_icon=0
+if [ "${NOTPROTON_SINGLE_GAME_ICON:-1}" = 1 ] && [ -x "$np_game_host" ] && [ -f "$np_game_client" ]; then
+  np_single_icon=1
+fi
 find "$loader_root" -maxdepth 1 -name '.build.*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 loader_work=$(mktemp -d "$loader_root/.build.XXXXXX")
 loader_stage="$loader_work/new/$bundle_name.app"
@@ -2709,10 +2715,20 @@ fi
 if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
 fi
+if [ -n "\$NOTPROTON_GAME_CHANNEL" ]; then
+  client="\$(dirname "\$WINELOADER")/game-client.dylib"
+  export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$client"
+fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 exec "$WINELOADER" "\$@"
 LAUNCHER
 chmod +x "$loader_macos/launcher"
+if [ "$np_single_icon" = 1 ]; then
+  mv "$loader_macos/launcher" "$loader_macos/wine-launch.sh"
+  cp "$np_game_host" "$loader_macos/launcher"
+  cp "$np_game_client" "$loader_macos/game-client.dylib"
+  chmod +x "$loader_macos/launcher"
+fi
 
 bundle_listing() {
   (cd "$1" && find . | LC_ALL=C sort | while IFS= read -r p; do
