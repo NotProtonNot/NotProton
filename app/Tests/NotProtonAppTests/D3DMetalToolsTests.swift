@@ -268,4 +268,77 @@ struct D3DMetalToolsTests {
         #expect(D3DMetalTools.versionFromFilename("Game_Porting_Toolkit_1.0.dmg") == "1.0")
         #expect(D3DMetalTools.versionFromFilename("random_file.dmg") == nil)
     }
+
+    @Test("Install, list, and remove D3DMetal variant")
+    func d3dMetalVariantLifecycle() throws {
+        let tempDir = try createTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let supportDir = tempDir.appending(path: "notproton")
+        let runnersDir = supportDir.appending(path: "runners")
+        let sourceDir = tempDir.appending(path: "source_gptk")
+
+        // Create dummy source tree
+        let srcExt = sourceDir.appending(path: "external/D3DMetal.framework/Versions/A/Resources")
+        let srcWineWin = sourceDir.appending(path: "wine/x86_64-windows")
+        let srcWineUnix = sourceDir.appending(path: "wine/x86_64-unix")
+        try FileManager.default.createDirectory(at: srcExt, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: srcWineWin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: srcWineUnix, withIntermediateDirectories: true)
+
+        let plist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleShortVersionString</key>
+            <string>4.0b3</string>
+        </dict>
+        </plist>
+        """
+        try plist.write(to: srcExt.appending(path: "version.plist"), atomically: true, encoding: .utf8)
+        try "dummy-dll".write(to: srcWineWin.appending(path: "d3d12.dll"), atomically: true, encoding: .utf8)
+        try "dummy-so".write(to: srcWineUnix.appending(path: "d3d12.so"), atomically: true, encoding: .utf8)
+        try "metalfx-dll".write(to: srcWineWin.appending(path: "nvngx-on-metalfx.dll"), atomically: true, encoding: .utf8)
+
+        // Install variant
+        let variant = try D3DMetalTools.installVariant(
+            from: sourceDir,
+            name: "d3dmetal-4.0b3",
+            label: "D3DMetal 4.0 Beta 3",
+            supportDir: supportDir
+        )
+
+        #expect(variant.name == "d3dmetal-4.0b3")
+        #expect(variant.label == "D3DMetal 4.0 Beta 3")
+        #expect(variant.version == "4.0b3")
+        #expect(FileManager.default.fileExists(atPath: variant.confURL.path(percentEncoded: false)))
+
+        // Verify conf content
+        let confContent = try String(contentsOf: variant.confURL, encoding: .utf8)
+        #expect(confContent.contains("[d3dmetal-4.0b3]"))
+        #expect(confContent.contains("variant = D3DMetal"))
+        #expect(confContent.contains("dst     = lib64/apple_gptk"))
+
+        // Verify metalfx was prepared
+        let winTarget = variant.src.appending(path: "wine/x86_64-windows")
+        #expect(FileManager.default.fileExists(atPath: winTarget.appending(path: "nvngx.dll").path(percentEncoded: false)))
+
+        // List variants
+        let installed = D3DMetalTools.installedVariants(supportDir: supportDir)
+        #expect(installed.count == 1)
+        #expect(installed[0].name == "d3dmetal-4.0b3")
+        #expect(installed[0].label == "D3DMetal 4.0 Beta 3")
+
+        // Create dummy assembled runner clone
+        let runnerClone = runnersDir.appending(path: "crossover-26.3+d3dmetal-4.0b3@abc123")
+        try FileManager.default.createDirectory(at: runnerClone, withIntermediateDirectories: true)
+
+        // Remove variant
+        try D3DMetalTools.removeVariant(name: "d3dmetal-4.0b3", supportDir: supportDir, runners: runnersDir)
+        #expect(!FileManager.default.fileExists(atPath: variant.confURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: variant.src.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: runnerClone.path(percentEncoded: false)))
+        #expect(D3DMetalTools.installedVariants(supportDir: supportDir).isEmpty)
+    }
 }
