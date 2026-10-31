@@ -115,7 +115,7 @@ for (const form of Object.keys(FORMS)) {
   }
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 3, 'automatic shows seven toggles in three sections');
+  t.ok(toggles(r).length === 8 && sections(r).length === 4, 'automatic shows eight toggles in four sections');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
@@ -173,7 +173,7 @@ for (const form of Object.keys(FORMS)) {
   const root = P({ details: details('') });
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
-  t.ok(classes.length === 7 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
+  t.ok(classes.length === 8 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
   const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
@@ -187,6 +187,21 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   raw('NOTPROTON_RAW_CONTROLLERS=1 WINEMSYNC=1').props.onChange(false);
   t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning the controller row off removes its flag (${last()})`);
+  const discord = o => nodes(o).find(x => x.props.label === 'Discord Rich Presence');
+  const order = sections(nodes(''));
+  t.ok(order.indexOf('Discord') === order.indexOf('Controllers') + 1,
+       'Discord follows the controller section');
+  for (const value of ['', '0', 'true'])
+    t.ok(discord(value ? 'NOTPROTON_DISCORD_BRIDGE=' + value : '').props.checked === false,
+         `Discord requires explicit opt-in (${value || 'unset'})`);
+  written.length = 0;
+  discord('').props.onChange(true);
+  t.ok(last().trim() === 'NOTPROTON_DISCORD_BRIDGE=1 %command%', `Discord writes its flag (${last()})`);
+  t.ok(discord('NOTPROTON_DISCORD_BRIDGE=1').props.checked === true, 'Discord reads its flag');
+  written.length = 0;
+  discord('NOTPROTON_DISCORD_BRIDGE=1 NOTPROTON_RAW_CONTROLLERS=1 WINEMSYNC=1').props.onChange(false);
+  t.ok(last().trim() === 'NOTPROTON_RAW_CONTROLLERS=1 WINEMSYNC=1 %command%',
+       `turning Discord off keeps controller and graphics settings (${last()})`);
   const css = nodes('').filter(x => x.type === 'style');
   t.ok(css.length === 1 && css[0].props.children.includes('.MSCXPanel .MSCXRow{'),
        'the panel carries one stylesheet defining the row rule');

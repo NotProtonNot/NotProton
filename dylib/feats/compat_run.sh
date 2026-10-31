@@ -2608,6 +2608,17 @@ if [ "$foreground" = 0 ]; then
   exit $status
 fi
 
+discord_session="$np_support/integrations/discord/session.sh"
+if [ "${NOTPROTON_DISCORD_BRIDGE:-0}" = 1 ] && [ -r "$discord_session" ]; then
+  # shellcheck disable=SC1090 # Installed alongside the bridge binaries.
+  . "$discord_session"
+  trap stop_discord_bridge EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  start_discord_bridge "$np_support" "$WINELOADER" "$log"
+fi
+
 # Fixes CrossOver window focus issues
 steam_root="$(dirname "$(dirname "$(dirname "$STEAM_COMPAT_DATA_PATH")")")"
 manifest="$steam_root/steamapps/appmanifest_$app_id.acf"
