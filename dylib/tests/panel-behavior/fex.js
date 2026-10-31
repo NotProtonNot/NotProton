@@ -120,7 +120,7 @@ for (const form of Object.keys(FORMS)) {
     pick(details(opts), tool);
     return written.length ? written[written.length - 1].opts : null;
   };
-  const all = 'WINEDEBUG=-all CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1 MTL_HUD_ENABLED=1 ' +
+  const all = 'WINEDEBUG=-all CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1 D3DM_SUPPORT_DXR=1 D3DM_MTL4=0 D3DM_MAX_FPS=60 MTL_HUD_ENABLED=1 ' +
               "ROSETTA_ADVERTISE_AVX=0 FEX_X87REDUCEDPRECISION=0 DXMT_CONFIG='a;b' %command% -novid";
   const r = choose(all, 'notproton-fex');
   t.ok(r === "WINEDEBUG=-all MTL_HUD_ENABLED=1 FEX_X87REDUCEDPRECISION=0 DXMT_CONFIG='a;b' %command% -novid",

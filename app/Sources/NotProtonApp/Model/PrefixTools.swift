@@ -410,4 +410,14 @@ enum PrefixTools {
             try FileManager.default.removeItem(at: prefix.root)
         }
     }
+
+    @discardableResult
+    static func clearShaderCache(for prefix: WinePrefix) throws -> Int {
+        try D3DMetalTools.clearShaderCache(for: prefix)
+    }
+
+    @discardableResult
+    static func clearAllShaderCaches() throws -> Int {
+        try D3DMetalTools.clearAllShaderCaches()
+    }
 }

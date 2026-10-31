@@ -108,21 +108,21 @@ forward_at=$(grep -n '^for name in $(env ' "$SRC" | cut -d: -f1)
 seen() { sh -c 'env | sed -nE "s/^(CX_GRAPHICS_BACKEND|D3DM_[A-Z0-9_]*|DXMT_[A-Z0-9_]*|ROSETTA_[A-Z0-9_]*)=.*/\1/p" | sort | tr "\n" " "'; }
 for name in $(seen); do unset -v "$name"; done
 CX_ROOT="/R R"
-set_all() { export CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1 ROSETTA_ADVERTISE_AVX=0 DXMT_CONFIG=x; }
+set_all() { export CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1 D3DM_SUPPORT_DXR=1 D3DM_MTL4=0 D3DM_MAX_FPS=60 ROSETTA_ADVERTISE_AVX=0 DXMT_CONFIG=x; }
 set_all
 wine_unix="/R R/lib/wine/x86_64-unix"
 eval "$drop"
 is "x86_64 Wine keeps every setting" \
-  "CX_GRAPHICS_BACKEND D3DM_ENABLE_METALFX DXMT_CONFIG ROSETTA_ADVERTISE_AVX " "$(seen)"
+  "CX_GRAPHICS_BACKEND D3DM_ENABLE_METALFX D3DM_MAX_FPS D3DM_MTL4 D3DM_SUPPORT_DXR DXMT_CONFIG ROSETTA_ADVERTISE_AVX " "$(seen)"
 is "x86_64 Wine logs nothing" "" "$np_dropped"
 wine_unix="/R R/lib/wine/aarch64-unix"
 eval "$drop"
 is "D3DMetal and Rosetta settings leave the environment" "DXMT_CONFIG " "$(seen)"
 is "the run log names what was ignored" \
-  "CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX ROSETTA_ADVERTISE_AVX" "$np_dropped"
+  "CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX D3DM_MAX_FPS D3DM_MTL4 D3DM_SUPPORT_DXR ROSETTA_ADVERTISE_AVX" "$np_dropped"
 set_all
 export CX_GRAPHICS_BACKEND=dxmt
-unset -v D3DM_ENABLE_METALFX ROSETTA_ADVERTISE_AVX
+unset -v D3DM_ENABLE_METALFX D3DM_SUPPORT_DXR D3DM_MTL4 D3DM_MAX_FPS ROSETTA_ADVERTISE_AVX
 eval "$drop"
 is "other backends stay" "CX_GRAPHICS_BACKEND DXMT_CONFIG " "$(seen)"
 is "nothing to ignore logs nothing" "" "$np_dropped"

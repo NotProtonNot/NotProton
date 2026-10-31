@@ -115,8 +115,8 @@ for (const form of Object.keys(FORMS)) {
   }
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 3, 'automatic shows seven toggles in three sections');
-  t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
+  t.ok(toggles(r).length === 9 && sections(r).length === 4, 'automatic shows nine toggles in four sections');
+  t.ok(r.filter(x => x.type === 'Dropdown').length === 3, 'three dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
   r = nodes('CX_GRAPHICS_BACKEND=dxmt');
@@ -162,6 +162,21 @@ for (const form of Object.keys(FORMS)) {
     .props.rgOptions.map(o => o.label);
   t.ok(factors.join(',') === 'Off,1.5x,1.72x,2x,3x', `the factors name themselves (${factors.join(',')})`);
 
+  const fpsOptions = nodes('').find(x => x.type === 'Dropdown' && x.props.rgOptions.some(o => o.data === '60'))
+    .props.rgOptions.map(o => o.label);
+  t.ok(fpsOptions.join(',') === 'Off,30 FPS,60 FPS,90 FPS,120 FPS,144 FPS,240 FPS', `the fps options name themselves (${fpsOptions.join(',')})`);
+  written.length = 0;
+  nodes('').find(x => x.type === 'Dropdown' && x.props.rgOptions.some(o => o.data === '60')).props.onChange({ data: '60' });
+  t.ok(last().includes('D3DM_MAX_FPS=60'), `the fps cap writes its value (${last()})`);
+
+  written.length = 0;
+  nodes('').find(x => x.props.label === 'DirectX Raytracing (DXR)').props.onChange(true);
+  t.ok(last().includes('D3DM_SUPPORT_DXR=1'), `DXR toggle writes D3DM_SUPPORT_DXR=1 (${last()})`);
+
+  written.length = 0;
+  nodes('').find(x => x.props.label === 'Metal 4 Backend').props.onChange(false);
+  t.ok(last().includes('D3DM_MTL4=0'), `Metal 4 toggle writes D3DM_MTL4=0 (${last()})`);
+
   // The value is the name wine gives the library, which is lower case, and the label is
   // the name in a list of four the reader picks from.
   const backends = nodes('').find(x => x.type === 'Dropdown').props.rgOptions;
@@ -173,7 +188,7 @@ for (const form of Object.keys(FORMS)) {
   const root = P({ details: details('') });
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
-  t.ok(classes.length === 7 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
+  t.ok(classes.length === 9 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
   const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
