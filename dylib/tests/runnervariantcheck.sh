@@ -648,7 +648,7 @@ ok "a rebuild refreshes what it registered" \
   "$(prefixed "$pfx/drive_c/windows/system32/newmod.dll")" "Wine builtin DLLsrc64v2"
 ok "and still leaves the prefix's own file" \
   "$(prefixed "$pfx/drive_c/windows/system32/d3d11.dll")" ""
-ok "with no temp file left behind" "$(ls "$pfx/drive_c/windows/system32" | grep -c np-stage || true)" "0"
+ok "with no temp file left behind" "$(find "$pfx/drive_c/windows/system32" -name '*.np-stage.*' | wc -l | tr -d ' ')" "0"
 
 mkdir -p "$base/lib/dxmt/aarch64-windows"
 mkdir -p "$work/trees/both/x86_64-windows" "$work/trees/both/aarch64-windows"
@@ -720,10 +720,10 @@ case "$*" in *.removing*) exit 1 ;; esac
 exec /bin/rm "$@"
 FAKE
 chmod +x "$work/failps/ps" "$work/keeprm/rm"
-( PATH="$work/failps:$PATH"; resolve gc > /dev/null )
+: "$(PATH="$work/failps:$PATH" resolve gc)"
 ok "a ps that fails keeps the old build" "$([ -d "$old" ] && echo kept)" "kept"
 touch -t 202001010000 "$old/.notproton-used"
-( PATH="$work/keeprm:$PATH"; resolve gc > /dev/null )
+: "$(PATH="$work/keeprm:$PATH" resolve gc)"
 ok "a cleanup killed partway leaves no build under the old name" "$([ -e "$old" ] || echo gone)" "gone"
 trash="$work/runners/.${old##*/}.removing"
 ok "only its hidden trash" "$([ -d "$trash" ] && echo there)" "there"

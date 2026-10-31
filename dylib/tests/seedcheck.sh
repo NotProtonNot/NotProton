@@ -19,7 +19,7 @@ functions="$functions
 $(cut_block '^without_lock_fds\(\) \{' '^\}' 1)"
 np_build=fixture
 np_variant_key=""
-export np_build CX_ROOT CX_HOME wine_unix np_tool_dir WINELOADER WINESERVER
+export np_variant_key np_build CX_ROOT CX_HOME wine_unix np_tool_dir WINELOADER WINESERVER
 export STEAM_COMPAT_DATA_PATH WINEPREFIX template_dir log seed_scratch seed_building
 CX_ROOT="$work/runner"
 CX_HOME="$work/home"
