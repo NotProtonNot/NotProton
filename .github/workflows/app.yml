@@ -129,6 +129,9 @@ jobs:
           make -s envpasscheck
           make -s featcheck
           make -s featstagecheck
+          make -s conf-fixtures
+          make -s confcheck
+          make -s runnervariantcheck
           make -s buildcheck
           make -s settingscheck
           make -s routecheck

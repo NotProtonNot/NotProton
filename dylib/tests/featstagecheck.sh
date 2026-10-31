@@ -4,9 +4,14 @@ set -e
 SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "featstagecheck: $SRC not present, skipped"; exit 0; }
 
-block=$(sed -n '/^np_feat_dir=/,/^NP_FEAT_LIST$/p' "$SRC")
-case "$block" in
-  *np_feat_stage*np_feat_over*) ;;
+# The loop reads descriptors through the shared reader, so that comes along with it.
+conf=$(awk '/^np_conf_normalise\(\) \(/ { f = 1 }
+            f { print }
+            /^np_conf_log\(\) \{/ { g = 1 }
+            g && /^}$/ { exit }' "$SRC")
+block=$(sed -n '/^np_env_reserved() {/,/^}$/p; /^np_feat_dir=/,/^NP_FEAT_LIST$/p' "$SRC")
+case "$conf$block" in
+  *np_conf_normalise*np_env_reserved*np_feat_stage*np_feat_over*) ;;
   *) echo "FAIL: the plugin loop was not found in $SRC"; exit 1 ;;
 esac
 
@@ -18,7 +23,7 @@ mkdir -p "$work/stage" "$sys32" "$feats" "$work/lib"
 printf 'ours\n' > "$work/stage/d3d11.dll"
 printf 'ours\n' > "$work/stage/dxgi.dll"
 printf 'dylib\n' > "$work/lib/feat.dylib"
-printf '%s\n' "$block" > "$work/block.sh"
+printf '%s\n%s\n' "$conf" "$block" > "$work/block.sh"
 
 conf() {
   cat > "$feats/$1"
@@ -49,7 +54,7 @@ ok() { if [ "$2" = "$3" ]; then echo "  ok    $1"; else
 
 reset
 conf 50-test.conf <<EOF
-key = NOTPROTON_TESTFEAT
+[NOTPROTON_TESTFEAT]
 label = Test
 section = dev
 on = 1
@@ -81,18 +86,18 @@ out=$(run NOTPROTON_TESTFEAT=1)
 ok "a missing stage directory still launches" "$(line "$out" 1)" "steamclient=n;lsteamclient=b;d3d11,dxgi=n"
 
 reset
-printf 'key = NOTPROTON_CR\r\nlabel = CR\r\non = 1 \r\noverrides = cr=n\r\n' > "$feats/10-cr.conf"
+printf '[NOTPROTON_CR]\r\nlabel = CR\r\non = 1 \r\noverrides = cr=n\r\n' > "$feats/10-cr.conf"
 out=$(run NOTPROTON_CR=1)
 ok "trailing whitespace and CR are trimmed" "$(line "$out" 1)" "steamclient=n;lsteamclient=b;cr=n"
 
 reset
 conf 10-first.conf <<EOF
-key = NOTPROTON_DUP
+[NOTPROTON_DUP]
 label = First
 overrides = first=n
 EOF
 conf 20-second.conf <<EOF
-key = NOTPROTON_DUP
+[NOTPROTON_DUP]
 label = Second
 overrides = second=n
 EOF
@@ -101,11 +106,11 @@ ok "the first file for a key wins" "$(line "$out" 1)" "steamclient=n;lsteamclien
 
 reset
 conf 10-nolabel.conf <<EOF
-key = NOTPROTON_NOLABEL
+[NOTPROTON_NOLABEL]
 overrides = nolabel=n
 EOF
 conf 20-section.conf <<EOF
-key = NOTPROTON_SECTION
+[NOTPROTON_SECTION]
 label = Section
 section = other
 overrides = section=n
@@ -115,60 +120,91 @@ ok "a plugin needs a label and the dev section" "$(line "$out" 1)" "steamclient=
 
 reset
 conf 10-evil.conf <<EOF
-key = NOTPROTON_A:-}\$(touch $work/pwned-key)\${X
+[NOTPROTON_A:-}\$(touch $work/pwned-key)\${X]
 label = Evil
 EOF
 conf 20-env.conf <<EOF
-key = NOTPROTON_ENV
+[NOTPROTON_ENV]
 label = Env
-env = AB\$(touch $work/pwned-env)=1
-env = NOVALUE
-env = lower=1
 env = GOOD=a "b" \$(touch $work/pwned-value) \$HOME/x\$HOMEy
 env = TILDE=~/build/a.dll
 env = MID=a~/b
 env = LATER=2
 EOF
-out=$(run NOTPROTON_ENV=1)
+# An env line that is not NAME=VALUE now loses the whole plugin rather than being
+# skipped on its own: a plugin half-applied is worse than one that says it is refused.
+conf 21-badenv.conf <<EOF
+[NOTPROTON_BADENV]
+label = Bad env
+env = AB\$(touch $work/pwned-env)=1
+overrides = bad=n
+EOF
+conf 22-noval.conf <<EOF
+[NOTPROTON_NOVAL]
+label = No value
+env = NOVALUE
+overrides = noval=n
+EOF
+out=$(run NOTPROTON_ENV=1 NOTPROTON_BADENV=1 NOTPROTON_NOVAL=1)
 ok "a key is never evaluated" "$(find "$work" -name 'pwned*' | wc -l | tr -d ' ')" "0"
 ok "env lines are kept newest first, with \$HOME filled in" \
   "$(line "$out" 3)|$(line "$out" 4)|$(line "$out" 5)|$(line "$out" 6)" \
   "LATER=2|MID=a~/b|TILDE=$work/build/a.dll|GOOD=a \"b\" \$(touch $work/pwned-value) $work/x${work}y"
-ok "bad env names are logged" "$(grep -c 'NOTPROTON_ENV skips env' "$work/log")" "3"
+ok "a plugin whose env line is not NAME=VALUE is refused whole" "$(line "$out" 1)" "steamclient=n;lsteamclient=b"
+ok "and says which field lost it" \
+   "$(grep -c 'refused, bad-value:env' "$work/log")" "2"
 
 reset
 conf 10-parent.conf <<EOF
-key = NOTPROTON_PARENT
+[NOTPROTON_PARENT]
 label = Parent
 requires = $work/lib/missing.dylib
 requires = $work/lib/feat.dylib
 inject = 1
 EOF
 conf 20-child.conf <<EOF
-key = NOTPROTON_CHILD
+[NOTPROTON_CHILD]
 label = Child
 depends = NOTPROTON_PARENT
 overrides = child=n
+EOF
+conf 30-choice-parent.conf <<EOF
+[NOTPROTON_CHOICE_PARENT]
+label = Mode
+type = choice
+choice = fast = Fast
+choice = quality = Quality
+EOF
+conf 40-choice-child.conf <<EOF
+[NOTPROTON_CHOICE_CHILD]
+label = Fast extra
+depends = NOTPROTON_CHOICE_PARENT
+overrides = fastchild=n
 EOF
 out=$(run NOTPROTON_PARENT=1 NOTPROTON_CHILD=1)
 ok "the first existing requires is injected" "$(line "$out" 2)" "$work/lib/feat.dylib"
 ok "a child of an active parent applies" "$(line "$out" 1)" "steamclient=n;lsteamclient=b;child=n"
 out=$(run NOTPROTON_CHILD=1)
 ok "a child of a parent switched off does not" "$(line "$out" 1)" "steamclient=n;lsteamclient=b"
+out=$(run NOTPROTON_CHOICE_PARENT=quality NOTPROTON_CHOICE_CHILD=1)
+ok "a child of a choice parent holding a value applies" "$(line "$out" 1)" "steamclient=n;lsteamclient=b;fastchild=n"
+out=$(run NOTPROTON_CHOICE_CHILD=1)
+ok "a child of a choice parent on Default does not" "$(line "$out" 1)" "steamclient=n;lsteamclient=b"
 rm -f "$work/lib/feat.dylib"
 out=$(run NOTPROTON_PARENT=1 NOTPROTON_CHILD=1)
 ok "nor does a child of a parent not installed" "$(line "$out" 1)|$(line "$out" 2)" "steamclient=n;lsteamclient=b|"
 printf 'dylib\n' > "$work/lib/feat.dylib"
 
 reset
+# A value is as long as a line allows now; only the line and the caps still bind.
 conf 10-long.conf <<EOF
-key = NOTPROTON_LONG
+[NOTPROTON_LONG]
 label = Long
 on = 0123456789012345678901234567890123
 overrides = long=n
 EOF
 conf 20-five.conf <<EOF
-key = NOTPROTON_FIVE
+[NOTPROTON_FIVE]
 label = Five
 requires = m1
 requires = m2
@@ -177,19 +213,20 @@ requires = m4
 requires = $work/lib/feat.dylib
 overrides = five=n
 EOF
-{ printf 'key = NOTPROTON_LINE\nlabel = Line\noverrides = line=n\n# '
+{ printf '[NOTPROTON_LINE]\nlabel = Line\noverrides = line=n\n# '
   head -c 2100 /dev/zero | tr '\0' x; echo; } > "$feats/30-line.conf"
 out=$(run NOTPROTON_LONG=0123456789012345678901234567890123 NOTPROTON_FIVE=1 NOTPROTON_LINE=1)
-ok "long lines, long values and a fifth requires are refused" "$(line "$out" 1)" "steamclient=n;lsteamclient=b"
+ok "a long line and a fifth requires are refused, a long value is not" \
+   "$(line "$out" 1)" "steamclient=n;lsteamclient=b;long=n"
 
 reset
 conf B.conf <<EOF
-key = NOTPROTON_ORDER
+[NOTPROTON_ORDER]
 label = Upper
 overrides = upper=n
 EOF
 conf a.conf <<EOF
-key = NOTPROTON_ORDER
+[NOTPROTON_ORDER]
 label = Lower
 overrides = lower=n
 EOF
@@ -200,7 +237,7 @@ reset
 mkdir -p "$work/co:lon"
 printf 'dylib\n' > "$work/co:lon/feat.dylib"
 conf 10-colon.conf <<EOF
-key = NOTPROTON_COLON
+[NOTPROTON_COLON]
 label = Colon
 requires = $work/co:lon/feat.dylib
 inject = 1
@@ -210,7 +247,7 @@ ok "a dylib path with a colon is not loaded" "$(line "$out" 2)" ""
 
 reset
 conf 10-reserved.conf <<EOF
-key = NOTPROTON_RES
+[NOTPROTON_RES]
 label = Reserved
 env = NOTPROTON_FEATURE_DYLIBS=/evil.dylib
 env = WINEPREFIX=/elsewhere
@@ -219,10 +256,23 @@ EOF
 out=$(run NOTPROTON_RES=1)
 ok "env cannot replace what the launcher sets" "$(line "$out" 3)|$(line "$out" 4)" "DXVK_HUD=1|"
 
+# The same names NOTPROTON_ENV_ is kept from, and no others: envpasscheck holds that side.
+reset
+conf 10-same.conf <<EOF
+[NOTPROTON_SAME]
+label = Same
+env = HOME=/elsewhere
+env = NOTPROTON_ANYTHING=1
+env = WINEDEBUG=+loaddll
+EOF
+out=$(run NOTPROTON_SAME=1)
+ok "env is kept from HOME and NOTPROTON_ as NOTPROTON_ENV_ is, and Wine's own settings pass" \
+  "$(line "$out" 3)|$(line "$out" 4)" "WINEDEBUG=+loaddll|"
+
 reset
 mkdir -p "$sys32/dxgi.dll"
 conf 10-dir.conf <<EOF
-key = NOTPROTON_DIR
+[NOTPROTON_DIR]
 label = Dir
 stage = $work/stage
 EOF
@@ -247,6 +297,27 @@ inject=$(loader_macos="$work" WINELOADER=x loader_root="$work" HOME="$work" \
   sh -c 'eval "$1"; sed -n "/^shim=/,/NOTPROTON_GAME_CWD/p" "$loader_macos/launcher"' sh "$launcher")
 mkdir -p "$work/Library/Application Support/notproton"
 : > "$work/Library/Application Support/notproton/overlay-shim.dylib"
+# A plugin may name the tools it is for, and the launch has to agree with the panel about
+# it: a row hidden under one runner must not quietly apply there.
+reset
+conf 10-picky.conf <<EOF
+[NOTPROTON_PICKY]
+label = Picky
+tools = notproton-fex*
+overrides = picky=n
+EOF
+conf 20-any.conf <<EOF
+[NOTPROTON_ANY]
+label = Any
+overrides = any=n
+EOF
+out=$(run np_tool_name=notproton-26.3 NOTPROTON_PICKY=1 NOTPROTON_ANY=1)
+ok "a plugin for other tools does not apply" "$(line "$out" 1)" \
+   "steamclient=n;lsteamclient=b;any=n"
+out=$(run np_tool_name=notproton-fex-rosetta NOTPROTON_PICKY=1 NOTPROTON_ANY=1)
+ok "and does on a tool its pattern matches" "$(line "$out" 1)" \
+   "steamclient=n;lsteamclient=b;picky=n;any=n"
+
 # shellcheck disable=SC2016 # expanded by the inner shell
 dyld=$(env -i HOME="$work" STEAM_DYLD_INSERT_LIBRARIES=/o.dylib NOTPROTON_FEATURE_DYLIBS=/f.dylib \
   sh -c 'eval "$1"; printf "%s|%s" "$DYLD_INSERT_LIBRARIES" "${NOTPROTON_OVERLAY_SHIM:+shim}"' sh "$inject")

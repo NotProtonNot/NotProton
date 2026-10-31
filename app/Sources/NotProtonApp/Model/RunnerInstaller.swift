@@ -76,14 +76,16 @@ enum RunnerInstaller {
         guard FileManager.default.fileExists(atPath: path) else {
             throw StepFailure(step: removeStep, detail: String(localized: "Build \(build) is not set up."))
         }
-        guard !running(target) else {
+        let fm = FileManager.default
+        // Variant runners are clones of this build, so they go with it.
+        let variants = RunnerStore.variantEntries(ofBuild: build, in: runners)
+        guard !running(target), !variants.contains(where: running) else {
             throw StepFailure(
                 step: removeStep,
                 detail: String(localized: "A game or Wine tool is still running on build \(build). Quit it first.")
             )
         }
 
-        let fm = FileManager.default
         let trash = target.deletingLastPathComponent().appending(path: ".\(target.lastPathComponent).removing")
         removeLeftoverRemovals(runners: runners)
         try WriteRefused.catching(path) { try fm.moveItem(at: target, to: trash) }
@@ -97,6 +99,9 @@ enum RunnerInstaller {
             throw error
         }
         try WriteRefused.catching(trash) { try fm.removeItem(at: trash) }
+        for variant in variants {
+            try? fm.removeItem(at: variant)
+        }
         let failures = removeStalePrefixTemplates(runners: runners, libraries: libraries)
         if !failures.isEmpty {
             throw StepFailure(step: removeStep, detail: failures.map(\.detail).joined(separator: "\n"))
@@ -166,8 +171,12 @@ enum RunnerInstaller {
                 guard fstat(root, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
                 guard info.st_mode & S_IFMT == S_IFDIR else { throw POSIXError(.ENOTDIR) }
 
-                for name in try templateDirectoryNames(root) where !kept.contains(name) {
-                    let template = name.wholeMatch(of: #/crossover-[A-Za-z0-9.-]+-(x86_64|aarch64)-unix/#) != nil
+                for name in try templateDirectoryNames(root) {
+                    // compat_run.sh names a variant's template for its build's slot plus +<names>.
+                    let slot = String(name.prefix { $0 != "+" })
+                    if kept.contains(slot) { continue }
+                    let template = slot.wholeMatch(of: #/crossover-[A-Za-z0-9.-]+-(x86_64|aarch64)-unix/#) != nil
+                        && (slot == name || name.dropFirst(slot.count).wholeMatch(of: #/(\+[A-Za-z0-9._-]+)+/#) != nil)
                     guard template || (builds.isEmpty && name == SupportPaths.bridgeCacheFolder) else { continue }
                     do {
                         try removeTemplateEntry(name, in: root, device: info.st_dev)

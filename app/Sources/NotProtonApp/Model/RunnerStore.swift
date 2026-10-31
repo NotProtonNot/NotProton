@@ -39,12 +39,23 @@ enum RunnerStore {
         return .unpatched(builds: unpatched, problems: problems)
     }
 
+    // compat_run.sh assembles variant runners as crossover-<build>+<names>@<hash>, with its scratch
+    // and lock beside them as hidden .crossover-<build>+<names>*, and no build id holds a "+".
+    static func variantEntries(ofBuild build: String, in runners: URL) -> [URL] {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: runners, includingPropertiesForKeys: nil)) ?? []
+        return entries.filter {
+            $0.lastPathComponent.hasPrefix("crossover-\(build)+")
+                || $0.lastPathComponent.hasPrefix(".crossover-\(build)+")
+        }
+    }
+
     static func clonedBuilds(in runners: URL = SupportPaths.runners) -> [String] {
         let fm = FileManager.default
         let entries = (try? fm.contentsOfDirectory(at: runners, includingPropertiesForKeys: nil)) ?? []
         return entries
             .map(\.lastPathComponent)
-            .filter { $0.hasPrefix("crossover-") }
+            .filter { $0.hasPrefix("crossover-") && !$0.contains("+") }
             .map { String($0.dropFirst("crossover-".count)) }
             .sorted()
     }

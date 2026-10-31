@@ -91,4 +91,19 @@ struct RunnerStateTests {
 
         #expect(RunnerStore.clonedBuilds(in: fixture.runners) == ["26.0.0.1", "27.0.0.40921"])
     }
+
+    @Test("Assembled variant runners are not listed as CrossOver builds or orphans")
+    func ignoresVariantClones() throws {
+        let fixture = try Fixture()
+        let base = SupportedRunners.all[0].id
+        try fixture.makeClone(build: base)
+        try fixture.makeClone(build: "\(base)+dxmt-mine")
+        try FileManager.default.createDirectory(
+            at: fixture.runners.appending(path: ".crossover-\(base)+dxmt-mine.new"),
+            withIntermediateDirectories: true
+        )
+
+        #expect(RunnerStore.clonedBuilds(in: fixture.runners) == [base])
+        #expect(RunnerStore.orphanedClones(in: fixture.runners).isEmpty)
+    }
 }

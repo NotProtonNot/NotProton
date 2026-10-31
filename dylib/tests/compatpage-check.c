@@ -26,6 +26,12 @@ size_t np_compat_fex_tools(const char **names, size_t max) {
     return max ? 1 : 0;
 }
 
+size_t np_compat_tool_builds(const char **names, const char **builds, const char **archs, size_t max) {
+    return 0;
+}
+void np_webpatch_set_tool_builds(const char *const *names, const char *const *builds,
+                                 const char *const *archs, size_t count) {}
+
 static int g_shape;
 int np_webpatch_has_shape(const uint8_t *src, size_t len) { return g_shape; }
 

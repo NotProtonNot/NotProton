@@ -184,12 +184,12 @@ static void check_defaults(void) {
 
 static void check_barrel(void) {
     static const struct { const char *src; int want; } cases[] = {
-        { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,D0:()=>g})",            1 },
-        { "e.d(t,{Vb:()=>f,D0:()=>g,XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,zz:()=>h})",   1 },
+        { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,D0:()=>g,y4:()=>h,J1:()=>i,d3:()=>j,gz:()=>k})", 1 },
+        { "e.d(t,{Vb:()=>f,D0:()=>g,XY:()=>a,m:()=>b,gz:()=>k,Yh:()=>c,$n:()=>d,y4:()=>h,J1:()=>i,d3:()=>j,zz:()=>z})", 1 },
         { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f})",                     0 },
         { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,xD0:()=>g})",           0 },
         { "e.d(t,{XY:()=>a,m:()=>b,Yh:()=>c}),e.d(u,{$n:()=>d,Vb:()=>f,D0:()=>g})",   0 },
-        { "e.d(t,{Vb:()=>f})e.d(u,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,D0:()=>g})", 1 },
+        { "e.d(t,{Vb:()=>f})e.d(u,{XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d,Vb:()=>f,D0:()=>g,y4:()=>h,J1:()=>i,d3:()=>j,gz:()=>k})", 1 },
         { "Vb:()=>f,D0:()=>g,XY:()=>a,m:()=>b,Yh:()=>c,$n:()=>d}",                    0 },
     };
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++)

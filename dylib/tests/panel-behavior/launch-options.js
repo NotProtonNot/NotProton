@@ -102,7 +102,10 @@ for (const form of Object.keys(FORMS)) {
   t.ok(last() === 'gamemoderun %command%', 'removes assignments before a wrapper');
   written.length = 0;
   hud('env FOO=1 %command%').props.onChange(true);
-  t.ok(last() === 'MTL_HUD_ENABLED=1 env FOO=1 %command%', 'other wrapper assignments stay editable');
+  // env is not a wrapper like the one above: it is what carries the assignment, so ours
+  // goes inside it. In front it would be an argument to env rather than a variable.
+  t.ok(last() === 'env MTL_HUD_ENABLED=1 FOO=1 %command%',
+       'an assignment goes inside env, not before it');
 
   for (const odd of ['WINEDEBUG="unfinished', "--title 'unfinished", '--title trailing\\',
                      'WINEDEBUG=1; %command%', 'WINEDEBUG=1 %command% | tee log',
@@ -124,6 +127,23 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   hud('MTL_HUD_ENABLED=1 %command% %COMMAND%').props.onChange(false);
   t.ok(last() === '%command% %COMMAND%', 'leaves later %command% text alone');
+
+  // A bare assignment only becomes a variable because the launch hook hands our own
+  // tools to /bin/sh. Typed by hand, "env FOO=bar %command%" is the form that works,
+  // since Steam runs /usr/bin/env, so the panel has to read and write inside it.
+  t.ok(hud('env MTL_HUD_ENABLED=1 %command%').props.checked,
+       'reads an assignment carried by env');
+  t.ok(hud('/usr/bin/env MTL_HUD_ENABLED=1 %command%').props.checked,
+       'and one carried by env named in full');
+  written.length = 0;
+  hud('env MTL_HUD_ENABLED=1 %command%').props.onChange(false);
+  t.ok(last() === 'env %command%', 'removes it from inside the env call');
+  written.length = 0;
+  hud('env %command%').props.onChange(true);
+  t.ok(last() === 'env MTL_HUD_ENABLED=1 %command%', 'including when env carries nothing yet');
+  // env with options of its own is not modelled, so it keeps the behaviour it had.
+  t.ok(!hud('env -i MTL_HUD_ENABLED=1 %command%').props.checked,
+       'an env clearing the environment is left to itself');
   failed += t.failed;
 }
 console.log(failed ? `\n${failed} failure(s)` : '\nquoted launch options pass in both shapes');

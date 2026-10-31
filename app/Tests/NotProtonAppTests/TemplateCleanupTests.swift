@@ -65,6 +65,23 @@ struct TemplateCleanupTests {
         }
     }
 
+    @Test("A variant's template stays with its build and goes with it")
+    func variantTemplateFollowsBuild() throws {
+        let layout = try Layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+        let variant = layout.folder.appending(path: layout.template.lastPathComponent + "+dxmt-mine+other")
+        let stray = layout.folder.appending(path: layout.template.lastPathComponent + "+bad name")
+        try FileManager.default.createDirectory(at: variant.appending(path: "pfx"), withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: stray)
+
+        #expect(RunnerInstaller.removePrefixTemplates(keeping: ["26.3.0.39832"], libraries: [layout.library]).isEmpty)
+        #expect(FileManager.default.fileExists(atPath: variant.path))
+
+        #expect(RunnerInstaller.removePrefixTemplates(keeping: [], libraries: [layout.library]).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: variant.path))
+        #expect(FileManager.default.fileExists(atPath: stray.path))
+    }
+
     @Test("The drive's bridge copy stays while any build is set up and goes with the last")
     func bridgeCacheGoesWithLastBuild() throws {
         let layout = try Layout()

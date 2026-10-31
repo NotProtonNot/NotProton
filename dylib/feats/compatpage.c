@@ -37,5 +37,9 @@ void np_compatpage_publish(const uint8_t *src, size_t len) {
     np_webpatch_set_fallback_tool(np_compat_fallback_tool_name());
     const char *fex[NP_WEBPATCH_FEX_TOOLS_MAX];
     np_webpatch_set_fex_tools(fex, np_compat_fex_tools(fex, NP_WEBPATCH_FEX_TOOLS_MAX));
+    const char *tools[NP_WEBPATCH_BUILDS_MAX], *builds[NP_WEBPATCH_BUILDS_MAX];
+    const char *archs[NP_WEBPATCH_BUILDS_MAX];
+    np_webpatch_set_tool_builds(tools, builds, archs,
+        np_compat_tool_builds(tools, builds, archs, NP_WEBPATCH_BUILDS_MAX));
     if (np_webpatch_has_shape(src, len)) publish_defaults();
 }

@@ -32,6 +32,9 @@ panel=$(printf '%s\n' "$panel_src" | grep -oE '[(\[]\\"[A-Z][A-Z0-9_]*\\"' \
   | sed 's/^.\\"//; s/\\"$//' | sort -u)
 [ -n "$panel" ] || no "no setting keys found in NP_CX_PANEL"
 for key in $panel; do
+    # Neither of these is a setting with a default: variants are a game's own choice,
+    # and the insert list is how a tool without our run script carries a plugin.
+    case "$key" in NOTPROTON_RUNNER_VARIANT|DYLD_INSERT_LIBRARIES) continue ;; esac
     printf '%s\n' "$all" | grep -Fxq "$key" || no "$key is on the panel but not in g_settings"
 done
 for key in $all; do

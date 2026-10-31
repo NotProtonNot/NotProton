@@ -1,0 +1,207 @@
+# What both parsers have to produce for the fixtures beside this file, as the
+# normalised form in dylib/feats/conf-format.md: one tab-separated line per field in
+# the order read, and a "!" line where a file or a record was refused.
+#
+# Records run in file-name order, then in the order they appear in their file. The
+# codes are shared; the wording each parser logs is its own.
+#
+# This is one pass over each directory, not a file at a time: ids and the 32-record
+# cap are per directory, so the sections below run in file-name order and a record
+# can collide with one in an earlier file, and the cap counts the records of every file
+# before it.
+
+== plugins/10-grouped.conf
+NOTPROTON_HUD	label	Hud
+NOTPROTON_HUD	description	Draws a HUD.
+NOTPROTON_HUD	requires	code/hud/build/libhud.dylib
+NOTPROTON_HUD	inject	1
+NOTPROTON_HUD	env	HUD=1
+NOTPROTON_HUD	description_on	Ctrl+Opt+H hides it.
+NOTPROTON_HUD	description_on	Ctrl+Opt+G draws the graph.
+NOTPROTON_ENV_HUD_POS	label	HUD position
+NOTPROTON_ENV_HUD_POS	type	choice
+NOTPROTON_ENV_HUD_POS	depends	NOTPROTON_HUD
+NOTPROTON_ENV_HUD_POS	choice	tl = Top left
+NOTPROTON_ENV_HUD_POS	choice	tr
+NOTPROTON_ENV_HUD_SCALE	label	HUD size
+NOTPROTON_ENV_HUD_SCALE	type	slider
+NOTPROTON_ENV_HUD_SCALE	depends	NOTPROTON_HUD
+NOTPROTON_ENV_HUD_SCALE	min	0.5
+NOTPROTON_ENV_HUD_SCALE	max	2
+NOTPROTON_ENV_HUD_SCALE	step	0.05
+NOTPROTON_ENV_HUD_SCALE	default	1
+NOTPROTON_ENV_HUD_SCALE	suffix	x
+NOTPROTON_ENV_HUD_HZ	label	Pacing
+NOTPROTON_ENV_HUD_HZ	type	slider
+NOTPROTON_ENV_HUD_HZ	depends	NOTPROTON_HUD
+NOTPROTON_ENV_HUD_HZ	default	off
+NOTPROTON_ENV_HUD_HZ	choice	off = Off
+NOTPROTON_ENV_HUD_HZ	choice	60 = 60 Hz
+
+== plugins/20-single.conf
+NOTPROTON_SOLO	label	Solo
+NOTPROTON_SOLO	on	yes
+NOTPROTON_SOLO	off	no
+NOTPROTON_SOLO	overrides	dxgi=n,b
+NOTPROTON_SOLO	stage	code/solo/dlls
+
+# A header may be padded, a field may be separated by tabs, a "#" inside a value is
+# part of it, and only the first "=" splits.
+== plugins/30-comments-and-spacing.conf
+NOTPROTON_SPACED	label	Spaced
+NOTPROTON_SPACED	description	a # that is not a comment
+NOTPROTON_SPACED	env	PATH_LIKE=a=b=c
+
+== plugins/35-dup-across-files.conf
+!	NOTPROTON_SOLO	duplicate-id
+
+# A field before the first header drops the file, so the good record after it is lost
+# too: there is no way to know which record the stray line was meant for.
+== plugins/36-tools.conf
+NOTPROTON_PICKY	label	Picky
+NOTPROTON_PICKY	tools	notproton-fex*
+NOTPROTON_PICKY	tools	notproton-26.3
+
+# A "*" anywhere but the end would mean one thing to the panel's startsWith and another
+# to the run script's case pattern, so it is refused rather than left to disagree.
+== plugins/40-no-header.conf
+!	plugins/40-no-header.conf	no-header
+
+== plugins/50-unknown-field.conf
+NOTPROTON_KEEPS	label	Keeps
+!	NOTPROTON_TYPO	unknown-field:labell
+NOTPROTON_ALSO_KEEPS	label	Also keeps
+
+== plugins/60-bad-ids.conf
+!	notproton_lower	bad-id
+NOTPROTON_DUP	label	First
+!	NOTPROTON_DUP	duplicate-id
+
+== plugins/65-header-faults.conf
+!	plugins/65-header-faults.conf	bad-id
+NOTPROTON_AFTER_EMPTY	label	After
+!	NOTPROTON_LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL	bad-id
+!	NOTPROTON_LONG_FIELD	unknown-field:fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+!	NOTPROTON_NO_NAME	unknown-field
+
+== plugins/70-field-faults.conf
+!	NOTPROTON_TWICE	duplicate-field:label
+!	NOTPROTON_EMPTY	empty-value:label
+!	NOTPROTON_NOLABEL	missing-required:label
+!	NOTPROTON_BADENV	bad-value:env
+!	NOTPROTON_TABBED	tab-in-value:description
+!	NOTPROTON_BADTOOL	bad-value:tools
+
+== plugins/75-value-faults.conf
+!	NOTPROTON_BAD_DEPENDS	bad-value:depends
+!	NOTPROTON_ENV_HUGE	bad-value:max
+
+== plugins/80-slider-faults.conf
+!	NOTPROTON_BOTH	slider-shape
+!	NOTPROTON_NEITHER	slider-shape
+!	NOTPROTON_ONE	slider-shape
+!	NOTPROTON_RANGE	bad-value:max
+!	NOTPROTON_STEP	bad-value:step
+!	NOTPROTON_LADDER_DEFAULT	bad-default
+!	NOTPROTON_DIAL	bad-type:dial
+!	NOTPROTON_EMPTY_CHOICE	missing-required:choice
+
+# One line over the limit drops the file: past it the parser cannot say what it read.
+== plugins/90-line-too-long.conf
+!	plugins/90-line-too-long.conf	line-too-long
+
+== plugins/95-after-long-line.conf
+NOTPROTON_AFTER_LONG	label	After
+
+== variants/10-group.conf
+dxmt-mine	label	My DXMT build
+dxmt-mine	variant	DXMT
+dxmt-mine	src	code/dxmt/build/artifacts
+dxmt-mine	dst	lib/wine
+dxmt-upstream	label	Upstream DXMT
+dxmt-upstream	variant	DXMT
+dxmt-upstream	src	/opt/dxmt/artifacts
+dxmt-upstream	dst	lib/wine
+plain	src	code/plain
+plain	dst	lib/wine
+
+== variants/15-build-remove.conf
+wine-fix	label	Wine fix
+wine-fix	src	code/wine-fix/artifacts
+wine-fix	dst	lib/wine
+wine-fix	build	27.0.0.41073
+wine-fix	build	27.0.0.41073-fex
+trimmed	src	code/trimmed
+trimmed	dst	.
+trimmed	remove	lib/wine/x86_64-windows/winegstreamer.dll
+trimmed	remove	./lib/wine/x86_64-unix/winegstreamer.so
+
+== variants/20-faults.conf
+!	no-src	missing-required:src
+!	escapes	bad-value:dst
+!	absolute	bad-value:dst
+!	stranger	unknown-field:tools
+!	BAD ID	bad-id
+!	bad-build	bad-value:build
+!	escaping-remove	bad-value:remove
+!	absolute-remove	bad-value:remove
+!	remove-nothing	bad-value:remove
+
+== variants/30-cap.conf
+cap-00	src	code/cap
+cap-00	dst	lib/wine
+cap-01	src	code/cap
+cap-01	dst	lib/wine
+cap-02	src	code/cap
+cap-02	dst	lib/wine
+cap-03	src	code/cap
+cap-03	dst	lib/wine
+cap-04	src	code/cap
+cap-04	dst	lib/wine
+cap-05	src	code/cap
+cap-05	dst	lib/wine
+cap-06	src	code/cap
+cap-06	dst	lib/wine
+cap-07	src	code/cap
+cap-07	dst	lib/wine
+cap-08	src	code/cap
+cap-08	dst	lib/wine
+cap-09	src	code/cap
+cap-09	dst	lib/wine
+cap-10	src	code/cap
+cap-10	dst	lib/wine
+cap-11	src	code/cap
+cap-11	dst	lib/wine
+cap-12	src	code/cap
+cap-12	dst	lib/wine
+cap-13	src	code/cap
+cap-13	dst	lib/wine
+cap-14	src	code/cap
+cap-14	dst	lib/wine
+cap-15	src	code/cap
+cap-15	dst	lib/wine
+cap-16	src	code/cap
+cap-16	dst	lib/wine
+cap-17	src	code/cap
+cap-17	dst	lib/wine
+cap-18	src	code/cap
+cap-18	dst	lib/wine
+cap-19	src	code/cap
+cap-19	dst	lib/wine
+cap-20	src	code/cap
+cap-20	dst	lib/wine
+cap-21	src	code/cap
+cap-21	dst	lib/wine
+cap-22	src	code/cap
+cap-22	dst	lib/wine
+cap-23	src	code/cap
+cap-23	dst	lib/wine
+cap-24	src	code/cap
+cap-24	dst	lib/wine
+cap-25	src	code/cap
+cap-25	dst	lib/wine
+cap-26	src	code/cap
+cap-26	dst	lib/wine
+!	cap-27	limit
+!	cap-28	limit
+!	cap-29	limit

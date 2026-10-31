@@ -16,6 +16,10 @@ void np_webpatch_set_fallback_tool(const char *name);
 // Sets the tools this thread's CrossOver options panel treats as FEX. Names the
 // fallback would drop are skipped, as is anything past NP_WEBPATCH_FEX_TOOLS_MAX.
 void np_webpatch_set_fex_tools(const char *const *names, size_t count);
+// Compat tool names, the CrossOver build each one runs and the architecture it runs it
+// at, used to work out which runner variants can be offered for a game.
+void np_webpatch_set_tool_builds(const char *const *names, const char *const *builds,
+                                 const char *const *archs, size_t count);
 
 // NULL for a runner whose file couldn't be read, which hides the page.
 void np_webpatch_set_defaults(const char *rosetta, const char *fex);
@@ -32,8 +36,9 @@ typedef struct {
 
 void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count);
 
-// For tests, so they don't depend on the plugins installed on the machine.
+// For tests, so they don't depend on the plugins or variants installed on the machine.
 void np_webpatch_set_features(const char *ready, const char *rows);
+void np_webpatch_set_variants(const char *rows);
 
 // The compat UIs, named so a caller can compare against the table rather than a literal
 // of its own that a rename would leave behind. forcetool calls SpecifyCompatTool straight

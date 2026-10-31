@@ -896,6 +896,22 @@ const char *np_compat_fallback_tool_name(void) {
     return g_tool_count > 0 ? g_tools[0].name : TOOL_DIR_NAME;
 }
 
+// collects every installed tool, the CrossOver build it runs and its architecture target(s).
+// The panel needs all three to work out which runner variants it can offer for a game.
+size_t np_compat_tool_builds(const char **names, const char **builds, const char **archs,
+                             size_t max) {
+    load_tool_list_once();
+    size_t n = 0;
+    for (int i = 0; i < g_tool_count && n < max; i++) {
+        if (!*g_tools[i].build) continue;
+        names[n] = g_tools[i].name;
+        builds[n] = g_tools[i].build;
+        archs[n] = strcmp(g_tools[i].flavor, "fex") == 0 ? "aarch64" : "x86_64";
+        n++;
+    }
+    return n;
+}
+
 size_t np_compat_fex_tools(const char **names, size_t max) {
     load_tool_list_once();
     size_t n = 0;

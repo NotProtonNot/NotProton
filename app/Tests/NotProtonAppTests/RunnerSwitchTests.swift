@@ -541,6 +541,47 @@ struct RunnerRemovalTests {
         #expect(RunnerStore.clonedBuilds(in: runners) == [Self.fex.id])
     }
 
+    @Test("Removing a build takes its variant runners and their scratch, and no other build's")
+    func removalTakesOwnVariants() throws {
+        let runners = try makeRunners(cloning: [Self.rosetta.id, Self.fex.id])
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let fm = FileManager.default
+        // A FEX build id starts with the Rosetta one, which is what "+" keeps apart.
+        let own = ["crossover-\(Self.rosetta.id)+dxmt/CrossOver", ".crossover-\(Self.rosetta.id)+dxmt.new"]
+        let other = ["crossover-\(Self.fex.id)+dxmt/CrossOver"]
+        for path in own + other {
+            try fm.createDirectory(at: runners.appending(path: path), withIntermediateDirectories: true)
+        }
+        try Data().write(to: runners.appending(path: ".crossover-\(Self.rosetta.id)+dxmt.lock"))
+
+        _ = try remove(Self.rosetta.id, runners: runners)
+
+        let left = try fm.contentsOfDirectory(atPath: runners.path(percentEncoded: false))
+        #expect(left.filter { $0.contains("\(Self.rosetta.id)+") }.isEmpty)
+        #expect(left.contains("crossover-\(Self.fex.id)+dxmt"))
+        #expect(RunnerStore.clonedBuilds(in: runners) == [Self.fex.id])
+    }
+
+    @Test("A build whose variant runner is in use is not removed")
+    func removalWaitsForVariant() throws {
+        let runners = try makeRunners(cloning: [Self.rosetta.id])
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let variant = runners.appending(path: "crossover-\(Self.rosetta.id)+dxmt")
+        try FileManager.default.createDirectory(
+            at: variant.appending(path: "CrossOver"), withIntermediateDirectories: true)
+
+        #expect(throws: (any Error).self) {
+            try RunnerInstaller.removeClone(
+                forBuild: Self.rosetta.id, runners: runners,
+                bridge: runners.appending(path: "bridge"), toolList: runners.appending(path: "tools"),
+                compatTools: runners.appending(path: "compatibilitytools.d"),
+                libraries: [],
+                running: { $0.lastPathComponent == variant.lastPathComponent }
+            )
+        }
+        #expect(RunnerInstaller.hasClone(forBuild: Self.rosetta.id, runners: runners))
+    }
+
     @Test("Removing a build also clears what an earlier failed removal of another build left")
     func removalClearsOtherLeftovers() throws {
         let runners = try makeRunners(cloning: [Self.rosetta.id])
@@ -630,7 +671,8 @@ struct RunnerRemovalTests {
         let cache = script.split(separator: "\n").first { $0.contains("template_cache=\"") }
         #expect(cache?.contains("$(dirname \"$STEAM_COMPAT_DATA_PATH\")/\(SupportPaths.prefixTemplateFolder)\"") == true)
         let template = script.split(separator: "\n").first { $0.contains("template_dir=\"") }
-        #expect(template?.contains("template_dir=\"$template_cache/$runner_id\"") == true)
+        #expect(template?.contains("template_dir=\"$template_cache/$runner_id$np_variant_key\"") == true)
+        #expect(script.contains("np_variant_key=${np_v_stem##*/crossover-\"$np_build\"}"))
         let names = ["x86_64-unix", "aarch64-unix"].map { arch in
             expression.replacingOccurrences(of: "$np_build", with: "27.0.0.40921-fex")
                 .replacingOccurrences(of: "${wine_unix##*/}", with: arch)
