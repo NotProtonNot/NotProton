@@ -232,10 +232,32 @@ eval "$defaults"
 is "the game's factor wins" "a=1; d3d11.metalSpatialUpscaleFactor = 3.0" "$DXMT_CONFIG"
 clear
 cp "$np_support/defaults-rosetta" "$work/rosetta.keep"
-printf 'DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=.\nDXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1234567\nDXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=\n' \
+printf 'DXMT_CONFIG=d3d11.preferredMaxFrameRate=60\n' > "$np_support/defaults-rosetta"
+eval "$defaults"
+is "a defaulted frame rate is the DXMT_CONFIG" "d3d11.preferredMaxFrameRate=60" "${DXMT_CONFIG-}"
+clear
+export DXMT_CONFIG="d3d11.preferredMaxFrameRate=120"
+eval "$defaults"
+is "the game's frame rate wins over the default" "d3d11.preferredMaxFrameRate=120" "$DXMT_CONFIG"
+clear
+export DXMT_CONFIG="d3d11.preferredMaxFrameRate=0"
+eval "$defaults"
+is "a game that turned the limit off keeps it off" "d3d11.preferredMaxFrameRate=0" "$DXMT_CONFIG"
+clear
+printf 'DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2.0;d3d11.preferredMaxFrameRate=60\n' > "$np_support/defaults-rosetta"
+eval "$defaults"
+is "both factor and frame rate are applied from combined defaults" \
+  "d3d11.metalSpatialUpscaleFactor=2.0;d3d11.preferredMaxFrameRate=60" "$DXMT_CONFIG"
+clear
+export DXMT_CONFIG="d3d11.preferredMaxFrameRate=30"
+eval "$defaults"
+is "the game's frame rate wins and default factor joins" \
+  "d3d11.preferredMaxFrameRate=30;d3d11.metalSpatialUpscaleFactor=2.0" "$DXMT_CONFIG"
+clear
+printf 'DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=.\nDXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1234567\nDXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=\nDXMT_CONFIG=d3d11.preferredMaxFrameRate=abc\nDXMT_CONFIG=d3d11.preferredMaxFrameRate=0\n' \
   > "$np_support/defaults-rosetta"
 eval "$defaults"
-is "factors the Settings page would refuse are skipped" "unset" "${DXMT_CONFIG-unset}"
+is "factors and frame rates the Settings page would refuse are skipped" "unset" "${DXMT_CONFIG-unset}"
 mv "$work/rosetta.keep" "$np_support/defaults-rosetta"
 
 clear
