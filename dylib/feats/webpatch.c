@@ -1219,6 +1219,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_CX_BARREL_READY(B) "[" NP_CX_BARREL(NP_CX_BARREL_JS) "].every(n=>" B "[n])"
 
 #define NP_CX_FACTOR_ENTRY "e=>/^[ \\t\\r]*d3d11\\.metalSpatialUpscaleFactor[ \\t\\r]*=/.test(e)"
+#define NP_CX_FPS_ENTRY    "e=>/^[ \\t\\r]*d3d11\\.preferredMaxFrameRate[ \\t\\r]*=/.test(e)"
 
 #define NP_CX_DEFAULTS "(globalThis.MSCXDefaultsData||(globalThis.MSCXDefaultsData=" NP_DEFAULTS "))"
 #define NP_CX_BUILDS "(globalThis.MSCXBuilds||(globalThis.MSCXBuilds=" NP_BUILDS "))"
@@ -1343,23 +1344,35 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "dx=\"\"===b||\"dxmt\"===b," \
     "sw=\"1\"===G(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
     "F=\"d3d11.metalSpatialUpscaleFactor=\",fk=" NP_CX_FACTOR_ENTRY "," \
+    "FP=\"d3d11.preferredMaxFrameRate=\",fpk=" NP_CX_FPS_ENTRY "," \
     "fe=readSaved(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
     "fx=v=>fe.filter(e=>!fk(e)).concat(v?[F+v]:[]).join(\";\")," \
+    "fxFps=v=>fe.filter(e=>!fpk(e)).concat(v?[FP+v]:[]).join(\";\")," \
     "pf=c=>{const v=(c.split(\";\").filter(fk).pop()||\"=2\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0];" \
     "return Math.max(isNaN(+v)?2:+v,1)}," \
+    "pfp=c=>{const v=(c.split(\";\").filter(fpk).pop()||\"\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0];" \
+    "return 0===+v?\"\":v}," \
     "fn=pf(G(\"DXMT_CONFIG\"))," \
+    "fnFps=pfp(G(\"DXMT_CONFIG\"))," \
     "U=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
     "{data:\"1.5\",label:\"1.5x\"}," \
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
+    "FPS=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
+    "{data:\"30\",label:\"30 FPS\"}," \
+    "{data:\"40\",label:\"40 FPS\"}," \
+    "{data:\"60\",label:\"60 FPS\"}," \
+    "{data:\"120\",label:\"120 FPS\"}," \
+    "{data:\"144\",label:\"144 FPS\"}]," \
     "B=[{data:\"\",label:npL(\"Automatic\",\"自动\",\"Automatico\")}," \
     "{data:\"d3dmetal\",label:\"D3DMetal\"}," \
     "{data:\"dxmt\",label:\"DXMT\"}," \
     "{data:\"dxvk\",label:\"DXVK\"}," \
     "{data:\"wined3d\",label:\"WineD3D\"}].filter(x=>!fex||x.data!==\"d3dmetal\")," \
     "pick=f=>\"1\"===f(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")?(U.find(u=>u.data&&+u.data===pf(f(\"DXMT_CONFIG\")||\"\"))" \
-    "||{data:String(pf(f(\"DXMT_CONFIG\")||\"\"))}).data:\"\";" \
+    "||{data:String(pf(f(\"DXMT_CONFIG\")||\"\"))}).data:\"\"," \
+    "pickFps=f=>pfp(f(\"DXMT_CONFIG\")||\"\");" \
     /* Without our run script behind it a row can only be what a launch option can carry,
        so one asking for a staged DLL or an override is not offered, and neither is one
        with nothing to deliver. */ \
@@ -1392,6 +1405,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "onChange:v=>s(dflt&&v.data===pick(k=>dflt(k)||\"\")" \
     "?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"0\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
+    "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:npL(\"DXMT Frame Rate Limit\"," \
+    "\"DXMT Frame Rate Limit\",\"DXMT Frame Rate Limit\")," \
+    "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:FPS," \
+    "selectedOption:(FPS.find(u=>u.data===fnFps)||{data:fnFps}).data," \
+    "onChange:v=>s(dflt&&v.data===pickFps(k=>dflt(k)||\"\")" \
+    "?[[\"DXMT_CONFIG\",fxFps(\"\")]]" \
+    ":[[\"DXMT_CONFIG\",fxFps(v.data||(dflt?\"0\":\"\"))]])})},\"fps\")," \
     "ours&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
     "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let Games Read Controllers Directly (May break Steam Input. Not recommended)\"," \
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
@@ -1428,9 +1449,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,has=k=>L.k.includes(k)," \
     "lost=globalThis.MSCXDefaultsLost,DF=lost?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)||{}).override||" NP_CX_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
-    "fk=" NP_CX_FACTOR_ENTRY "," \
+    "fk=" NP_CX_FACTOR_ENTRY ",fpk=" NP_CX_FPS_ENTRY "," \
     "own=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
-    "G=k=>\"DXMT_CONFIG\"===k?(own.some(fk)?g(k):DF[k]||\"\"):has(k)?g(k):DF[k]||\"\";" \
+    "dfe=(DF[\"DXMT_CONFIG\"]||\"\").split(\";\").filter(e=>e.trim())," \
+    "mergedDxmt=[own.filter(fk).pop()||dfe.filter(fk).pop(),own.filter(fpk).pop()||dfe.filter(fpk).pop()].concat(own.filter(e=>!fk(e)&&!fpk(e))).filter(Boolean).join(\";\")," \
+    "G=k=>\"DXMT_CONFIG\"===k?mergedDxmt:has(k)?g(k):DF[k]||\"\";" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
     "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,tool:tn," \
