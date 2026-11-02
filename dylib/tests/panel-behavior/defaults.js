@@ -310,7 +310,8 @@ for (const form of Object.keys(FORMS)) {
   t.ok(row(r, 'Metal HUD').props.checked === true, 'an unset row shows the default');
   t.ok(row(r, AVX).props.checked === false, 'the AVX2 default of 0 shows off');
   t.ok(dropdowns(r)[1].props.selectedOption === '1.5', 'an unset upscaler shows the default factor');
-  t.ok(!r.some(x => x.type === 'Button' || x.type === 'button'), 'a game has no Reset to defaults');
+  t.ok(!r.some(x => (x.type === 'Button' || x.type === 'button') && x.props.children === 'Reset to defaults'),
+       'a game has no Reset to defaults');
 
   r = nodes('MTL_HUD_ENABLED=0 CX_GRAPHICS_BACKEND=auto %command%');
   t.ok(row(r, 'Metal HUD').props.checked === false, "the game's 0 wins over the default");
@@ -410,6 +411,7 @@ for (const form of Object.keys(FORMS)) {
          'Rosetta shows its saved defaults');
     t.ok(!p.some(x => x.props && x.type === 'Button' && x.props.children === 'Reset to defaults'),
          'the page has no Reset to defaults');
+    t.ok(!p.some(x => x.type === 'Section' && x.props.label === 'Launch Executable'), 'the page has no Launch Executable section');
 
     const runnerLines = i => sent[i].text.split('\n').sort().join(';');
     row(p, 'MSync').props.onChange(true);
