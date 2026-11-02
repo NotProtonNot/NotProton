@@ -83,7 +83,7 @@ resolve_icon() {
   fi
   # Capsule art (horrible) fallback if no icon at all exists...
   if [ -z "$art" ]; then
-    for name in library_600x900.jpg header.jpg; do
+    for name in library_600x900.jpg library_capsule.jpg library_header.jpg header.jpg; do
       found=$(find "$art_dir" -name "$name" 2>/dev/null | head -1)
       [ -n "$found" ] && { art="$found"; break; }
     done
@@ -114,6 +114,11 @@ resolve_icon() {
       # guard on every launch, so drop it to force a clean fetch next time.
       rm -f "$ico"
       echo "discarded unreadable client icon $meta_clienticon" >> "$log" 2>&1 || true
+      clienticon=$meta_clienticon
+      meta_clienticon=""
+      resolve_icon
+      icon_status=$?
+      meta_clienticon=$clienticon
     fi
   fi
   set -e

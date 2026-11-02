@@ -236,7 +236,8 @@ shortcutcheck: $(OUT_DIR)/iconmaker
 	$(SHORTCUT_BUNDLE_CHECK) && \
 	$(TEST_CC) -o $(SHORTCUTCHECK) dylib/tests/shortcutcheck.c && \
 	$(SHORTCUTCHECK) && \
-	python3 dylib/tests/shortcut-launch.py $(OUT_DIR)/iconmaker
+	python3 dylib/tests/shortcut-launch.py $(OUT_DIR)/iconmaker && \
+	python3 dylib/tests/iconcheck.py $(OUT_DIR)/iconmaker
 
 sigcheck:
 	@if [ ! -f dylib/tests/sigcheck.py ]; then $(call SKIP,sigcheck,dylib/tests/sigcheck.py); exit 0; fi; \
