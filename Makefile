@@ -76,7 +76,7 @@ DEPS := $(OBJS:.o=.d)
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures ceg-check panel-behavior app-tests \
         featcheck featstagecheck runnervariantcheck conf-fixtures confcheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
-        overlay-shim-bench iconmaker icon \
+        overlay-shim-bench fpslimit fpslimit-install iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
         compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
 
@@ -593,6 +593,29 @@ overlay-shim-bench:
 			$(OVERLAY_SHIM_TESTS)/passbench.m || exit 1; \
 		printf '  %-8s ' "$$a"; $(OUT_DIR)/passbench.$$a || exit 1; \
 	done
+
+FPSLIMIT_SRC   := plugins/fpslimit/fpslimit.m
+FPSLIMIT_ARM   := $(OUT_DIR)/libfpslimit.arm64.dylib
+FPSLIMIT_X86   := $(OUT_DIR)/libfpslimit.x86_64.dylib
+FPSLIMIT       := $(OUT_DIR)/libfpslimit.dylib
+FPSLIMIT_FLAGS := -mmacosx-version-min=$(MIN_VER) $(AVAIL) -dynamiclib -O2 -Wall -Wextra \
+                  -install_name @rpath/libfpslimit.dylib \
+                  -framework Metal -framework QuartzCore \
+                  -framework CoreFoundation -framework Foundation
+
+fpslimit: $(FPSLIMIT)
+
+$(FPSLIMIT): $(FPSLIMIT_SRC)
+	@mkdir -p $(OUT_DIR)
+	$(CC) -arch arm64 $(FPSLIMIT_FLAGS) -o $(FPSLIMIT_ARM) $<
+	$(CC) -arch x86_64 $(FPSLIMIT_FLAGS) -o $(FPSLIMIT_X86) $<
+	lipo -create $(FPSLIMIT_ARM) $(FPSLIMIT_X86) -output $@
+	codesign -fs - $@
+	@lipo -info $@
+
+fpslimit-install: $(FPSLIMIT)
+	$(call install_atomically,$(FPSLIMIT),$(SUPPORT_DIR)/libfpslimit.dylib)
+	@echo "==> Installed: $(SUPPORT_DIR)/libfpslimit.dylib"
 
 ICONMAKER := $(OUT_DIR)/iconmaker
 
