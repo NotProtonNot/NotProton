@@ -30,6 +30,7 @@ with tempfile.TemporaryDirectory(prefix='np-sync-test-') as tmp:
     git(local,'fetch','origin')
     for branch in ['main','dev','feature/example']:
         assert git(local,'merge-base','--is-ancestor',target,'origin/'+branch,check=False).returncode==0,branch
+        assert git(local,'merge-base','--is-ancestor','origin/main','origin/'+branch,check=False).returncode==0,branch
     assert git(local,'merge-base','--is-ancestor',feature,'origin/feature/example',check=False).returncode==0
     # New conflicting edits must leave every remote branch unchanged until resolved.
     git(seed,'fetch','origin');git(seed,'switch','-C','feature/example','origin/feature/example');write(seed,'shared.txt','feature change\n');commit(seed,'feature conflict');git(seed,'push','origin','HEAD')
