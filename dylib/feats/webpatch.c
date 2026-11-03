@@ -1414,7 +1414,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{label:npL(\"D3DMetal Frame Rate Limit\",\"D3DMetal 帧率限制\",\"Limite fotogrammi D3DMetal\")," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:M," \
     "selectedOption:(M.find(m=>m.data===G(\"D3DM_MAX_FPS\"))||{data:\"\"}).data," \
-    "onChange:v=>s([[\"D3DM_MAX_FPS\",w(\"D3DM_MAX_FPS\",v.data,\"\")]])})},\"fps\")," \
+    "onChange:v=>s([[\"D3DM_MAX_FPS\",w(\"D3DM_MAX_FPS\",v.data,\"\")]])})},\"d3dm-fps\")," \
     "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
     "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione del gioco)\")," \

@@ -337,7 +337,29 @@ enum D3DMetalTools: Sendable {
 
         if url.pathExtension.lowercased() == "dmg" {
             let attach = try? Shell.run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", url.path(percentEncoded: false)])
-            if attach?.succeeded == true {
+            if let output = attach?.stdout, attach?.succeeded == true {
+                let lines = output.components(separatedBy: .newlines)
+                var attachedMount: URL?
+                for line in lines {
+                    let parts = line.components(separatedBy: "\t")
+                    if let last = parts.last?.trimmingCharacters(in: .whitespacesAndNewlines), last.hasPrefix("/Volumes/") {
+                        attachedMount = URL(filePath: last)
+                        break
+                    }
+                }
+                if let attachedMount {
+                    if let direct = locateSource(in: attachedMount) {
+                        return direct
+                    }
+                    if let contents = try? FileManager.default.contentsOfDirectory(at: attachedMount, includingPropertiesForKeys: nil) {
+                        for nested in contents where nested.pathExtension.lowercased() == "dmg" {
+                            if let src = resolveSource(at: nested, maxDepth: maxDepth - 1) {
+                                return src
+                            }
+                        }
+                    }
+                }
+
                 let volumesURL = URL(filePath: "/Volumes")
                 if let volumes = try? FileManager.default.contentsOfDirectory(at: volumesURL, includingPropertiesForKeys: nil) {
                     for vol in volumes {
@@ -708,8 +730,13 @@ enum D3DMetalTools: Sendable {
         if let entries = try? fm.contentsOfDirectory(at: runners, includingPropertiesForKeys: nil) {
             for entry in entries {
                 let filename = entry.lastPathComponent
-                if filename.contains("+\(name)") {
-                    try? fm.removeItem(at: entry)
+                guard filename.hasPrefix("crossover-") && filename.contains("+") else { continue }
+                let base = filename.components(separatedBy: "@").first ?? filename
+                let components = base.components(separatedBy: "+").dropFirst()
+                if components.contains(name) {
+                    if !RunnerInstaller.isRunning(from: entry) {
+                        try? fm.removeItem(at: entry)
+                    }
                 }
             }
         }
