@@ -1,7 +1,8 @@
 # Fork synchronization
 
 Run `python3 tools/sync-fork.py --push` to fetch `origin` and `upstream`, merge
-`upstream/main` into every remote fork branch in an isolated worktree, run the
+`upstream/main` into fork `main`, then merge that result into every remote fork
+branch in an isolated worktree, run the
 available compatibility, launcher and feature checks, and push the verified
 results together with an atomic non-force push. Local branch checkouts and their
 uncommitted changes are not modified. The remote's branch list and tips are

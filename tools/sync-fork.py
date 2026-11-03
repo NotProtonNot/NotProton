@@ -76,6 +76,8 @@ def main():
             name = fields[0].removeprefix('refs/remotes/origin/')
             branches.append({'name': name, 'old': fields[1]})
         if not branches: raise RuntimeError('No origin branches were found')
+        # Build fork main first so each feature branch also includes its latest fork changes.
+        branches.sort(key=lambda branch: (branch['name'] != 'main', branch['name']))
         session = common / 'notproton-sync' / (time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8])
         session.mkdir(parents=True)
         wd = session / 'checkout'
@@ -87,6 +89,7 @@ def main():
     while state['index'] < len(state['branches']):
         branch = state['branches'][state['index']]
         name, old = branch['name'], branch['old']
+        target = state['target'] if name == 'main' else state['results'].get('main', state['target'])
         print(f"Checking {name}", flush=True)
         if state.get('pending_branch') == name:
             if git('status', '--porcelain', cwd=wd, capture=True):
@@ -100,11 +103,11 @@ def main():
             if git('status', '--porcelain', cwd=wd, capture=True):
                 raise RuntimeError(f'The sync checkout has unexpected changes: {wd}')
             git('switch', '--detach', old, cwd=wd)
-            if git('merge-base', '--is-ancestor', state['target'], old, cwd=wd, check=False) != 0:
+            if git('merge-base', '--is-ancestor', target, old, cwd=wd, check=False) != 0:
                 state['in_merge'] = True
                 save(statefile, state)
                 rc = git('-c', 'rerere.enabled=true', '-c', 'rerere.autoupdate=true',
-                         '-c', 'core.editor=true', 'merge', '--no-edit', '--no-ff', state['target'], cwd=wd, check=False)
+                         '-c', 'core.editor=true', 'merge', '--no-edit', '--no-ff', target, cwd=wd, check=False)
                 if rc:
                     raise RuntimeError(f'Merge needs attention in {wd}; resolve and stage it, then rerun with --continue {session}')
                 state['in_merge'] = False
