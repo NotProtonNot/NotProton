@@ -2709,14 +2709,44 @@ if [ -n "$localized_arg" ]; then
     printf '"CFBundleDisplayName" = "%s";\n' "$game_name_strings" > "$loader_res/$lproj.lproj/InfoPlist.strings"
   done
 fi
+loader_uielement_arg=""
+if [ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
+  loader_uielement_arg="  <key>LSUIElement</key><true/>"
+fi
 cat > "$loader_contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key><string>$game_name_xml</string>
-  <key>CFBundleDisplayName</key><string>$display_name_xml</string>
+  <key>CFBundleDisplayName</key><string>$game_name_xml</string>
   <key>CFBundleIdentifier</key><string>com.notproton.launcher.$app_id</string>
+  <key>CFBundleExecutable</key><string>launcher</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSMicrophoneUsageDescription</key><string>This game would like to access your microphone.</string>
+  <key>NSCameraUsageDescription</key><string>This game would like to access your camera.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>This game would like to access devices on your local network.</string>
+$loader_uielement_arg
+$icon_arg
+</dict>
+</plist>
+PLIST
+
+runner_plist=""
+if [ -n "$game_runner" ]; then
+  runner_plist="$loader_work/runner_Info.plist"
+  cat > "$runner_plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>$game_name_xml</string>
+  <key>CFBundleDisplayName</key><string>$display_name_xml</string>
+  <key>CFBundleIdentifier</key><string>com.notproton.runner.$app_id</string>
   <key>CFBundleExecutable</key><string>$bundle_exec</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -2732,6 +2762,7 @@ $icon_arg
 </dict>
 </plist>
 PLIST
+fi
 
 # Invokes macOS Game Mode
 if [ -z "$game_runner" ]; then
@@ -2754,10 +2785,19 @@ if [ -z "$game_runner" ]; then
   else
     echo "loader staging failed, game mode unavailable" >> "$log" 2>&1 || true
   fi
+else
+  ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
+fi
 
   cat > "$loader_macos/launcher" <<LAUNCHER
 #!/bin/sh
+case "\$1" in
+  ""|-psn_*)
+    exec /usr/bin/open "steam://run/$app_id"
+    ;;
+esac
 export WINELOADER="$WINELOADER"
+[ -x "\$(dirname "\$0")/wine" ] && WINELOADER="\$(dirname "\$0")/wine"
 wine_log="$loader_root/notproton-wine.log"
 exec > "\$wine_log" 2>&1
 shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
@@ -2773,10 +2813,9 @@ if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
 fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
-exec "$WINELOADER" "\$@"
+exec "\$WINELOADER" "\$@"
 LAUNCHER
   chmod +x "$loader_macos/launcher"
-fi
 
 bundle_listing() {
   (cd "$1" && find . | LC_ALL=C sort | while IFS= read -r p; do
@@ -2831,7 +2870,7 @@ install_bundle() (
       else
         rm -rf "$loader_backup" || true
       fi
-      rm -rf "$loader_work" || true
+      [ -n "$game_runner" ] || rm -rf "$loader_work" || true
       exit "$result"
     }
     trap 'finish_bundle' EXIT
@@ -2847,7 +2886,7 @@ install_bundle() (
     echo "launcher bundle updated" >> "$log" 2>&1 || true
     finish_bundle
   fi
-  rm -rf "$loader_work" || true
+  [ -n "$game_runner" ] || rm -rf "$loader_work" || true
 )
 runner_stamp() {
   if [ -d "$wine_unix/wine.app" ]; then
@@ -2893,21 +2932,24 @@ install_game_runner() (
     echo "cloned $CX_ROOT for this game" >> "$log" 2>&1 || true
   fi
   contents="$game_app/Contents"
-  if cmp -s "$loader_contents/Info.plist" "$contents/Info.plist" &&
-     [ "$(bundle_listing "$loader_res")" = "$(bundle_listing "$contents/Resources")" ]; then
+  runner_info="${runner_plist:-$loader_contents/Info.plist}"
+  res_source="$loader_res"
+  [ -d "$res_source" ] || res_source="$loader_app/Contents/Resources"
+  if cmp -s "$runner_info" "$contents/Info.plist" &&
+     [ "$(bundle_listing "$res_source")" = "$(bundle_listing "$contents/Resources")" ]; then
     echo "game's wine.app already up to date" >> "$log" 2>&1 || true
   else
     rm -rf "$contents/Resources" || exit 1
-    cp -R "$loader_res" "$contents/Resources" || exit 1
-    cp "$loader_contents/Info.plist" "$contents/Info.plist" || exit 1
+    cp -R "$res_source" "$contents/Resources" || exit 1
+    cp "$runner_info" "$contents/Info.plist" || exit 1
     echo "game's wine.app updated" >> "$log" 2>&1 || true
   fi
   for b in "$loader_root"/*.app "$loader_root"/.[!.]*.app; do
-    if [ -e "$b" ] || [ -L "$b" ]; then rm -rf "$b" || true; fi
+    if [ "$b" != "$loader_app" ] && { [ -e "$b" ] || [ -L "$b" ]; }; then rm -rf "$b" || true; fi
   done
 )
+install_bundle
 if [ -z "$game_runner" ]; then
-  install_bundle
   rm -rf "$loader_root/runner" 2>> "$log" || true
 elif ! install_game_runner; then
   show_alert "Couldn't start the game" "NotProton ran into an error. Please check the notproton-run.log in this game's prefix for details."
@@ -3146,16 +3188,16 @@ for name in $np_env_passed; do
 done
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
-if [ -n "$game_runner" ]; then
-  launched_app="$game_app"
-  registered="$game_runner/.launchservices-registered"
-else
-  launched_app="$loader_app"
-  registered="$loader_root/.launchservices-registered"
+if [ ! -f "$loader_root/.launchservices-registered" ] || [ "$loader_app/Contents/Info.plist" -nt "$loader_root/.launchservices-registered" ]; then
+  if [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1; then
+    touch "$loader_root/.launchservices-registered" 2>/dev/null || true
+  fi
 fi
-if [ ! -f "$registered" ] || [ "$launched_app/Contents/Info.plist" -nt "$registered" ]; then
-  if [ -x "$lsregister" ] && "$lsregister" -f "$launched_app" >> "$log" 2>&1; then
-    touch "$registered" 2>/dev/null || true
+if [ -n "$game_runner" ]; then
+  if [ ! -f "$game_runner/.launchservices-registered" ] || [ "$game_app/Contents/Info.plist" -nt "$game_runner/.launchservices-registered" ]; then
+    if [ -x "$lsregister" ] && "$lsregister" -f "$game_app" >> "$log" 2>&1; then
+      touch "$game_runner/.launchservices-registered" 2>/dev/null || true
+    fi
   fi
 fi
 if [ -n "$game_runner" ]; then

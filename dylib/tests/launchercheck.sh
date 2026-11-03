@@ -54,6 +54,24 @@ echo "== final paths =="
 case "$launcher_body" in *loader_stage*|*loader_contents*|*loader_macos*|*loader_work*) bad "launcher has no staging paths" "none" "staging path" ;; *) ok "launcher has no staging paths" ;; esac
 is "WINELOADER points at the installed bundle" '    WINELOADER="$loader_app/Contents/MacOS/wine"' "$loader_line"
 
+echo "== launcher dispatch =="
+case "$launcher_body" in
+  *'\$1'*'steam://run/$app_id'*)
+    ok "launcher hands off to steam://run/ when standalone"
+    ;;
+  *)
+    bad "launcher hands off to steam://run/ when standalone" "present" "missing"
+    ;;
+esac
+dispatched=""
+for arg in "" "-psn_0_123456" "game.exe"; do
+  case "$arg" in
+    ""|-psn_*) dispatched="${dispatched}1" ;;
+    *) dispatched="${dispatched}0" ;;
+  esac
+done
+is "dispatch matches only standalone invocations" "110" "$dispatched"
+
 echo "== bundle names =="
 for pair in '.hack//G.U. Last Recode|hackG.U. Last Recode' '...|Steam Game' '//|Steam Game' 'Half-Life 2|Half-Life 2' 'a.b|a.b'; do
   game_name=${pair%%|*}
@@ -404,6 +422,7 @@ printf 'x86 wine 2' > "$T/new-wine"
 mv "$T/new-wine" "$wine_unix/wine"
 runner_build
 is "Rosetta reclone after re-sign" "x86 wine 2" "$(cat "$game_app/Contents/MacOS/wine")"
+
 
 [ "$fails" -eq 0 ] || { echo "launchercheck: $fails failed"; exit 1; }
 echo "launchercheck: all passed"
