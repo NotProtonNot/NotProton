@@ -354,11 +354,11 @@ write_descriptor() {
     # Prepare MetalFX integration if nvngx.dll / nvngx.so not present
     win_dir="$src/wine/x86_64-windows"
     if [ -f "$win_dir/nvngx-on-metalfx.dll" ] && [ ! -f "$win_dir/nvngx.dll" ]; then
-        cp -f "$win_dir/nvngx-on-metalfx.dll" "$win_dir/nvngx.dll"
+        cp -f "$win_dir/nvngx-on-metalfx.dll" "$win_dir/nvngx.dll" 2>/dev/null || true
     fi
     unix_dir="$src/wine/x86_64-unix"
     if [ -f "$unix_dir/nvngx-on-metalfx.so" ] && [ ! -f "$unix_dir/nvngx.so" ]; then
-        cp -f "$unix_dir/nvngx-on-metalfx.so" "$unix_dir/nvngx.so"
+        cp -f "$unix_dir/nvngx-on-metalfx.so" "$unix_dir/nvngx.so" 2>/dev/null || true
     fi
 
     verify_src "$src" || die "$src is not usable; nothing was written"
