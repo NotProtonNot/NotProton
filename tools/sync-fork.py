@@ -38,7 +38,8 @@ def checks(wd):
     if not makefile.exists(): return
     text = makefile.read_text()
     wanted = ['compatsvc-check', 'panel-behavior', 'scriptcheck', 'launchercheck',
-              'bundlecheck', 'gameenv-check', 'display-check', 'cursor-check',
+              'bundlecheck', 'gameenv-check', 'game-session-check', 'display-check', 'cursor-check',
+              'settingscheck', 'envpasscheck', 'bridgecheck',
               'launchperfcheck', 'runnervariantcheck', 'confcheck']
     targets = [name for name in wanted if re.search(r'^' + re.escape(name) + r'\s*:', text, re.M)]
     if targets: run('make', *targets, cwd=wd)
