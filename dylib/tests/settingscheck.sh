@@ -10,7 +10,7 @@ wrapper=$(sed -n '/^without_lock_fds() {$/,/^}$/p' "$SRC")
 [ -n "$wrapper" ] || { echo "FAIL: without_lock_fds not found in $SRC"; exit 1; }
 helpers=""
 for helper in controller_ids ids_without hidraw_lines write_owned_controllers plan_hidden_controllers \
-	plan_disable_hidraw winebus_lines plan_logpixels video_lines prefix_up_to_date \
+	plan_disable_hidraw winebus_lines verisign_g5_lines plan_logpixels video_lines prefix_up_to_date \
 	settings_already_applied; do
 	part=$(sed -n "/^$helper() {\$/,/^}\$/p" "$SRC")
 	[ -n "$part" ] || { echo "FAIL: $helper not found in $SRC"; exit 1; }
@@ -57,10 +57,12 @@ bad() { printf '  FAIL  %s\n         want [%s]\n         got  [%s]\n' "$1" "$2" 
 is() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "$2" "$3"; fi; }
 same_file() { if cmp -s "$2" "$3"; then ok "$1"; else bad "$1" "contents of ${2##*/}" "$(cat -v "$3" 2>/dev/null)"; fi; }
 
+g5_key='[Software\\Microsoft\\SystemCertificates\\Root\\Certificates\\4EB6D578499B1CCF5F581EAD56BE3D9B6744A5E5]'
 case_dir=""
 new_case() {
 	case_dir=$(mktemp -d "$work/case.XXXXXX")
 	mkdir -p "$case_dir/pfx/drive_c"
+	printf '%s\n' "$g5_key 1791230000" '' > "$case_dir/pfx/system.reg"
 	: > "$case_dir/calls"
 	: > "$case_dir/log"
 }
@@ -68,6 +70,7 @@ in_registry() {
 	for id in "$@"; do
 		printf '%s\n' "[System\\\\ControlSet001\\\\Services\\\\winebus\\\\Devices\\\\$id] 1791230000" '"Hidraw"=dword:00000000' ''
 	done > "$case_dir/pfx/system.reg"
+	printf '%s\n' "$g5_key 1791230000" '' >> "$case_dir/pfx/system.reg"
 }
 launch() {
 	new_case
@@ -340,6 +343,15 @@ is "a value under HKEY_CURRENT_USER is read from user.reg" applied \
 is "the same value under HKEY_LOCAL_MACHINE is not" import \
 	"$(check '[HKEY_LOCAL_MACHINE\Software\Wine\WineDbg]' '"ShowCrashDialog"=dword:00000000')"
 unset CX_ROOT
+
+echo "== VeriSign G5 root"
+launch "" 0
+is "a prefix that has the root does not get it again" 0 "$(grep -c 4EB6D578499B1CCF5F581EAD56BE3D9B6744A5E5 "$case_dir/imported")"
+new_case
+rm "$case_dir/pfx/system.reg"
+run_in "" 0
+is "a prefix without the root gets it in the same import" 1 \
+	"$(grep -cF '[HKEY_LOCAL_MACHINE\Software\Microsoft\SystemCertificates\Root\Certificates\4EB6D578499B1CCF5F581EAD56BE3D9B6744A5E5]' "$case_dir/imported")"
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> settingscheck: all assertions hold"
