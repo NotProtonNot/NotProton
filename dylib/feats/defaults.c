@@ -21,6 +21,7 @@ static const char *const g_bools[]    = { "0", "1", NULL };
 static const char *const g_backends[] = { "dxmt", "dxvk", "wined3d", NULL };
 static const char *const g_d3dmetal[] = { "d3dmetal", NULL };
 static const char *const g_factors[]  = { "1.5", "1.72", "2.0", "3.0", NULL };
+static const char *const g_fps[]      = { "30", "40", "60", "120", "144", NULL };
 
 static const struct {
     const char        *key;
@@ -56,7 +57,38 @@ static int is_one_of(const char *const *list, const char *v, size_t len) {
     return 0;
 }
 
+#define FACTOR_PREFIX "d3d11.metalSpatialUpscaleFactor="
+#define FPS_PREFIX    "d3d11.preferredMaxFrameRate="
+
+static int valid_dxmt_config(const char *v, size_t len) {
+    if (len == 0 || v[0] == ';' || v[len - 1] == ';') return 0;
+    const size_t factor_pre = sizeof(FACTOR_PREFIX) - 1;
+    const size_t fps_pre = sizeof(FPS_PREFIX) - 1;
+    int seen_factor = 0, seen_fps = 0;
+    size_t at = 0;
+    while (at < len) {
+        const char *semi = memchr(v + at, ';', len - at);
+        size_t n = semi ? (size_t)(semi - (v + at)) : len - at;
+        if (n == 0) return 0;
+        const char *clause = v + at;
+
+        if (n > factor_pre && memcmp(clause, FACTOR_PREFIX, factor_pre) == 0) {
+            if (seen_factor || !is_one_of(g_factors, clause + factor_pre, n - factor_pre)) return 0;
+            seen_factor = 1;
+        } else if (n > fps_pre && memcmp(clause, FPS_PREFIX, fps_pre) == 0) {
+            if (seen_fps || !is_one_of(g_fps, clause + fps_pre, n - fps_pre)) return 0;
+            seen_fps = 1;
+        } else {
+            return 0;
+        }
+        at += n + (semi ? 1 : 0);
+    }
+    return seen_factor || seen_fps;
+}
+
 static int valid_value(size_t i, uint32_t runner, const char *v, size_t len) {
+    if (is(g_settings[i].key, strlen(g_settings[i].key), "DXMT_CONFIG"))
+        return valid_dxmt_config(v, len);
     size_t pre = strlen(g_settings[i].prefix);
     if (len <= pre || memcmp(v, g_settings[i].prefix, pre) != 0) return 0;
     return is_one_of(g_settings[i].values, v + pre, len - pre)

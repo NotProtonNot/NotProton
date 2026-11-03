@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(sys.argv.pop(1) if len(sys.argv) > 1 else ROOT / 'dylib/feats/compat_run.sh').read_text()
-RECIPE = re.search(r'(cat > "\$loader_macos/launcher" <<LAUNCHER\n.*?)\n\nbundle_listing\(\)', SOURCE, re.S)[1]
+RECIPE = re.search(r'(cat > "\$loader_macos/launcher" <<LAUNCHER\n.*?)\nfi\n\nbundle_listing\(\)', SOURCE, re.S)[1]
 
 
 class GameSession(unittest.TestCase):

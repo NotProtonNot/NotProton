@@ -87,7 +87,7 @@ for (const form of Object.keys(FORMS)) {
       ty: 'choice', ch: [{ v: 'x', l: 'Ex' }] },
   ]).replace(/"(\w+)":/g, '$1:');
   {
-    const { render: PV, written: vwritten } = panel(emit, form, undefined, { feats: PVALUES });
+    const { render: PV, written: vwritten, files: vfiles } = panel(emit, form, undefined, { feats: PVALUES });
     const nodesFor = (tool, opts) =>
       walk(PV({ details: details(opts, { strCompatToolName: tool }) }));
     const labelsFor = (tool, opts) => nodesFor(tool, opts)
@@ -112,19 +112,32 @@ for (const form of Object.keys(FORMS)) {
     t.ok(nodesFor('notproton-26.3', 'NOTPROTON_HUD=1 NOTPROTON_ENV_HUD_POS=tl %command%')
            .find(x => x.props.label === 'HUD position').props.selectedOption === 'tl',
          'while under one of ours the key keeps its prefix');
+    t.ok(!labelsFor('fexmac', on).includes('Launch Executable') &&
+         labelsFor('notproton-26.3', '').includes('Launch Executable'),
+         'Launch Executable is offered only for NotProton tools, since its wrapper needs the shell the launch hook runs');
+    vfiles.push('/g/a.exe');
+    nodesFor('notproton-26.3', '').find(x => x.props.children === 'Browse...').props.onClick();
+    const picked = vwritten.at(-1).opts;
+    const other = nodesFor('fexmac', picked);
+    t.ok(JSON.stringify(other.filter(x => x.type === 'Button').map(x => x.props.children)) === '["Remove"]' &&
+         other.some(x => x.props.label === 'Executable' && x.props.description === '/g/a.exe') &&
+         !other.some(x => x.props.label === 'Start Executable From'),
+         'a pick made under one of ours still shows on another tool, with only Remove');
+    other.find(x => x.props.children === 'Remove').props.onClick();
+    t.ok(vwritten.at(-1).opts === '', 'and Remove there takes the wrapper out');
   }
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 3, 'automatic shows seven toggles in three sections');
-  t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
+  t.ok(toggles(r).length === 7 && sections(r).length === 5, 'automatic shows seven toggles in five sections');
+  t.ok(r.filter(x => x.type === 'Dropdown').length === 3, 'three dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
   r = nodes('CX_GRAPHICS_BACKEND=dxmt');
-  t.ok(toggles(r).filter(l => l === 'DLSS').length === 1 && sections(r).includes('MetalFX'),
-       'dxmt keeps one DLSS and keeps MetalFX');
+  t.ok(toggles(r).filter(l => l === 'DLSS').length === 1 && sections(r).includes('MetalFX') && sections(r).includes('DXMT'),
+       'dxmt keeps one DLSS and keeps MetalFX and DXMT sections');
   r = nodes('CX_GRAPHICS_BACKEND=d3dmetal');
-  t.ok(toggles(r).filter(l => l === 'DLSS').length === 1 && !sections(r).includes('MetalFX'),
-       'd3dmetal keeps one DLSS and hides MetalFX');
+  t.ok(toggles(r).filter(l => l === 'DLSS').length === 1 && !sections(r).includes('MetalFX') && !sections(r).includes('DXMT'),
+       'd3dmetal keeps one DLSS and hides MetalFX and DXMT sections');
   // Both flags are labeled DLSS, so a backend showing its own and its neighbor's
   // would put the same word on two rows.
   for (const b of ['', 'd3dmetal', 'dxmt', 'dxvk', 'wined3d']) {
@@ -152,6 +165,36 @@ for (const form of Object.keys(FORMS)) {
   nodes('CX_GRAPHICS_BACKEND=dxmt').filter(x => x.type === 'Dropdown')[1].props.onChange({ data: '2.0' });
   t.ok(last().includes('metalSpatialUpscaleFactor=2.0'), 'the upscaler writes its factor');
 
+  nodes('CX_GRAPHICS_BACKEND=dxmt').filter(x => x.type === 'Dropdown')[2].props.onChange({ data: '60' });
+  t.ok(last().includes('preferredMaxFrameRate=60'), 'the frame rate limiter writes its FPS');
+
+  nodes('CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=2.0"').filter(x => x.type === 'Dropdown')[2].props.onChange({ data: '120' });
+  t.ok(last().includes('metalSpatialUpscaleFactor=2.0') && last().includes('preferredMaxFrameRate=120'),
+       'the frame rate limiter preserves upscale factor');
+
+  nodes('CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=2.0;d3d11.preferredMaxFrameRate=60"').filter(x => x.type === 'Dropdown')[2].props.onChange({ data: '' });
+  t.ok(last().includes('metalSpatialUpscaleFactor=2.0') && !last().includes('preferredMaxFrameRate'),
+       'turning off frame rate limiter keeps upscale factor');
+
+  {
+    const capped = { document: { documentElement: { lang: 'en' } },
+                     MSCXDefaultsData: { rosetta: { DXMT_CONFIG: 'd3d11.preferredMaxFrameRate=60' }, fex: {} } };
+    const { render: PC, written: cw } = panel(emit, form, capped);
+    const fps = opts => walk(PC({ details: details(opts + ' %command%') }))
+      .filter(x => x.type === 'Dropdown')[2];
+    t.ok(fps('CX_GRAPHICS_BACKEND=dxmt').props.selectedOption === '60', 'a game shows the default frame rate');
+    fps('CX_GRAPHICS_BACKEND=dxmt').props.onChange({ data: '' });
+    const off = cw[cw.length - 1].opts;
+    t.ok(off.includes('preferredMaxFrameRate=0'), `turning the limit off writes 0 over the default (${off})`);
+    t.ok(fps(off.replace(/ ?%command%$/, '')).props.selectedOption === '', 'and reads back as off');
+    fps('CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG="d3d11.preferredMaxFrameRate=0"').props.onChange({ data: '60' });
+    t.ok(!cw[cw.length - 1].opts.includes('DXMT_CONFIG'), 'picking the default again drops the clause');
+  }
+
+  const fpsOptions = nodes('CX_GRAPHICS_BACKEND=dxmt').filter(x => x.type === 'Dropdown')[2]
+    .props.rgOptions.map(o => o.data);
+  t.ok(fpsOptions.join(',') === ',30,40,60,120,144', `the fps options are available (${fpsOptions.join(',')})`);
+
   // The section names the factor, so a label promising a resolution to go and set in
   // the game is the wording this replaced.
   const upscaler = nodes('CX_GRAPHICS_BACKEND=dxmt').find(x => x.type === 'Section' &&
@@ -174,7 +217,7 @@ for (const form of Object.keys(FORMS)) {
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
   t.ok(classes.length === 7 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
-  const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly (May break Steam Input. Not recommended)');
+  const raw = o => nodes(o).find(x => x.props.label === 'Let Games Read Controllers Directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
   written.length = 0;
@@ -349,7 +392,7 @@ for (const form of Object.keys(FORMS)) {
        'a parent at its off value does not count as on');
   t.ok(alpha('') && alpha('').props.disabled === true,
        'a plugin whose assets are missing renders disabled');
-  t.ok(alpha('').props.label.endsWith('(not installed)'),
+  t.ok(alpha('').props.label.endsWith('(Not Installed)'),
        'it says why it cannot be used');
   t.ok(alpha('NOTPROTON_ALPHA=1 %command%').props.checked === false,
        'a stale launch option does not show it as on');

@@ -90,11 +90,23 @@ static void valid_cases(void) {
           "a row takes only 0 or 1");
     check(valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.72"),
           "DXMT_CONFIG takes a factor");
+    check(valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=60") &&
+          valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=144"),
+          "DXMT_CONFIG takes a frame rate");
+    check(valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5;d3d11.preferredMaxFrameRate=60") &&
+          valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=120;d3d11.metalSpatialUpscaleFactor=2.0"),
+          "DXMT_CONFIG takes both factor and frame rate in either order");
     check(!valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=") &&
           !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=.") &&
           !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1;x=1") &&
           !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1234567") &&
-          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=60"),
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=") &&
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=0") &&
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=15") &&
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=60;d3d11.preferredMaxFrameRate=30") &&
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5;d3d11.metalSpatialUpscaleFactor=2.0") &&
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=;d3d11.preferredMaxFrameRate=60") &&
+          !valid(NP_DEFAULTS_ROSETTA, "DXMT_CONFIG=d3d11.preferredMaxFrameRate=60;"),
           "DXMT_CONFIG takes nothing else");
     check(!valid(NP_DEFAULTS_ROSETTA, "WINEDEBUG=+all") && !valid(2, "WINEMSYNC=1"),
           "other keys and runners are refused");

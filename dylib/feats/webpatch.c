@@ -1038,7 +1038,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "as=w=>/^[A-Za-z_]\\w*=/.test(o.slice(w.start,w.end))," \
     "b=G.length>1&&ev(G[0])&&(as(G[1])||m(G[1]))?1:0," \
     "n=G.slice(b).findIndex(w=>m(w)||!as(w));" \
-    "return{p:G[b].start,e:G.slice(b,n<0?G.length:b+n),ev:1===b}})(),"
+    "return{p:G[b].start,e:G.slice(b,n<0?G.length:b+n),ev:1===b,c:G.find(m)}})(),"
 
 // Rewrites KEY=value entries before %command% and leaves the rest of the text byte for byte.
 #define NP_CX_LAUNCH \
@@ -1055,7 +1055,24 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "E.e.forEach(w=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",w.start))){" \
     "r+=o.slice(at,w.start);at=w.end;while(o[at]===\" \"||o[at]===\"\\t\")at++}});r+=o.slice(at)}" \
     "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)};" \
-    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0])}}"
+    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0]),c:E.c}}"
+
+// The chosen program replaces the argument after waitforexitandrun and starts in its own folder, which Mod Engine 2's .bat needs. Other verbs run unchanged.
+#define NP_CX_TARGET \
+    "(o,id,home)=>{" \
+    "const q=v=>\"'\"+v.replace(/'/g,\"'\\\\''\").replace(/%(?=command%)/gi,\"%'\\\"\\\"'\")+\"'\"," \
+    "h=\"sh -c \"+q('exe=$1 dir=$2 found= prev=; shift 2; for arg in \"$@\"; do shift; '+" \
+    "'if [ -z \"$found\" ] && [ \"$prev\" = waitforexitandrun ]; then arg=$exe found=1; fi; prev=$arg; set -- \"$@\" \"$arg\"; done; '+" \
+    "'if [ \"$found\" ]; then cd \"${dir:-${exe%/*}/}\" || exit; fi; exec \"$@\"')+\" sh \"," \
+    "at=o.indexOf(h)," \
+    "m=at<0?null:/^('(?:[^']|'\\\\''|'\"\"')*') ('(?:[^']|'\\\\''|'\"\"')*') %command%/.exec(o.slice(at+h.length))," \
+    "rd=v=>v.slice(1,-1).replace(/'\\\\''|'\"\"'/g,x=>x[1]===\"\\\\\"?\"'\":\"\")," \
+    "b=m?o.slice(0,at)+\"%command%\"+o.slice(at+h.length+m[0].length):o;" \
+    "return{home,ex:m?rd(m[1]):\"\",sd:m?rd(m[2]):\"\",write:(e,d)=>{" \
+    "const B=/%command%/i.test(b)?b:\"%command%\"+(b.trim()?\" \"+b:\"\"),c=MSCXLaunch(B,id).c;" \
+    "if(!c||!/^%command%$/i.test(B.slice(c.start,c.end)))return;" \
+    "const r=B.slice(0,c.start)+(e?h+q(e)+\" \"+q(d)+\" %command%\":\"%command%\")+B.slice(c.end);" \
+    "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)}}}"
 
 #define NP_CX_PICK \
     "(t,n)=>{const o=t.strLaunchOptions||\"\";" \
@@ -1202,13 +1219,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_CX_BARREL_READY(B) "[" NP_CX_BARREL(NP_CX_BARREL_JS) "].every(n=>" B "[n])"
 
 #define NP_CX_FACTOR_ENTRY "e=>/^[ \\t\\r]*d3d11\\.metalSpatialUpscaleFactor[ \\t\\r]*=/.test(e)"
+#define NP_CX_FPS_ENTRY    "e=>/^[ \\t\\r]*d3d11\\.preferredMaxFrameRate[ \\t\\r]*=/.test(e)"
 
 #define NP_CX_DEFAULTS "(globalThis.MSCXDefaultsData||(globalThis.MSCXDefaultsData=" NP_DEFAULTS "))"
 #define NP_CX_BUILDS "(globalThis.MSCXBuilds||(globalThis.MSCXBuilds=" NP_BUILDS "))"
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_PANEL(RT, BARREL) \
-    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,dflt,dev,tool,ours=1})=>{" \
+    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,dflt,dev,tool,ours=1,target:X})=>{" \
     "const npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     /* A plugin may name the tools it is for. Filtered here rather than at render, so the
        dependency chain and the indent depth see what the panel shows and nothing else. */ \
@@ -1252,20 +1270,20 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".concat((f.ev||[]).map(e=>[e.slice(0,e.indexOf(\"=\")),v?e.slice(e.indexOf(\"=\")+1):\"\"])),1)," \
     "TP=(f,d,lv)=>{const rd=MSCXReady[f.k]!==0;" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
-    "{label:rd?f.l:f.l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?f.l:f.l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&npHas(f)," \
     "indentLevel:lv||undefined," \
     "onChange:v=>npSet(f,v)},f.k)}," \
     "TD=(k,l,on,off,d,lv)=>{const rd=MSCXReady[k]!==0;" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&G(k)===on," \
     "indentLevel:lv||undefined," \
     "onChange:v=>s([[k,v?on:(off||\"\")]])},k)}," \
     /* A row that holds one of its declared values, with Default for none of them. */ \
     "TC=(k,l,d,lv,ch,pe)=>{const rd=MSCXReady[k]!==0,v=G(k);" \
     "return(0," RT ".jsx)(" BARREL ".m," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,layout:\"inline\"," \
     "indentLevel:lv||undefined," \
     "rgOptions:[{data:\"\",label:npL(\"Default\",\"默认\",\"Default\")}]" \
@@ -1276,7 +1294,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "TS=(k,l,d,lv,mn,mx,st,df,sf,pe)=>{const rd=MSCXReady[k]!==0,v=G(k)," \
     "n=!rd||\"\"===v.trim()||!isFinite(+v)?(undefined===df?mn:df):+v;" \
     "return(0," RT ".jsx)(" BARREL ".d3," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined," \
     "indentLevel:lv||undefined," \
     "value:n,min:mn,max:mx,step:st||undefined,showValue:true," \
@@ -1289,7 +1307,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "TL=(k,l,d,lv,ch,df,pe)=>{const rd=MSCXReady[k]!==0,V=ch.map(c=>c.v),v=G(k)," \
     "n=rd&&V.indexOf(v)>=0?v:(undefined===df?V[0]:df);" \
     "return(0," RT ".jsx)(" BARREL ".gz," \
-    "{label:rd?l:l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined," \
     "indentLevel:lv||undefined," \
     "rValues:V,value:n,showValue:true," \
@@ -1302,28 +1320,59 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "checked:\"1\"===G(k),onChange:v=>s([[k,w(k,v?\"1\":\"0\",\"0\")]])},k)," \
     "D=(k,l)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
     "checked:\"0\"!==G(k),onChange:v=>s([[k,w(k,v?\"1\":\"0\",\"1\")]])},k)," \
+    "SL=(k,en)=>globalThis.LocalizationManager?.LocalizeString?.(k,!0)??en," \
+    "ex=X?X.ex:\"\",exd=ex.replace(/\\/[^\\/]*$/,\"\")||\"/\",sd=X&&X.sd||exd," \
+    "pk=(q,f)=>SteamClient.System.OpenFileDialog(q).then(p=>p&&f(p),()=>{})," \
+    "bt=(l,f,k)=>(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXSetBtn\",onClick:f,children:l},k)," \
+    "br=SL(\"#AppProperties_Shortcut_BrowseFiles\",\"Browse...\")," \
+    "XF=(k,l,d,c)=>(0," RT ".jsx)(" BARREL ".D0,{label:l,description:d,childrenContainerWidth:\"min\"," \
+    "children:(0," RT ".jsx)(\"div\",{className:\"MSCXBtns\",children:c})},k)," \
+    "exe=X&&(ours||ex)&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Launch Executable\",\"Launch Executable\",\"Launch Executable\"),children:[" \
+    "XF(\"target\",npL(\"Executable\",\"Executable\",\"Executable\"),ex||undefined,[" \
+    "ex&&bt(SL(\"#Button_Remove\",\"Remove\"),()=>X.write(\"\",\"\"),\"remove\")," \
+    "ours&&bt(br,()=>pk({strTitle:npL(\"Choose a Program to Launch\",\"选择要启动的程序\",\"Scegli il programma da avviare\")," \
+    "rgFilters:[{strFileTypeName:npL(\"Windows Programs (*.exe, *.bat)\",\"Windows 程序 (*.exe, *.bat)\"," \
+    "\"Programmi Windows (*.exe, *.bat)\"),rFilePatterns:[\"*.exe\",\"*.bat\"],bUseAsDefault:!0}]," \
+    "strInitialFile:ex||X.home},p=>X.write(p,\"\")),\"pick\")])," \
+    "ours&&ex&&XF(\"dir\",npL(\"Start Executable From\",\"Start Executable From\",\"Start Executable From\"),sd,[" \
+    "sd!==exd&&bt(SL(\"#AppProperties_Customization_Reset\",\"Reset\"),()=>X.write(ex,\"\"),\"reset\")," \
+    "bt(br,()=>pk({strTitle:SL(\"#AppProperties_Shortcut_ChooseStartDirectoryDialogTitle\",\"Choose Start Directory\")," \
+    "strInitialFile:sd,bChooseDirectory:!0},p=>{const n=p.replace(/\\/+$/,\"\")||\"/\";X.write(ex,n===exd?\"\":n)}),\"pick\")])" \
+    "]},\"exe\")," \
     "bv=G(\"CX_GRAPHICS_BACKEND\"),b=\"auto\"===bv||fex&&\"d3dmetal\"===bv?\"\":bv," \
     "dm=!fex&&(\"\"===b||\"d3dmetal\"===b)," \
     "dx=\"\"===b||\"dxmt\"===b," \
     "sw=\"1\"===G(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
     "F=\"d3d11.metalSpatialUpscaleFactor=\",fk=" NP_CX_FACTOR_ENTRY "," \
+    "FP=\"d3d11.preferredMaxFrameRate=\",fpk=" NP_CX_FPS_ENTRY "," \
     "fe=readSaved(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
     "fx=v=>fe.filter(e=>!fk(e)).concat(v?[F+v]:[]).join(\";\")," \
+    "fxFps=v=>fe.filter(e=>!fpk(e)).concat(v?[FP+v]:[]).join(\";\")," \
     "pf=c=>{const v=(c.split(\";\").filter(fk).pop()||\"=2\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0];" \
     "return Math.max(isNaN(+v)?2:+v,1)}," \
+    "pfp=c=>{const v=(c.split(\";\").filter(fpk).pop()||\"\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0];" \
+    "return 0===+v?\"\":v}," \
     "fn=pf(G(\"DXMT_CONFIG\"))," \
+    "fnFps=pfp(G(\"DXMT_CONFIG\"))," \
     "U=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
     "{data:\"1.5\",label:\"1.5x\"}," \
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
+    "FPS=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
+    "{data:\"30\",label:\"30 FPS\"}," \
+    "{data:\"40\",label:\"40 FPS\"}," \
+    "{data:\"60\",label:\"60 FPS\"}," \
+    "{data:\"120\",label:\"120 FPS\"}," \
+    "{data:\"144\",label:\"144 FPS\"}]," \
     "B=[{data:\"\",label:npL(\"Automatic\",\"自动\",\"Automatico\")}," \
     "{data:\"d3dmetal\",label:\"D3DMetal\"}," \
     "{data:\"dxmt\",label:\"DXMT\"}," \
     "{data:\"dxvk\",label:\"DXVK\"}," \
     "{data:\"wined3d\",label:\"WineD3D\"}].filter(x=>!fex||x.data!==\"d3dmetal\")," \
     "pick=f=>\"1\"===f(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")?(U.find(u=>u.data&&+u.data===pf(f(\"DXMT_CONFIG\")||\"\"))" \
-    "||{data:String(pf(f(\"DXMT_CONFIG\")||\"\"))}).data:\"\";" \
+    "||{data:String(pf(f(\"DXMT_CONFIG\")||\"\"))}).data:\"\"," \
+    "pickFps=f=>pfp(f(\"DXMT_CONFIG\")||\"\");" \
     /* Without our run script behind it a row can only be what a launch option can carry,
        so one asking for a staged DLL or an override is not offered, and neither is one
        with nothing to deliver. */ \
@@ -1356,15 +1405,23 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "onChange:v=>s(dflt&&v.data===pick(k=>dflt(k)||\"\")" \
     "?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"0\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
+    "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:npL(\"DXMT Frame Rate Limit\"," \
+    "\"DXMT Frame Rate Limit\",\"DXMT Frame Rate Limit\")," \
+    "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:FPS," \
+    "selectedOption:(FPS.find(u=>u.data===fnFps)||{data:fnFps}).data," \
+    "onChange:v=>s(dflt&&v.data===pickFps(k=>dflt(k)||\"\")" \
+    "?[[\"DXMT_CONFIG\",fxFps(\"\")]]" \
+    ":[[\"DXMT_CONFIG\",fxFps(v.data||(dflt?\"0\":\"\"))]])})},\"fps\")," \
     "ours&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
-    "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let games read controllers directly (May break Steam Input. Not recommended)\"," \
+    "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let Games Read Controllers Directly (May break Steam Input. Not recommended)\"," \
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"))," \
     "T(\"NOTPROTON_DISABLE_HIDRAW\",npL(\"Disable hidraw\",\"停用 hidraw\",\"Disattiva hidraw\"))" \
     "]},\"ctl\")," \
     "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \
-    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")," \
+    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\"),exe," \
     "dev&&(npRows.length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
     "children:vids.map(V).concat(npRows.filter(f=>!f.dep||on1(f.dep))" \
@@ -1392,14 +1449,16 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,has=k=>L.k.includes(k)," \
     "lost=globalThis.MSCXDefaultsLost,DF=lost?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)||{}).override||" NP_CX_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
-    "fk=" NP_CX_FACTOR_ENTRY "," \
+    "fk=" NP_CX_FACTOR_ENTRY ",fpk=" NP_CX_FPS_ENTRY "," \
     "own=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
-    "G=k=>\"DXMT_CONFIG\"===k?(own.some(fk)?g(k):DF[k]||\"\"):has(k)?g(k):DF[k]||\"\";" \
+    "dfe=(DF[\"DXMT_CONFIG\"]||\"\").split(\";\").filter(e=>e.trim())," \
+    "mergedDxmt=[own.filter(fk).pop()||dfe.filter(fk).pop(),own.filter(fpk).pop()||dfe.filter(fpk).pop()].concat(own.filter(e=>!fk(e)&&!fpk(e))).filter(Boolean).join(\";\")," \
+    "G=k=>\"DXMT_CONFIG\"===k?mergedDxmt:has(k)?g(k):DF[k]||\"\";" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
     "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,tool:tn," \
     "ours:tn===\"" NP_FALLBACK_TOOL "\"||" NP_OUR_TOOLS ".indexOf(tn)>=0," \
-    "dflt:lost?null:k=>DF[k],head:" \
+    "dflt:lost?null:k=>DF[k],target:(" NP_CX_TARGET ")(o,t.unAppID,t.strInstallFolder||\"\"),head:" \
     "typeof MSCXPrefixRow==\"function\"&&(0," RT ".jsx)(\"div\",{className:\"MSCXRow\",ref:e=>e&&MSCXPrefixRow(e,t.unAppID)},\"npstate\")" \
     "})}"
 
