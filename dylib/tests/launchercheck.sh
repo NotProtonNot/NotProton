@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck disable=SC2016,SC2034,SC2154
+# shellcheck disable=SC2016,SC2030,SC2031,SC2034,SC2154
 set -e
 SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "launchercheck: $SRC not present, skipped"; exit 0; }
@@ -53,6 +53,55 @@ leftover() { (cd "$loader_root" && n=0 && for b in .build.*; do [ -e "$b" ] && n
 echo "== final paths =="
 case "$launcher_body" in *loader_stage*|*loader_contents*|*loader_macos*|*loader_work*) bad "launcher has no staging paths" "none" "staging path" ;; *) ok "launcher has no staging paths" ;; esac
 is "WINELOADER points at the installed bundle" '    WINELOADER="$loader_app/Contents/MacOS/wine"' "$loader_line"
+
+echo "== bundles =="
+plist_lines=$(sed -n '/^games_arg=/,/^fi$/p' "$SRC")
+gameid_func=$(sed -n '/^shortcut_game_id() {$/,/^}$/p' "$SRC")
+[ -n "$plist_lines" ] && [ -n "$gameid_func" ] || { echo "FAIL: bundle plist code not found"; exit 1; }
+eval "$gameid_func"
+printf '#!/bin/sh\necho "open $*"\n' > "$T/open"
+printf '#!/bin/sh\necho "wine $*"\n' > "$T/wine"
+chmod 755 "$T/open" "$T/wine"
+key() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null || echo "-"; }
+bundles() (
+  macos=$1 game_runner=$2 SteamGameId=$3 app_id=100 game_name_xml=Game display_name_xml=$4 icon_arg=""
+  uielement_arg="" localized_arg=""
+  [ -z "$game_runner" ] || uielement_arg="  <key>LSUIElement</key><true/>"
+  # shellcheck disable=SC2329
+  sw_vers() { echo "$macos"; }
+  loader_work="$T/plists" loader_contents="$T/plists/tile/Contents" loader_macos="$T/plists/tile/Contents/MacOS"
+  rm -rf "$loader_work"; mkdir -p "$loader_macos"
+  eval "$plist_lines"
+)
+bundles 27.1 runner "" wine
+r="$T/plists/runner.plist" t="$T/plists/tile/Contents/Info.plist"
+is "runner identity" "com.notproton.launcher.100|wine|true" "$(key "$r" CFBundleIdentifier)|$(key "$r" CFBundleExecutable)|$(key "$r" LSUIElement)"
+is "runner out of the Games app" "-|true" "$(key "$r" LSApplicationCategoryType)|$(key "$r" LSSupportsGameMode)"
+is "tile identity" "com.notproton.game.100|launcher|Game|-" "$(key "$t" CFBundleIdentifier)|$(key "$t" CFBundleExecutable)|$(key "$t" CFBundleDisplayName)|$(key "$t" LSUIElement)"
+is "tile in the Games app" "public.app-category.games" "$(key "$t" LSApplicationCategoryType)"
+sed -i '' "s|/usr/bin/open|$T/open|" "$T/plists/tile/Contents/MacOS/launcher"
+is "tile hands off" "open steam://rungameid/100" "$("$T/plists/tile/Contents/MacOS/launcher")"
+is "tile ignores arguments" "open steam://rungameid/100" "$("$T/plists/tile/Contents/MacOS/launcher" -psn_0_1)"
+bundles 15.7 runner "" wine
+is "runner before macOS 26" "public.app-category.games|-" "$(key "$r" LSApplicationCategoryType)|$(key "$r" LSSupportsGameMode)"
+bundles 27.1 runner 12884901888033554432 wine
+sed -i '' "s|/usr/bin/open|$T/open|" "$T/plists/tile/Contents/MacOS/launcher"
+is "shortcut" "open steam://rungameid/12884901888033554432" "$("$T/plists/tile/Contents/MacOS/launcher")"
+bundles 27.1 "" "" Game
+is "own WINEDLLPATH bundle" "com.notproton.launcher.100|launcher|public.app-category.games" \
+  "$(key "$t" CFBundleIdentifier)|$(key "$t" CFBundleExecutable)|$(key "$t" LSApplicationCategoryType)"
+is "own WINEDLLPATH has no runner plist" "no" "$([ -e "$r" ] && echo yes || echo no)"
+loader_launcher() (
+  WINELOADER="$T/wine" loader_root="$T/plists" steam_url="steam://rungameid/100"
+  eval "cat <<LAUNCHER
+$launcher_body" | sed "s|/usr/bin/open|$T/open|" > "$T/loader-launcher"
+  chmod 755 "$T/loader-launcher"
+  "$T/loader-launcher" "$@"
+  cat "$T/plists/notproton-wine.log" 2>/dev/null
+)
+is "own WINEDLLPATH, standalone" "open steam://rungameid/100" "$(loader_launcher)"
+is "own WINEDLLPATH, psn" "open steam://rungameid/100" "$(loader_launcher -psn_0_1)"
+is "own WINEDLLPATH, game" "wine game.exe" "$(loader_launcher game.exe)"
 
 echo "== bundle names =="
 for pair in '.hack//G.U. Last Recode|hackG.U. Last Recode' '...|Steam Game' '//|Steam Game' 'Half-Life 2|Half-Life 2' 'a.b|a.b'; do
@@ -315,12 +364,12 @@ pick() {
   eval "$runner_pick"
 }
 pick /cx/lib/wine/aarch64-unix ""
-is "FEX runner" "$T/game/runner|wine" "$game_runner|$bundle_exec"
+is "FEX runner" "$T/game/runner" "$game_runner"
 is "Dock tile hidden" "  <key>LSUIElement</key><true/>" "$uielement_arg"
 pick /cx/lib/wine/aarch64-unix /extra
-is "own WINEDLLPATH" "|launcher" "$game_runner|$bundle_exec"
+is "own WINEDLLPATH" "" "$game_runner"
 pick /cx/lib/wine/x86_64-unix ""
-is "Rosetta runner" "$T/game/runner/lib/wine/x86_64-unix/wine.app|wine" "$game_app|$bundle_exec"
+is "Rosetta runner" "$T/game/runner/lib/wine/x86_64-unix/wine.app" "$game_app"
 
 CX_ROOT="$T/cx"
 wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
@@ -337,13 +386,19 @@ runner_build() {
   loader_work=$(mktemp -d "$loader_root/.build.XXXXXX")
   loader_contents="$loader_work/new/Game.app/Contents"
   loader_res="$loader_contents/Resources"
+  runner_plist="$loader_work/runner.plist"
   mkdir -p "$loader_res"
-  printf '%s' "${1:-plist}" > "$loader_contents/Info.plist"
+  printf '%s' "${1:-plist}" > "$runner_plist"
   printf '%s' "${2:-icon}" > "$loader_res/game.icns"
   : > "$log"
-  install_game_runner
+  rc=0
+  install_game_runner || rc=$?
+  [ "$rc" -ne 0 ] || [ -d "$loader_work" ] || bad "runner leaves the stage for the tile" "present" "gone"
+  rm -rf "$loader_work"
+  return "$rc"
 }
-mkdir -p "$loader_root/Old.app"
+loader_app="$loader_root/Game.app"
+mkdir -p "$loader_root/Old.app" "$loader_app"
 runner_build
 is "first clone" "cloned $CX_ROOT for this game|game's wine.app updated" "$(paste -sd '|' "$log")"
 is "Info.plist" "plist" "$(cat "$game_app/Contents/Info.plist")"
@@ -355,7 +410,7 @@ is "lib/wine copied" no "$([ -L "$game_runner/lib/wine" ] && echo yes || echo no
 is "ntdll.so copied" no "$([ -L "$game_runner/lib/wine/aarch64-unix/ntdll.so" ] && echo yes || echo no)"
 is "lib symlinks" "$CX_ROOT/lib/other" "$(readlink "$game_runner/lib/other")"
 is "runner symlinks" "$CX_ROOT/share" "$(readlink "$game_runner/share")"
-is "old launcher gone" "" "$(apps)"
+is "old launcher gone, tile kept" "Game.app|" "$(apps)"
 is "cleanup" "0" "$(leftover)"
 before=$(stat -f %i "$game_runner/lib/wine/aarch64-unix/ntdll.so")
 runner_build
@@ -375,6 +430,39 @@ sleep 1
 printf 'restored wine' > "$wine_unix/wine.app/Contents/MacOS/wine"
 runner_build plist2 icon2
 is "reclone after in-place write" "restored wine" "$(cat "$game_app/Contents/MacOS/wine")"
+echo "== runner then tile =="
+loader_work=$(mktemp -d "$loader_root/.build.XXXXXX")
+loader_stage="$loader_work/new/Game.app"
+loader_contents="$loader_stage/Contents"
+loader_res="$loader_contents/Resources"
+mkdir -p "$loader_res" "$loader_contents/MacOS" "$loader_root/Stale.app"
+printf 'tile' > "$loader_contents/Info.plist"
+printf 'icon' > "$loader_res/game.icns"
+printf '#!/bin/sh\n' > "$loader_contents/MacOS/launcher"
+chmod 755 "$loader_contents/MacOS/launcher"
+runner_plist="$loader_work/runner.plist"
+printf 'runner' > "$runner_plist"
+: > "$log"
+saved_support=$np_support
+np_support="$T/no-support"
+if ! { install_game_runner && install_bundle; }; then bad "runner then tile installs" "installed" "failed"; fi
+np_support=$saved_support
+is "tile and runner" "Game.app||tile|runner" "$(apps)|$(cat "$loader_app/Contents/Info.plist")|$(cat "$game_app/Contents/Info.plist")"
+is "tile staging cleaned" "0" "$(leftover)"
+launch_install=$(sed -n '/^elif install_game_runner; then$/,/^fi$/p' "$SRC")
+[ -n "$launch_install" ] || { echo "FAIL: launch install code not found"; exit 1; }
+: > "$log"
+is "a failed tile still launches" "launched|game tile not installed" "$(
+  set -e
+  # shellcheck disable=SC2329
+  install_game_runner() { :; }
+  # shellcheck disable=SC2329
+  install_bundle() { return 1; }
+  eval "if false; then :
+$launch_install"
+  echo launched
+)|$(cat "$log")"
+
 rm "$CX_ROOT/lib/wine/x86_64-windows/lsteamclient.dll"
 if runner_build plist3; then bad "clone failure" "failure" "success"; else ok "clone failure"; fi
 is "clone failure cleanup" "0" "$(leftover)"
