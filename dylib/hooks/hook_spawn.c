@@ -1,4 +1,4 @@
-// Strips DYLD_INSERT_LIBRARIES and the SDL block list from child processes
+// Strips our own insert and SDL block list from child processes
 #include "hooks.h"
 #include "../util/log.h"
 
@@ -23,21 +23,6 @@ static fn_posix_spawn orig_posix_spawnp;
 
 #define NP_INSERT_KEY "DYLD_INSERT_LIBRARIES="
 
-// The SDL block list stops Steam from seeing a second, generic copy of the Steam Controller.
-// This solves double input issues.
-static const char *const np_steam_only_keys[] = {
-    NP_INSERT_KEY,
-    "SDL_JOYSTICK_BLACKLIST_DEVICES=",
-};
-
-static int np_is_steam_only(const char *entry) {
-    for (size_t k = 0; k < sizeof(np_steam_only_keys) / sizeof(np_steam_only_keys[0]); k++) {
-        if (strncmp(entry, np_steam_only_keys[k], strlen(np_steam_only_keys[k])) == 0)
-            return 1;
-    }
-    return 0;
-}
-
 // steam_osx re-execs itself and needs the insert for hooks. Steam Helper runs
 // CEF and needs it for the webpatch fopen interpose, strips elsewhere
 static int np_target_keeps_insert(const char *path) {
@@ -52,6 +37,10 @@ static int np_target_keeps_insert(const char *path) {
 // LaunchServices hands the caller's environment to every app it opens, so the insert
 // lives here instead and only goes back into steam_osx and Steam Helper
 static char *np_insert_entry;
+
+// The SDL block list stops Steam from seeing a second, generic copy of the Steam Controller.
+// This solves double input issues.
+static char *np_block_entry;
 
 static int np_is_insert(const char *entry) {
     return strncmp(entry, NP_INSERT_KEY, strlen(NP_INSERT_KEY)) == 0;
@@ -81,48 +70,128 @@ static char **np_with_insert(char *const envp[]) {
     return full;
 }
 
-static void np_take_insert(void) {
-    const char *value = getenv("DYLD_INSERT_LIBRARIES");
-    if (!value || np_insert_entry)
-        return;
+static char *np_entry(const char *name) {
+    const char *value = getenv(name);
+    if (!value)
+        return NULL;
 
-    size_t len = strlen(NP_INSERT_KEY) + strlen(value) + 1;
-    np_insert_entry = malloc(len);
+    size_t len = strlen(name) + strlen(value) + 2;
+    char *entry = malloc(len);
+    if (entry)
+        snprintf(entry, len, "%s=%s", name, value);
+    return entry;
+}
+
+static void np_remember_ours(void) {
+    if (!np_insert_entry)
+        np_insert_entry = np_entry("DYLD_INSERT_LIBRARIES");
+    if (!np_block_entry)
+        np_block_entry = np_entry("SDL_JOYSTICK_BLACKLIST_DEVICES");
+}
+
+static void np_take_insert(void) {
+    if (!getenv("DYLD_INSERT_LIBRARIES"))
+        return;
     if (!np_insert_entry) {
         NP_WARN("[spawn] cannot hold the insert, apps opened from here inherit it");
         return;
     }
-    snprintf(np_insert_entry, len, "%s%s", NP_INSERT_KEY, value);
     unsetenv("DYLD_INSERT_LIBRARIES");
     NP_LOG("[spawn] insert taken out of the environment");
 }
 
-static char **np_without_insert(char *const envp[]) {
-    if (!envp)
-        return NULL;
-
-    int count = 0;
-    int found = 0;
-    for (int i = 0; envp[i]; i++) {
-        if (np_is_steam_only(envp[i]))
-            found = 1;
-        count++;
+static int np_list_has(const char *list, const char *part, size_t n) {
+    if (!n)
+        return 0;
+    for (;;) {
+        const char *end = strchr(list, ':');
+        size_t len = end ? (size_t)(end - list) : strlen(list);
+        if (len == n && strncmp(list, part, n) == 0)
+            return 1;
+        if (!end)
+            return 0;
+        list = end + 1;
     }
-    if (!found)
+}
+
+static int np_drop_ours(const char *value, char *out) {
+    const char *ours = np_insert_entry + strlen(NP_INSERT_KEY);
+    int dropped = 0;
+    char *o = out;
+    for (;;) {
+        const char *end = strchr(value, ':');
+        size_t n = end ? (size_t)(end - value) : strlen(value);
+        if (np_list_has(ours, value, n)) {
+            dropped++;
+        } else if (n) {
+            if (o != out)
+                *o++ = ':';
+            memcpy(o, value, n);
+            o += n;
+        }
+        if (!end)
+            break;
+        value = end + 1;
+    }
+    *o = '\0';
+    return dropped;
+}
+
+// Steam hands native games its own overlay insert, that part has to get through
+static char **np_without_insert(char *const envp[]) {
+    if (!envp || (!np_insert_entry && !np_block_entry))
         return NULL;
 
-    char **clean = malloc(sizeof(char *) * (size_t)(count + 1));
+    size_t count = 0;
+    size_t room = 0;
+    int compat = 0;
+    for (; envp[count]; count++) {
+        if (np_is_insert(envp[count]))
+            room += strlen(envp[count]) + 1;
+        // The run script rebuilds the overlay from STEAM_DYLD_INSERT_LIBRARIES, its shell gets no insert
+        if (strncmp(envp[count], "STEAM_COMPAT_DATA_PATH=", 23) == 0)
+            compat = 1;
+    }
+
+    char **clean = malloc(sizeof(char *) * (count + 1) + room);
     if (!clean) {
         NP_WARN("[spawn] cannot allocate a stripped environment, insert passed through");
         return NULL;
     }
+    char *spare = (char *)(clean + count + 1);
+    size_t key = strlen(NP_INSERT_KEY);
 
-    int j = 0;
-    for (int i = 0; envp[i]; i++) {
-        if (!np_is_steam_only(envp[i]))
-            clean[j++] = envp[i];
+    int changed = 0;
+    size_t j = 0;
+    for (size_t i = 0; i < count; i++) {
+        char *entry = envp[i];
+        if (np_block_entry && strcmp(entry, np_block_entry) == 0) {
+            changed = 1;
+            continue;
+        }
+        if (compat && np_is_insert(entry)) {
+            changed = 1;
+            continue;
+        }
+        if (np_insert_entry && np_is_insert(entry)) {
+            memcpy(spare, NP_INSERT_KEY, key);
+            if (np_drop_ours(entry + key, spare + key)) {
+                changed = 1;
+                if (spare[key]) {
+                    clean[j++] = spare;
+                    spare += strlen(spare) + 1;
+                }
+                continue;
+            }
+        }
+        clean[j++] = entry;
     }
     clean[j] = NULL;
+
+    if (!changed) {
+        free(clean);
+        return NULL;
+    }
     return clean;
 }
 
@@ -195,6 +264,7 @@ void np_hooks_spawn_install(void) {
         return;
     }
 
+    np_remember_ours();
     int hooked = np_hook_symbol("execve",       (void *)np_hook_execve,       (void **)&orig_execve)
                + np_hook_symbol("posix_spawn",  (void *)np_hook_posix_spawn,  (void **)&orig_posix_spawn)
                + np_hook_symbol("posix_spawnp", (void *)np_hook_posix_spawnp, (void **)&orig_posix_spawnp);

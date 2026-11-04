@@ -57,7 +57,13 @@ static void survives(char *const envp[], const char *const want[], const char *w
     free(got);
 }
 
+#define NP_DYLIB "/Applications/Steam.app/Contents/MacOS/notproton.dylib"
+#define OVERLAY  "/S/steamloader.dylib:/S/gameoverlayrenderer.dylib"
+
 int main(void) {
+    np_insert_entry = (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB;
+    np_block_entry  = (char *)"SDL_JOYSTICK_BLACKLIST_DEVICES=0x05ac/0x0004";
+
     // The client's own re-exec is the one child that has to keep the insert, because the
     // hooks install in that process and an exec does not get LSEnvironment.
     keeps("/Applications/Steam.app/Contents/MacOS/steam_osx", 1, "an absolute steam_osx keeps it");
@@ -83,12 +89,12 @@ int main(void) {
     survives(plain, NULL, "an environment without the insert is not copied");
 
     char *with[] = { (char *)"PATH=/bin",
-                     (char *)"DYLD_INSERT_LIBRARIES=/Applications/Steam.app/Contents/MacOS/notproton.dylib",
+                     (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB,
                      (char *)"HOME=/Users/x", NULL };
     const char *without[] = { "PATH=/bin", "HOME=/Users/x", NULL };
     survives(with, without, "the insert is taken out and the rest kept in order");
 
-    char *only[] = { (char *)"DYLD_INSERT_LIBRARIES=/x.dylib", NULL };
+    char *only[] = { (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB, NULL };
     const char *empty[] = { NULL };
     survives(only, empty, "an environment of nothing but the insert comes back empty");
 
@@ -99,18 +105,18 @@ int main(void) {
     survives(shim, NULL, "the overlay's own variable is not the insert");
 
     // The key has to carry its '=' or a longer name sharing the prefix goes too.
-    char *longer[] = { (char *)"DYLD_INSERT_LIBRARIES_EXTRA=/x.dylib", NULL };
+    char *longer[] = { (char *)"DYLD_INSERT_LIBRARIES_EXTRA=" NP_DYLIB, NULL };
     survives(longer, NULL, "a longer name sharing the prefix is not the insert");
 
-    char *twice[] = { (char *)"DYLD_INSERT_LIBRARIES=/a.dylib",
+    char *twice[] = { (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB,
                       (char *)"PATH=/bin",
-                      (char *)"DYLD_INSERT_LIBRARIES=/b.dylib", NULL };
+                      (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB, NULL };
     const char *once[] = { "PATH=/bin", NULL };
     survives(twice, once, "every copy of the insert is taken out");
 
     char *blocked[] = { (char *)"PATH=/bin",
                         (char *)"SDL_JOYSTICK_BLACKLIST_DEVICES=0x05ac/0x0004",
-                        (char *)"DYLD_INSERT_LIBRARIES=/x.dylib", NULL };
+                        (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB, NULL };
     survives(blocked, once, "the SDL block list goes with the insert");
 
     char *alone[] = { (char *)"SDL_JOYSTICK_BLACKLIST_DEVICES=0x05ac/0x0004",
@@ -121,10 +127,49 @@ int main(void) {
                     (char *)"SDL_GAMECONTROLLER_IGNORE_DEVICES=0x045e/0x028e", NULL };
     survives(sdl, NULL, "other SDL lists stay");
 
+    char *user_sdl[] = { (char *)"SDL_JOYSTICK_BLACKLIST_DEVICES=0x045e/0x028e", NULL };
+    survives(user_sdl, NULL, "a block list that isn't ours stays");
+
+    char *game[] = { (char *)"PATH=/bin", (char *)"DYLD_INSERT_LIBRARIES=" OVERLAY, NULL };
+    survives(game, NULL, "a native game keeps the overlay");
+
+    const char *overlay[] = { "PATH=/bin", "DYLD_INSERT_LIBRARIES=" OVERLAY, NULL };
+    char *ahead[] = { (char *)"PATH=/bin",
+                      (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB ":" OVERLAY, NULL };
+    survives(ahead, overlay, "ours goes from ahead of the overlay");
+
+    char *behind[] = { (char *)"PATH=/bin",
+                       (char *)"DYLD_INSERT_LIBRARIES=" OVERLAY ":" NP_DYLIB, NULL };
+    survives(behind, overlay, "ours goes from behind the overlay");
+
+    char *between[] = { (char *)"PATH=/bin",
+                        (char *)"DYLD_INSERT_LIBRARIES=/S/steamloader.dylib:" NP_DYLIB
+                                ":/S/gameoverlayrenderer.dylib", NULL };
+    survives(between, overlay, "ours goes from the middle");
+
+    char *lookalike[] = { (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB ".bak", NULL };
+    survives(lookalike, NULL, "a path that only starts like ours stays");
+
+    const char *compat_only[] = { "STEAM_COMPAT_DATA_PATH=/c", NULL };
+    char *compat[] = { (char *)"DYLD_INSERT_LIBRARIES=" OVERLAY,
+                       (char *)"STEAM_COMPAT_DATA_PATH=/c", NULL };
+    survives(compat, compat_only, "a compat launch loses the whole insert");
+
+    char *compat_ours[] = { (char *)"STEAM_COMPAT_DATA_PATH=/c",
+                            (char *)"DYLD_INSERT_LIBRARIES=" NP_DYLIB ":" OVERLAY, NULL };
+    survives(compat_ours, compat_only, "a compat launch loses ours and the overlay");
+
+    char *compat_plain[] = { (char *)"STEAM_COMPAT_DATA_PATH=/c", NULL };
+    survives(compat_plain, NULL, "a compat launch without an insert is not copied");
+
+    np_insert_entry = NULL;
+    np_block_entry  = NULL;
+    survives(with, NULL, "nothing is ours without an insert of our own");
+
     if (failures) {
         printf("==> spawn env: %d check(s) failed\n", failures);
         return 1;
     }
-    printf("==> spawn env: steam_osx and Steam Helper keep the insert, every other child loses it\n");
+    printf("==> spawn env: steam_osx and Steam Helper keep the insert, native games keep the overlay\n");
     return 0;
 }
