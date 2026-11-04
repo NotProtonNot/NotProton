@@ -464,8 +464,22 @@ spawn-live: $(TARGET)
 		if [ "$$got" != "$$want" ]; then \
 			echo "$$drv $$arg -> $$kid: insert present $$got, wanted $$want"; fail=1; fi; \
 	done; \
+	printf 'int np_overlay;\n' | $(CC) -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
+	  -dynamiclib -x c -o $$tmp/overlay.dylib - || exit 1; \
+	out=$$(DYLD_INSERT_LIBRARIES=$$PWD/$(TARGET) SPAWN_INSERT="$$PWD/$(TARGET):$$tmp/overlay.dylib" \
+	       "$$tmp/steam_osx" "$$tmp/child" 2>/dev/null); \
+	np=$$(printf '%s\n' "$$out" | grep -c "/notproton.dylib$$"); \
+	ov=$$(printf '%s\n' "$$out" | grep -c "/overlay.dylib$$"); \
+	if [ "$$np:$$ov" != "0:1" ]; then \
+		echo "steam_osx -> native game: insert present $$np, overlay present $$ov, wanted 0 and 1"; fail=1; fi; \
+	out=$$(DYLD_INSERT_LIBRARIES=$$PWD/$(TARGET) SPAWN_INSERT="$$PWD/$(TARGET):$$tmp/overlay.dylib" \
+	       STEAM_COMPAT_DATA_PATH=$$tmp "$$tmp/steam_osx" "$$tmp/child" 2>/dev/null); \
+	np=$$(printf '%s\n' "$$out" | grep -c "/notproton.dylib$$"); \
+	ov=$$(printf '%s\n' "$$out" | grep -c "/overlay.dylib$$"); \
+	if [ "$$np:$$ov" != "0:0" ]; then \
+		echo "steam_osx -> compat launch: insert present $$np, overlay present $$ov, wanted 0 and 0"; fail=1; fi; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
-	echo "==> spawn live: the hook lands, steam_osx and Steam Helper keep the insert, other children do not"
+	echo "==> spawn live: the hook lands, steam_osx and Steam Helper keep the insert, native games keep the overlay"
 
 APP_TESTS := app/Tests
 
