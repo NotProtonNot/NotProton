@@ -8,17 +8,9 @@
 #import <stdio.h>
 #import <string.h>
 
-#if defined(__arm64__) || defined(__aarch64__)
-  #define CPU_YIELD() __builtin_arm_yield()
-#else
-  #include <immintrin.h>
-  #define CPU_YIELD() _mm_pause()
-#endif
-
 typedef struct {
-    uint64_t next_target;
+    uint64_t last_frame_time;
     uint64_t interval_ticks;
-    uint64_t spin_margin_ticks;
     uint64_t tick_rem;
     uint64_t rem_accum;
     uint64_t fps;
@@ -42,53 +34,8 @@ static id<CAMetalDrawable> (*orig_nextDrawable)(id, SEL) = NULL;
 static uint64_t g_fps = 0;
 static uint64_t g_interval_ticks = 0;
 static uint64_t g_tick_rem = 0;
-static uint64_t g_spin_margin_ticks = 0;
 static bool g_disable_vsync = false;
 static mach_timebase_info_data_t g_timebase;
-
-static inline void pace_frame(layer_pace_state_t *st) {
-    static _Thread_local bool s_qos_set = false;
-    if (!s_qos_set) {
-        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-        s_qos_set = true;
-    }
-
-    os_unfair_lock_lock(&st->lock);
-
-    uint64_t now = mach_absolute_time();
-    if (!st->initialized) {
-        st->next_target = now;
-        st->initialized = true;
-        os_unfair_lock_unlock(&st->lock);
-        return;
-    }
-
-    // Exact Bresenham clock remainder carryover
-    st->rem_accum += st->tick_rem;
-    uint64_t extra = st->rem_accum / st->fps;
-    st->rem_accum %= st->fps;
-
-    uint64_t target = st->next_target + st->interval_ticks + extra;
-
-    // Zero debt carryover: if a frame took longer than interval, drop debt immediately
-    if (now >= target) {
-        st->next_target = now;
-        os_unfair_lock_unlock(&st->lock);
-        return;
-    }
-
-    st->next_target = target;
-    os_unfair_lock_unlock(&st->lock);
-
-    // Hybrid sleep: kernel wait until spin margin, then spin-yield for microsecond precision
-    if (target > now + st->spin_margin_ticks) {
-        mach_wait_until(target - st->spin_margin_ticks);
-    }
-
-    while (mach_absolute_time() < target) {
-        CPU_YIELD();
-    }
-}
 
 static inline NPLayerPaceWrapper *get_or_create_wrap(id layer) {
     NPLayerPaceWrapper *wrap = (NPLayerPaceWrapper *)objc_getAssociatedObject(layer, &kPaceKey);
@@ -103,7 +50,7 @@ static inline NPLayerPaceWrapper *get_or_create_wrap(id layer) {
         wrap->state.fps = g_fps;
         wrap->state.interval_ticks = g_interval_ticks;
         wrap->state.tick_rem = g_tick_rem;
-        wrap->state.spin_margin_ticks = g_spin_margin_ticks;
+        wrap->state.rem_accum = 0;
         wrap->state.lock = OS_UNFAIR_LOCK_INIT;
         wrap->state.initialized = false;
         objc_setAssociatedObject(layer, &kPaceKey, wrap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -125,23 +72,47 @@ static id<CAMetalDrawable> hook_nextDrawable(id self, SEL _cmd) {
         return orig_nextDrawable(self, _cmd);
     }
 
-    NPLayerPaceWrapper *wrap = get_or_create_wrap(self);
-
-    // 1. Pace CPU BEFORE driver request
-    pace_frame(&wrap->state);
-
-    // 2. Acquire drawable from Metal swapchain
+    // 1. Acquire the drawable from Metal FIRST.
+    // Any swapchain or GPU wait time happens here and is absorbed as work.
     id<CAMetalDrawable> drawable = orig_nextDrawable(self, _cmd);
-
-    // 3. Only resync if driver stalled by a real margin (> spin_margin_ticks)
-    if (drawable) {
-        uint64_t post_acquire = mach_absolute_time();
-        os_unfair_lock_lock(&wrap->state.lock);
-        if (post_acquire > wrap->state.next_target + wrap->state.spin_margin_ticks) {
-            wrap->state.next_target = post_acquire;
-        }
-        os_unfair_lock_unlock(&wrap->state.lock);
+    if (!drawable) {
+        return nil;
     }
+
+    NPLayerPaceWrapper *wrap = get_or_create_wrap(self);
+    layer_pace_state_t *st = &wrap->state;
+
+    os_unfair_lock_lock(&st->lock);
+
+    uint64_t now = mach_absolute_time();
+    if (!st->initialized) {
+        st->last_frame_time = now;
+        st->initialized = true;
+        os_unfair_lock_unlock(&st->lock);
+        return drawable;
+    }
+
+    // Fractional Bresenham remainder carryover
+    st->rem_accum += st->tick_rem;
+    uint64_t extra = st->rem_accum / st->fps;
+    st->rem_accum %= st->fps;
+
+    uint64_t target = st->last_frame_time + st->interval_ticks + extra;
+
+    // Work-Compensated Check:
+    // If the GPU/driver already took longer than the frame interval (now >= target),
+    // DO NOT SLEEP. Return immediately so the pipeline never cascades into hitches.
+    if (now >= target) {
+        st->last_frame_time = now;
+        os_unfair_lock_unlock(&st->lock);
+        return drawable;
+    }
+
+    st->last_frame_time = target;
+    os_unfair_lock_unlock(&st->lock);
+
+    // Sleep only the remaining headroom without burning CPU cores in a spin loop
+    mach_wait_until(target);
 
     return drawable;
 }
@@ -185,9 +156,6 @@ static void np_fpslimit_init(void) {
     uint64_t ticks_per_sec = (1000000000ULL * (uint64_t)g_timebase.denom) / (uint64_t)g_timebase.numer;
     g_interval_ticks = ticks_per_sec / g_fps;
     g_tick_rem = ticks_per_sec % g_fps;
-
-    // 0.75ms spin margin in Mach ticks
-    g_spin_margin_ticks = (750000ULL * (uint64_t)g_timebase.denom) / (uint64_t)g_timebase.numer;
 
     Class layer_cls = objc_getClass("CAMetalLayer");
     if (layer_cls) {
