@@ -474,10 +474,11 @@ spawn-live: $(TARGET)
 		echo "steam_osx -> native game: insert present $$np, overlay present $$ov, wanted 0 and 1"; fail=1; fi; \
 	out=$$(DYLD_INSERT_LIBRARIES=$$PWD/$(TARGET) SPAWN_INSERT="$$PWD/$(TARGET):$$tmp/overlay.dylib" \
 	       STEAM_COMPAT_DATA_PATH=$$tmp "$$tmp/steam_osx" "$$tmp/child" 2>/dev/null); \
+	ran=$$(printf '%s\n' "$$out" | grep -c "/child$$"); \
 	np=$$(printf '%s\n' "$$out" | grep -c "/notproton.dylib$$"); \
 	ov=$$(printf '%s\n' "$$out" | grep -c "/overlay.dylib$$"); \
-	if [ "$$np:$$ov" != "0:0" ]; then \
-		echo "steam_osx -> compat launch: insert present $$np, overlay present $$ov, wanted 0 and 0"; fail=1; fi; \
+	if [ "$$ran:$$np:$$ov" != "1:0:0" ]; then \
+		echo "steam_osx -> compat launch: child ran $$ran, insert present $$np, overlay present $$ov, wanted 1, 0 and 0"; fail=1; fi; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "==> spawn live: the hook lands, steam_osx and Steam Helper keep the insert, native games keep the overlay"
 
