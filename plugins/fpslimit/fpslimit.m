@@ -36,14 +36,13 @@ typedef struct {
 @end
 
 static const char kPaceKey = 0;
+static os_unfair_lock g_wrap_lock = OS_UNFAIR_LOCK_INIT;
 static id<CAMetalDrawable> (*orig_nextDrawable)(id, SEL) = NULL;
-static void (*orig_present)(id, SEL) = NULL;
 
 static uint64_t g_fps = 0;
 static uint64_t g_interval_ticks = 0;
 static uint64_t g_tick_rem = 0;
 static uint64_t g_spin_margin_ticks = 0;
-static CFTimeInterval g_target_duration = 0.0;
 static bool g_disable_vsync = false;
 static mach_timebase_info_data_t g_timebase;
 
@@ -71,8 +70,8 @@ static inline void pace_frame(layer_pace_state_t *st) {
 
     uint64_t target = st->next_target + st->interval_ticks + extra;
 
-    // Only reset cadence if missed by more than a full frame (true lag spike / window pause)
-    if (now >= target + st->interval_ticks) {
+    // Zero debt carryover: if a frame took longer than interval, drop debt immediately
+    if (now >= target) {
         st->next_target = now;
         os_unfair_lock_unlock(&st->lock);
         return;
@@ -82,54 +81,36 @@ static inline void pace_frame(layer_pace_state_t *st) {
     os_unfair_lock_unlock(&st->lock);
 
     // Hybrid sleep: kernel wait until spin margin, then spin-yield for microsecond precision
-    if (now < target) {
-        if (target > now + st->spin_margin_ticks) {
-            mach_wait_until(target - st->spin_margin_ticks);
-        }
+    if (target > now + st->spin_margin_ticks) {
+        mach_wait_until(target - st->spin_margin_ticks);
+    }
 
-        while (mach_absolute_time() < target) {
-            CPU_YIELD();
-        }
+    while (mach_absolute_time() < target) {
+        CPU_YIELD();
     }
 }
 
-static void hook_present(id self, SEL _cmd) {
-    static _Thread_local bool s_in_present = false;
-    if (s_in_present) {
-        if (orig_present) orig_present(self, _cmd);
-        return;
+static inline NPLayerPaceWrapper *get_or_create_wrap(id layer) {
+    NPLayerPaceWrapper *wrap = (NPLayerPaceWrapper *)objc_getAssociatedObject(layer, &kPaceKey);
+    if (__builtin_expect(wrap != nil, 1)) {
+        return wrap;
     }
 
-    s_in_present = true;
-    if (g_target_duration > 0.0) {
-        [(id<CAMetalDrawable>)self presentAfterMinimumDuration:g_target_duration];
-        s_in_present = false;
-        return;
+    os_unfair_lock_lock(&g_wrap_lock);
+    wrap = (NPLayerPaceWrapper *)objc_getAssociatedObject(layer, &kPaceKey);
+    if (!wrap) {
+        wrap = [[NPLayerPaceWrapper alloc] init];
+        wrap->state.fps = g_fps;
+        wrap->state.interval_ticks = g_interval_ticks;
+        wrap->state.tick_rem = g_tick_rem;
+        wrap->state.spin_margin_ticks = g_spin_margin_ticks;
+        wrap->state.lock = OS_UNFAIR_LOCK_INIT;
+        wrap->state.initialized = false;
+        objc_setAssociatedObject(layer, &kPaceKey, wrap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [wrap release];
     }
-
-    if (orig_present) {
-        orig_present(self, _cmd);
-    }
-    s_in_present = false;
-}
-
-static void ensure_drawable_swizzled(Class d_cls) {
-    static os_unfair_lock swizzle_lock = OS_UNFAIR_LOCK_INIT;
-    static Class swizzled_class = nil;
-    if (!d_cls || swizzled_class == d_cls) return;
-
-    os_unfair_lock_lock(&swizzle_lock);
-    if (swizzled_class != d_cls) {
-        Method m = class_getInstanceMethod(d_cls, sel_registerName("present"));
-        if (m) {
-            orig_present = (void (*)(id, SEL))method_getImplementation(m);
-            method_setImplementation(m, (IMP)hook_present);
-            fprintf(stderr, "[notproton-fpslimit] Swizzled [%s present] -> presentAfterMinimumDuration (%.4fs)\n",
-                    class_getName(d_cls), g_target_duration);
-        }
-        swizzled_class = d_cls;
-    }
-    os_unfair_lock_unlock(&swizzle_lock);
+    os_unfair_lock_unlock(&g_wrap_lock);
+    return wrap;
 }
 
 static id<CAMetalDrawable> hook_nextDrawable(id self, SEL _cmd) {
@@ -140,28 +121,28 @@ static id<CAMetalDrawable> hook_nextDrawable(id self, SEL _cmd) {
         }
     }
 
+    if (g_fps == 0) {
+        return orig_nextDrawable(self, _cmd);
+    }
+
+    NPLayerPaceWrapper *wrap = get_or_create_wrap(self);
+
+    // 1. Pace CPU BEFORE driver request
+    pace_frame(&wrap->state);
+
+    // 2. Acquire drawable from Metal swapchain
     id<CAMetalDrawable> drawable = orig_nextDrawable(self, _cmd);
 
-    if (!drawable || g_fps == 0) {
-        return drawable;
+    // 3. Only resync if driver stalled by a real margin (> spin_margin_ticks)
+    if (drawable) {
+        uint64_t post_acquire = mach_absolute_time();
+        os_unfair_lock_lock(&wrap->state.lock);
+        if (post_acquire > wrap->state.next_target + wrap->state.spin_margin_ticks) {
+            wrap->state.next_target = post_acquire;
+        }
+        os_unfair_lock_unlock(&wrap->state.lock);
     }
 
-    ensure_drawable_swizzled(object_getClass(drawable));
-
-    NPLayerPaceWrapper *wrap = (NPLayerPaceWrapper *)objc_getAssociatedObject(self, &kPaceKey);
-    if (!wrap) {
-        wrap = [[NPLayerPaceWrapper alloc] init];
-        wrap->state.fps = g_fps;
-        wrap->state.interval_ticks = g_interval_ticks;
-        wrap->state.tick_rem = g_tick_rem;
-        wrap->state.spin_margin_ticks = g_spin_margin_ticks;
-        wrap->state.lock = OS_UNFAIR_LOCK_INIT;
-        wrap->state.initialized = false;
-        objc_setAssociatedObject(self, &kPaceKey, wrap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [wrap release];
-    }
-
-    pace_frame(&wrap->state);
     return drawable;
 }
 
@@ -186,11 +167,6 @@ static void np_fpslimit_init(void) {
     g_fps = (uint64_t)(fps_val + 0.5);
     if (g_fps == 0) return;
 
-    // Safety margin of 2ms prevents clock jitter from missing a vblank multiple
-    CFTimeInterval base_duration = 1.0 / (double)g_fps;
-    CFTimeInterval margin = 0.002;
-    g_target_duration = (base_duration > margin + 0.002) ? (base_duration - margin) : base_duration;
-
     const char *no_vsync_env = getenv("NOTPROTON_FPS_NO_VSYNC");
     if (!no_vsync_env) no_vsync_env = getenv("NOTPROTON_NO_VSYNC");
     if (!no_vsync_env) no_vsync_env = getenv("NOTPROTON_ENV_FPS_NO_VSYNC");
@@ -210,7 +186,7 @@ static void np_fpslimit_init(void) {
     g_interval_ticks = ticks_per_sec / g_fps;
     g_tick_rem = ticks_per_sec % g_fps;
 
-    // 0.75ms spin margin in Mach ticks for extra stability
+    // 0.75ms spin margin in Mach ticks
     g_spin_margin_ticks = (750000ULL * (uint64_t)g_timebase.denom) / (uint64_t)g_timebase.numer;
 
     Class layer_cls = objc_getClass("CAMetalLayer");
@@ -222,11 +198,6 @@ static void np_fpslimit_init(void) {
         }
     }
 
-    Class d_cls = objc_getClass("CAMetalDrawable");
-    if (d_cls) {
-        ensure_drawable_swizzled(d_cls);
-    }
-
-    fprintf(stderr, "[notproton-fpslimit] Active: target %llu FPS (cadence: %.4fs, vsync: %s)\n",
-            g_fps, g_target_duration, g_disable_vsync ? "disabled" : "enabled");
+    fprintf(stderr, "[notproton-fpslimit] Active: target %llu FPS (vsync: %s)\n",
+            g_fps, g_disable_vsync ? "disabled" : "enabled");
 }
