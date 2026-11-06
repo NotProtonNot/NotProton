@@ -1,0 +1,83 @@
+name: Bug report
+description: A game won't launch with NotProton, Steam crashes, or NotProton isn't working correctly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! The more information you provide, the easier it is to reproduce and fix.
+
+        Please check the [open issues](https://github.com/NotProtonNot/NotProton/issues) before submitting, in case someone has already reported the same problem.
+
+        **Note:** Valve Anti-Cheat (VAC) problems with NotProton are a known issue. You don't need to open a new issue for those.
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: Enter the game name and Steam app ID. If this issue isn't specific to one game, enter N/A.
+      placeholder: Spore Galactic Adventures (24720), or N/A
+    validations:
+      required: true
+  - type: input
+    id: notproton-version
+    attributes:
+      label: NotProton version
+      description: What version of NotProton are you using? Check the Status page in the NotProton app.
+      placeholder: "1.1.4"
+    validations:
+      required: true
+  - type: input
+    id: crossover-version
+    attributes:
+      label: CrossOver version
+      description: Enter the CrossOver or CrossOver Preview version shown in Steam's Compatibility tab or the NotProton app.
+      placeholder: "26.3 or 20261006"
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Translation method
+      description: Are you using Rosetta or FEX? Check the compatibility tool name in Steam.
+      options:
+        - Rosetta
+        - FEX
+    validations:
+      required: true
+  - type: textarea
+    id: steam-version
+    attributes:
+      label: Steam version
+      description: In Steam, select Steam > About Steam. Include both the Steam Client Build Date and Steam Web Build Date.
+      placeholder: |
+        Steam Client Build Date:
+        Steam Web Build Date:
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: What version of macOS are you using? Check Apple menu > About This Mac.
+      placeholder: "26.0.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What went wrong?
+      description: What didn't work? Tell us what you tried, what you expected to happen, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: crossover-works
+    attributes:
+      label: Does the game work in CrossOver without NotProton?
+      description: If applicable, try the same game in CrossOver without NotProton.
+      options:
+        - Yes
+        - No
+        - Haven't tried
+        - Not applicable
+    validations:
+      required: true
