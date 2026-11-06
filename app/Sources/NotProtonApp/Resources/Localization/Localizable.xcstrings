@@ -5167,6 +5167,34 @@
         }
       }
     },
+    "Game Controllers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Game Controllers"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Game Controllers"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Game Controllers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Game Controllers"
+          }
+        }
+      }
+    },
     "General" : {
       "localizations" : {
         "de" : {
