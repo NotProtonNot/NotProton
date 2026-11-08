@@ -1899,10 +1899,12 @@ winebus_lines() {
   printf '%s\r\n' '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' "$hidraw_value" ''
 }
 
-# High Resolution doubles LogPixels and turning it off halves it
+# High Resolution doubles LogPixels and turning it off halves it.
+# NOTPROTON_RETINA_DPI=0 leaves it alone, since Wine shrinks the screen for games that are not DPI aware.
 plan_logpixels() {
   dpi_value=""
   new_dpi=""
+  [ "${NOTPROTON_RETINA_DPI-}" != 0 ] || return 0
   dpi_registry=/dev/null
   [ ! -f "$WINEPREFIX/user.reg" ] || dpi_registry="$WINEPREFIX/user.reg"
   read -r retina_was dpi <<EOF
