@@ -1395,7 +1395,10 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"dxmt\"===b&&T(\"DXMT_ENABLE_NVEXT\",\"DLSS\")," \
     "!fex&&D(\"ROSETTA_ADVERTISE_AVX\",npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"))," \
     "T(\"WINEMSYNC\",\"MSync\")," \
-    "T(\"NOTPROTON_RETINA\",npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"))" \
+    "T(\"NOTPROTON_RETINA\",npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"))," \
+    /* On writes 0, the run script's opt-out, and off writes 1 only to beat a default of 0. */ \
+    "(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:npL(\"Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)\",\"Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)\",\"Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)\")," \
+    "checked:\"0\"===G(\"NOTPROTON_RETINA_DPI\"),onChange:v=>s([[\"NOTPROTON_RETINA_DPI\",w(\"NOTPROTON_RETINA_DPI\",v?\"0\":\"1\",\"1\")]])},\"NOTPROTON_RETINA_DPI\")" \
     "]},\"gfx\")," \
     "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \

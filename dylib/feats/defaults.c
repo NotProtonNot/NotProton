@@ -37,6 +37,7 @@ static const struct {
     { "ROSETTA_ADVERTISE_AVX",          ROSETTA,       "", g_bools, NULL },
     { "WINEMSYNC",                      ROSETTA | FEX, "", g_bools, NULL },
     { "NOTPROTON_RETINA",               ROSETTA | FEX, "", g_bools, NULL },
+    { "NOTPROTON_RETINA_DPI",           ROSETTA | FEX, "", g_bools, NULL },
     { "DXMT_METALFX_SPATIAL_SWAPCHAIN", ROSETTA | FEX, "", g_bools, NULL },
     { "DXMT_CONFIG",                    ROSETTA | FEX, "d3d11.metalSpatialUpscaleFactor=", g_factors, NULL },
     { "NOTPROTON_RAW_CONTROLLERS",      ROSETTA | FEX, "", g_bools, NULL },
