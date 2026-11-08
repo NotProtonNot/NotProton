@@ -31,10 +31,11 @@ enum RunnerPatcher {
 
     struct Outcome: Sendable {
         var ntdll: [WineArch] = []
+        var winebus: [WineArch] = []
         var builtins: [String] = []
         var loaders: [String] = []
 
-        var wroteNothing: Bool { ntdll.isEmpty && builtins.isEmpty && loaders.isEmpty }
+        var wroteNothing: Bool { ntdll.isEmpty && winebus.isEmpty && builtins.isEmpty && loaders.isEmpty }
     }
 
     static func install(
@@ -42,6 +43,7 @@ enum RunnerPatcher {
     ) throws -> Outcome {
         var outcome = Outcome()
         outcome.ntdll = try installNtdll(build: build, root: root, bridge: bridge)
+        outcome.winebus = try installWinebus(build: build, root: root)
         outcome.builtins = try installBuiltins(root: root, bridge: bridge)
         outcome.loaders = try grantLoaderEntitlement(root: root)
         return outcome
@@ -60,6 +62,14 @@ enum RunnerPatcher {
             }
             if actual != expected {
                 wrong.append(String(localized: "\(arch.rawValue)/ntdll.dll is not the patched copy"))
+            }
+        }
+        // Only a winebus.sys the patch can apply to is reported, so a rebuild's own copy is left be.
+        for patch in WinebusPatcher.patches(for: build) {
+            let live = WinebusPatcher.live(inRoot: root, arch: patch.arch)
+            if Digest.sha256IfPresent(live) != patch.patchedSHA256,
+               Digest.sha256IfPresent(Clean.copy(of: live)) == patch.cleanSHA256 {
+                wrong.append(String(localized: "\(patch.arch.rawValue)/winebus.sys is not the patched copy"))
             }
         }
         for builtin in builtins(in: root) {
@@ -113,6 +123,26 @@ enum RunnerPatcher {
             try keepClean(live)
             try atomicReplace(live, with: Data(contentsOf: staged), step: step)
             installed.append(arch)
+        }
+
+        return installed
+    }
+
+    // Patched in place from the shipped copy. A winebus.sys other than the pinned one, such as
+    // a rebuild's, keeps its unbounded report queue rather than failing the setup.
+    private static func installWinebus(build: RunnerBuild, root: URL) throws -> [WineArch] {
+        var installed: [WineArch] = []
+
+        for patch in WinebusPatcher.patches(for: build) {
+            let live = WinebusPatcher.live(inRoot: root, arch: patch.arch)
+            if Digest.sha256IfPresent(live) == patch.patchedSHA256 { continue }
+
+            guard let patched = try WinebusPatcher.patchedImage(patch, build: build, from: Clean.copy(of: live))
+            else { continue }
+
+            try keepClean(live)
+            try atomicReplace(live, with: patched, step: step)
+            installed.append(patch.arch)
         }
 
         return installed
