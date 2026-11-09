@@ -2782,7 +2782,11 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   export WINEDLLPATH="$prefix_steam:$WINEDLLPATH"
   # If the same DLL appears twice in WINEDLLOVERRIDES, the last entry wins.
   vc_overrides=$(native_vc_runtime)
-  export WINEDLLOVERRIDES="${vc_overrides}${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}steamclient=n;steamclient64=n;lsteamclient=b"
+  if shortcut_game_id "$SteamGameId"; then
+    export WINEDLLOVERRIDES="${vc_overrides}${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}steamclient=n,b;steamclient64=n,b;lsteamclient=d"
+  else
+    export WINEDLLOVERRIDES="${vc_overrides}${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}steamclient=n;steamclient64=n;lsteamclient=b"
+  fi
   native_client="$STEAM_COMPAT_CLIENT_INSTALL_PATH"
   if [ -z "$native_client" ]; then
     native_client="$HOME/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS"
