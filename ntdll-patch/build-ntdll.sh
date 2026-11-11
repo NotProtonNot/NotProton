@@ -54,6 +54,11 @@ FEX41073_PATCHED_X86_64=2b47ed8c19d1d15d0f82519d39d64bf34113b285c4ada325bb64c5e5
 FEX41073_PATCHED_I386=3f4b0d9589c1f374e3c2fd135263f2bf3c8300e09dd010fd778936dd71e894ad
 FEX41073_PATCHED_AARCH64=2efb13f3303adc2c8ee61b93e027e4e94730a2e6b0162c7e6aebd4104200f07c
 
+ROSETTA41303_CLEAN_X86_64=ef878e75661de8d955a42dc2fc76a84ca95574d48923dfc7f3f7db04a4d4f2b6
+ROSETTA41303_CLEAN_I386=0d30cee32e00f3ee7749a58c61b9c49be5388b42e41682c33a1e54e6ea294d31
+ROSETTA41303_PATCHED_X86_64=503c4a6f71822b212bcfaaf210ba76e838998fa2c61957a64e5c0da3f9b3a6e9
+ROSETTA41303_PATCHED_I386=5aee1abf661dd38d2ac3fad311c4bfddce41dc714bd7d622f6fa15f4b2b9a807
+
 FEX41303_CLEAN_X86_64=ef878e75661de8d955a42dc2fc76a84ca95574d48923dfc7f3f7db04a4d4f2b6
 FEX41303_CLEAN_I386=4e8d8b4b54da99252423c7967d779d34976620a56bedaec38529d1f4b710f26a
 FEX41303_CLEAN_AARCH64=3c2d6459113d4418a1135d7d5afe3a47c4a8c017aec389a987efa991bfeceda8
@@ -89,11 +94,12 @@ flavor_of() {
             "$ROSETTA_CLEAN_X86_64")      echo rosetta; return 0 ;;
             "$ROSETTA41069_CLEAN_X86_64") echo rosetta-41069; return 0 ;;
             "$ROSETTA41073_CLEAN_X86_64") echo rosetta-41073; return 0 ;;
+            "$ROSETTA41303_CLEAN_X86_64") echo rosetta-41303; return 0 ;;
             "$CX26_CLEAN_X86_64")         echo cx26; return 0 ;;
         esac
     done
     die "no ntdll under $CX_ROOT/lib/wine matches a pinned build
-       pass FLAVOR=rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069, fex-41073 or fex-41303 to choose the pins anyway"
+       pass FLAVOR=rosetta, rosetta-41069, rosetta-41073, rosetta-41303, cx26, fex, fex-41069, fex-41073 or fex-41303 to choose the pins anyway"
 }
 
 if [ -z "${FLAVOR:-}" ]; then
@@ -104,6 +110,7 @@ case "$FLAVOR" in
     rosetta)       tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.40921 ;;
     rosetta-41069) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41069 ;;
     rosetta-41073) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41073 ;;
+    rosetta-41303) tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=27.0.0.41303 ;;
     cx26)          tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc"; BUILD=26.3.0.39832 ;;
     fex)           tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc clang ld.lld"
                    BUILD=27.0.0.40921-fex ;;
@@ -113,7 +120,7 @@ case "$FLAVOR" in
                    BUILD=27.0.0.41073-fex ;;
     fex-41303)     tools="x86_64-w64-mingw32-gcc i686-w64-mingw32-gcc clang ld.lld"
                    BUILD=27.0.0.41303-fex ;;
-    *)             die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, rosetta-41073, cx26, fex, fex-41069, fex-41073 or fex-41303" ;;
+    *)             die "unknown flavor $FLAVOR, expected rosetta, rosetta-41069, rosetta-41073, rosetta-41303, cx26, fex, fex-41069, fex-41073 or fex-41303" ;;
 esac
 
 for t in $tools; do
@@ -205,6 +212,13 @@ case "$FLAVOR" in
             "$ROSETTA41073_CLEAN_X86_64" "$ROSETTA41073_PATCHED_X86_64"
         patch_one i386-windows   build32.sh 41073 detour32-41073.bin \
             "$ROSETTA41073_CLEAN_I386"   "$ROSETTA41073_PATCHED_I386"
+        ;;
+    rosetta-41303)
+        ARCHES="x86_64-windows i386-windows"
+        patch_one x86_64-windows build.sh   fex-41303 detour2-fex-41303.bin \
+            "$ROSETTA41303_CLEAN_X86_64" "$ROSETTA41303_PATCHED_X86_64"
+        patch_one i386-windows   build32.sh 41303 detour32-41303.bin \
+            "$ROSETTA41303_CLEAN_I386"   "$ROSETTA41303_PATCHED_I386"
         ;;
     fex-41073)
         ARCHES="x86_64-windows i386-windows aarch64-windows"

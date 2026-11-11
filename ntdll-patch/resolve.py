@@ -160,6 +160,13 @@ PINNED = {
          'exports': {'LdrGetDllHandle': 0x7bc2a7b0, 'LdrLoadDll': 0x7bc288e0,
                      'NtProtectVirtualMemory': 0x7bc4da64, 'NtOpenFile': 0x7bc4d894,
                      'NtReadFile': 0x7bc4d5c4, 'NtClose': 0x7bc4d654}},
+    '0d30cee32e00f3ee7749a58c61b9c49be5388b42e41682c33a1e54e6ea294d31':
+        {'hookRVA': 0x2ed82, 'stolen': '8b4514a802', 'caveRVA': 0x6b8ee, 'caveSize': 1810,
+         'resume': 0x2ed87, 'wm': 'esi', 'load_path': -0x3c,
+         'payload': '39d2e5bd3f0d12c4dd1f59ad7918a451ca82968e252c7ca8cc5036c91e6dbb88',
+         'exports': {'LdrGetDllHandle': 0x7bc2a6b0, 'LdrLoadDll': 0x7bc28790,
+                     'NtProtectVirtualMemory': 0x7bc4d884, 'NtOpenFile': 0x7bc4d6b4,
+                     'NtReadFile': 0x7bc4d3e4, 'NtClose': 0x7bc4d474}},
     '3c2d6459113d4418a1135d7d5afe3a47c4a8c017aec389a987efa991bfeceda8':
         {'caveRVA': 0x101db5, 'caveSize': 57931,
          'sites': [{'hookRVA': 0x486ec, 'stolen': '1f2003d5', 'resume': 0x486f0,

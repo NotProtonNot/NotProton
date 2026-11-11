@@ -334,6 +334,39 @@ enum NtdllPatcher {
                 imageBase: 0x1_8000_0000
             ),
         ],
+        "27.0.0.41303": [
+            NtdllPatch(
+                arch: .x86_64Windows,
+                payloadResource: "detour2-fex-41303",
+                payloadSHA256: "100a4ef52474809c22413951b811df05d437333406e5bf4e7c94f948fad2a01b",
+                caveRVA: 0xb5000,
+                payloadRVA: 0xb5000,
+                hooks: [
+                    NtdllHook(rva: 0x34a99, stolen: [0x48, 0x8b, 0x84, 0x24, 0x10, 0x01, 0x00, 0x00]),
+                ],
+                caveSize: 0x1000,
+                cavePad: 0x00,
+                machine: 0x8664,
+                magic: 0x20b,
+                imageBase: 0x1_7000_0000,
+                placement: .section
+            ),
+            NtdllPatch(
+                arch: .i386Windows,
+                payloadResource: "detour32-41303",
+                payloadSHA256: "39d2e5bd3f0d12c4dd1f59ad7918a451ca82968e252c7ca8cc5036c91e6dbb88",
+                caveRVA: 0x6b8ee,
+                payloadRVA: 0x6b8f0,
+                hooks: [
+                    NtdllHook(rva: 0x2ed82, stolen: [0x8b, 0x45, 0x14, 0xa8, 0x02]),
+                ],
+                caveSize: 1810,
+                cavePad: 0xcc,
+                machine: 0x14c,
+                magic: 0x10b,
+                imageBase: 0x7bc0_0000
+            ),
+        ],
         "27.0.0.41303-fex": [
             NtdllPatch(
                 arch: .x86_64Windows,

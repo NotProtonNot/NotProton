@@ -45,6 +45,7 @@ let package = Package(
                 .copy("Resources/detour2-fex-41073.bin"),
                 .copy("Resources/detour32-fex-41073.bin"),
                 .copy("Resources/detour64-fex-41073.bin"),
+                .copy("Resources/detour32-41303.bin"),
                 .copy("Resources/detour2-fex-41303.bin"),
                 .copy("Resources/detour32-fex-41303.bin"),
                 .copy("Resources/detour64-fex-41303.bin"),
