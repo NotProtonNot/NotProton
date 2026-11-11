@@ -18,6 +18,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "section", 1, 0 },   { "on", 1, 0 },          { "off", 1, 0 },
     { "depends", 1, 0 },   { "requires", 4, 0 },    { "inject", 1, 0 },
     { "env", 16, 0 },      { "overrides", 1, 0 },   { "stage", 1, 0 },
+    { "session_helper", 1, 0 },
     { "tools", 8, 0 },     { "type", 1, 0 },        { "choice", 16, 0 },
     { "min", 1, 0 },
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },

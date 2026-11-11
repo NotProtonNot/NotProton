@@ -57,6 +57,8 @@ NOTPROTON_SPACED	env	PATH_LIKE=a=b=c
 NOTPROTON_PICKY	label	Picky
 NOTPROTON_PICKY	tools	notproton-fex*
 NOTPROTON_PICKY	tools	notproton-26.3
+NOTPROTON_SESSION	label	Session helper
+NOTPROTON_SESSION	session_helper	bin/session helper
 
 == plugins/37-hide-crossover.conf
 NOTPROTON_FEXMAC	label	FEXMac

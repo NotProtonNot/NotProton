@@ -329,5 +329,50 @@ dyld=$(env -i HOME="$work" NOTPROTON_FEATURE_DYLIBS=/f.dylib \
   sh -c 'eval "$1"; printf "%s|%s" "$DYLD_INSERT_LIBRARIES" "${NOTPROTON_OVERLAY_SHIM:+shim}"' sh "$inject")
 ok "plugin dylibs load without the overlay shim" "$dyld" "/f.dylib|"
 
+reset
+mkdir -p "$work/helper files"
+cat > "$work/helper files/bridge" <<'EOF'
+#!/bin/sh
+[ "$1" = "$PPID" ] && [ "$2" = "$WINELOADER" ] && [ "$3" = "$WINEPREFIX" ] || exit 1
+[ ! -e /dev/fd/8 ] && [ ! -e /dev/fd/9 ] || exit 2
+trap 'touch "$HOME/helper-stopped"; exit 0' TERM
+touch "$HOME/helper-started"
+while :; do sleep 0.1; done
+EOF
+chmod +x "$work/helper files/bridge"
+conf 50-test.conf <<'EOF'
+[NOTPROTON_HELPER]
+label = Helper
+session_helper = helper files/bridge
+EOF
+sed -n '/^np_session_helper_pids=/,/^# Steam.s "Exit Game"/p' "$SRC" > "$work/lifecycle.sh"
+# shellcheck disable=SC2016 # expanded by the inner shell
+env -i PATH="$PATH" HOME="$work" np_support="$work/Library/Application Support/notproton" \
+  log="$work/log" WINEPREFIX="$work/pfx" sh -c '
+    set -e
+    . "$HOME/block.sh"
+    . "$HOME/lifecycle.sh"
+    test -z "$np_feat_helpers"
+    NOTPROTON_HELPER=1
+    . "$HOME/block.sh"
+    np_session_wine_loader="$HOME/original loader"
+    trap np_stop_session_helpers EXIT
+    exec 8>"$HOME/prefix-lock" 9>"$HOME/template-lock"
+    np_start_session_helpers
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+      [ ! -f "$HOME/helper-started" ] || break
+      sleep 0.1
+    done
+    test -f "$HOME/helper-started"
+    pid=$np_session_helper_pids
+    np_stop_session_helpers
+    test -f "$HOME/helper-stopped"
+    ! kill -0 "$pid" 2>/dev/null
+    chmod -x "$HOME/helper files/bridge"
+    . "$HOME/block.sh"
+    test -z "$np_feat_helpers"
+  '
+echo "  ok    session helpers honor the toggle, receive runner context and stop on cleanup"
+
 [ "$fail" -eq 0 ] || exit 1
 echo "==> featstagecheck: plugins stage into the prefix and extend the overrides"
