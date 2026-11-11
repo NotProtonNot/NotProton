@@ -28,6 +28,9 @@ PAYLOAD_BY_CLEAN_SHA = {
     "3d24426735defd222fd9518b094b738dc1c12afd13efc41a855013ed0f825129": "detour2-fex-41073.bin",
     "3ee764335e50709285361e2542731385f0b06e593a76aa84a3c328c278164c4f": "detour32-fex-41073.bin",
     "a6678f9d0818e1cdb325e1ce8a07a540433f544b6f756c52a6ab1cfd3f632408": "detour64-fex-41073.bin",
+    "ef878e75661de8d955a42dc2fc76a84ca95574d48923dfc7f3f7db04a4d4f2b6": "detour2-fex-41303.bin",
+    "4e8d8b4b54da99252423c7967d779d34976620a56bedaec38529d1f4b710f26a": "detour32-fex-41303.bin",
+    "3c2d6459113d4418a1135d7d5afe3a47c4a8c017aec389a987efa991bfeceda8": "detour64-fex-41303.bin",
 }
 
 KNOWN_MACHINES = (0x8664, 0x14c, 0xaa64)
