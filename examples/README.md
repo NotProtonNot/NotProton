@@ -16,6 +16,7 @@ and NotProton never writes to them.
 | `plugins/10-framescope.conf` | a feature and its seven settings in one file: a toggle that injects a dylib, a dropdown, a slider over a range, a slider that snaps to values with labelled ticks, a sub-option of a sub-option, and lines that appear only while the row is on |
 | `plugins/20-renderdoc.conf` | a toggle with one sub-option, writing `0` when it is switched off rather than clearing the launch option |
 | `plugins/30-kosmickrisp.conf` | one toggle that both injects a dylib and sets two environment variables |
+| `plugins/40-fpslimit.conf` | a snapping slider that meters frame submissions to display refresh intervals with an optional VSync toggle |
 | `variants/dxmt-example.conf` | a runner built from a CrossOver copy with your own files over it |
 
 These are the real descriptors behind three tools, not invented ones, so `requires` points
