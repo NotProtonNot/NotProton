@@ -20,6 +20,9 @@ struct CrossOverLicenseTests {
         var root: URL { SupportPaths.crossOverRoot(inBundle: bundle) }
         var publishedKey: URL { root.appending(path: "share/crossover/data/tie.pub") }
         var searchDirs: [URL] { [local, system] }
+        // The fixture's own key stands in for CodeWeavers', read when asked so a test that
+        // rewrites the key is checked against what is there.
+        var keys: Set<String> { Set([Digest.sha256IfPresent(publishedKey)].compactMap { $0 }) }
 
         func remove() { try? FileManager.default.removeItem(at: dir) }
     }
@@ -101,8 +104,22 @@ struct CrossOverLicenseTests {
         let license = try Self.writeLicense(in: fix.local)
         try Self.sign(license, with: fix.key, digest: "-sha256", sidecar: "sha256")
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(status.licensed)
+    }
+
+    // A copied bundle can carry any key, and a license signed with it would verify.
+    @Test("A license signed with a key that is not CodeWeavers' is refused")
+    func swappedKeyIsRefused() throws {
+        let fix = try Self.fixture()
+        defer { fix.remove() }
+        let license = try Self.writeLicense(in: fix.local)
+        try Self.sign(license, with: fix.key, digest: "-sha256", sidecar: "sha256")
+
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        #expect(!status.licensed)
+        #expect(status.diagnostic == "the verification key in the CrossOver bundle is not CodeWeavers'")
+        #expect(status.detail == CrossOverLicense.notActivated)
     }
 
     @Test("A bundle carrying no verification key is named in the diagnostic")
@@ -112,7 +129,7 @@ struct CrossOverLicenseTests {
         let license = try Self.writeLicense(in: fix.local)
         try Self.sign(license, with: fix.key, digest: "-sha256", sidecar: "sha256")
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(!status.licensed)
         #expect(status.diagnostic == "no verification key in the CrossOver bundle")
         #expect(status.detail == CrossOverLicense.notActivated)
@@ -125,7 +142,7 @@ struct CrossOverLicenseTests {
         let fix = try Self.fixture()
         defer { fix.remove() }
 
-        let absent = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let absent = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(!absent.licensed)
         #expect(absent.diagnostic == "no CrossOver license file found")
         #expect(absent.detail == CrossOverLicense.notActivated)
@@ -135,7 +152,7 @@ struct CrossOverLicenseTests {
         try Self.generate(key: other, publishing: nil)
         try Self.sign(license, with: other, digest: "-sha256", sidecar: "sha256")
 
-        let wrong = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let wrong = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(!wrong.licensed)
         #expect(wrong.diagnostic.contains("verified against this bundle"))
         #expect(wrong.diagnostic != absent.diagnostic)
@@ -148,7 +165,7 @@ struct CrossOverLicenseTests {
         defer { fix.remove() }
         try Self.writeLicense(in: fix.local)
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(!status.licensed)
         #expect(status.diagnostic.contains("has no signature beside it"))
         #expect(status.detail == CrossOverLicense.notActivated)
@@ -166,7 +183,7 @@ struct CrossOverLicenseTests {
             to: fix.local.appending(path: "\(Self.base).sha256")
         )
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(status.licensed)
     }
 
@@ -177,7 +194,7 @@ struct CrossOverLicenseTests {
         let license = try Self.writeLicense(in: fix.system)
         try Self.sign(license, with: fix.key, digest: "-sha256", sidecar: "sha256")
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(status.licensed)
         #expect(status.diagnostic.contains(fix.system.path(percentEncoded: false)))
     }
@@ -194,7 +211,8 @@ struct CrossOverLicenseTests {
         let status = CrossOverLicense.check(
             crossOverRoot: fix.root,
             searchDirs: fix.searchDirs,
-            openssl: "/usr/bin/notproton-no-such-openssl"
+            openssl: "/usr/bin/notproton-no-such-openssl",
+            keys: fix.keys
         )
         #expect(!status.licensed)
         #expect(status.diagnostic.contains("could not run"))
@@ -235,7 +253,7 @@ struct CrossOverLicenseTests {
         try Self.sign(license, with: fix.key, digest: "-sha256", sidecar: "sha256")
         try Data("not a key".utf8).write(to: fix.publishedKey)
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(!status.licensed)
         #expect(status.diagnostic == "the verification key in the CrossOver bundle could not be read")
         #expect(status.detail == CrossOverLicense.notActivated)
@@ -254,7 +272,7 @@ struct CrossOverLicenseTests {
                 .path(percentEncoded: false)
         )
 
-        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs)
+        let status = CrossOverLicense.check(crossOverRoot: fix.root, searchDirs: fix.searchDirs, keys: fix.keys)
         #expect(!status.licensed)
         #expect(status.diagnostic.contains("could not be checked"))
         #expect(status.detail == CrossOverLicense.notActivated)

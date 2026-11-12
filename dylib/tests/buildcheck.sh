@@ -60,6 +60,37 @@ launch() {
 	[ ! -f "$data/notproton-build" ] || head -1 "$data/notproton-build"
 }
 
+echo "== CrossOver license =="
+license_fn=$(extract crossover_licensed)
+[ -n "$license_fn" ] || { echo "FAIL: crossover_licensed not found in $SRC"; exit 1; }
+lic="$work/license"
+prefs="$lic/home/Library/Preferences"
+mkdir -p "$prefs" "$lic/cx/share/crossover/data"
+openssl genrsa -out "$lic/private.pem" 2048 2>/dev/null
+openssl rsa -in "$lic/private.pem" -pubout -out "$lic/cx/share/crossover/data/tie.pub" 2>/dev/null
+printf '[crossmac]\ncustomer=Test\n' > "$prefs/com.codeweavers.CrossOver.license"
+ours=$(shasum -a 256 "$lic/cx/share/crossover/data/tie.pub" | cut -d' ' -f1)
+licensed() {
+	(
+		HOME="$lic/home"
+		CX_ROOT="$lic/cx"
+		np_license_keys=$1
+		eval "$license_fn"
+		crossover_licensed
+	) && echo yes || echo no
+}
+is "a license with no signature beside it is refused" no "$(licensed "$ours")"
+openssl dgst -sha256 -sign "$lic/private.pem" -out "$prefs/com.codeweavers.CrossOver.sha256" \
+	"$prefs/com.codeweavers.CrossOver.license"
+is "a license the accepted key verifies passes" yes "$(licensed "$ours")"
+is "the same license is refused when the key is not one CodeWeavers ships" no "$(licensed 0000)"
+printf 'customer=Someone else\n' >> "$prefs/com.codeweavers.CrossOver.license"
+is "an edited license is refused" no "$(licensed "$ours")"
+app_keys=$(sed -n 's/^ *"\([0-9a-f]\{64\}\)",$/\1/p' \
+	"$(dirname "$SRC")/../../app/Sources/NotProtonApp/Model/CrossOverLicense.swift")
+is "the run script and the app trust the same key" "$app_keys" \
+	"$(sed -n 's/^np_license_keys="\(.*\)"$/\1/p' "$SRC")"
+
 echo "== prefixes from before the record =="
 is "a fresh prefix is claimed" "status=0
 26.3.0.39832" "$(launch 26.3.0.39832 "" "")"
