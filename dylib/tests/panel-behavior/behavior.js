@@ -30,6 +30,36 @@ for (const form of Object.keys(FORMS)) {
        'while one of ours still renders');
   t.ok(panel(emit, form, undefined, { tools: [] }).render({ details: details('', { strCompatToolName: '' }) }) !== null,
        'an unpinned game renders with no tool list');
+  {
+    const { render: PA } = panel(emit, form, undefined,
+                                 { tools: ['notproton-26.3', 'arc-compat=26.3.0.39832'] });
+    const shown = tool => {
+      const n = PA({ details: details('', { strCompatToolName: tool }) });
+      return n === null ? [] : sections(walk(n));
+    };
+    t.ok(shown('arc-compat').includes('Graphics') && shown('notproton-26.3').includes('Graphics'),
+         'a tool that runs our run script on a CrossOver build gets the CrossOver sections');
+    t.ok(!shown('fexmac').includes('Graphics'), 'while a tool that runs no CrossOver build does not');
+  }
+  {
+    const HIDE = JSON.stringify([
+      { k: 'NOTPROTON_FEXMAC', l: 'FEXMac', on: '1', off: '', dep: '', d: '', tl: ['fexmac*'], hc: 1 },
+    ]).replace(/"(\w+)":/g, '$1:');
+    const { render: PH, written: hwritten } = panel(emit, form, undefined,
+      { feats: HIDE, tools: ['notproton-26.3', 'fexmac-cx=26.3.0.39832'] });
+    const under = tool => {
+      const n = PH({ details: details('', { strCompatToolName: tool }) });
+      return n === null ? [] : walk(n);
+    };
+    const cx = tool => sections(under(tool)).filter(l => l === 'Graphics' || l === 'Controllers');
+    t.ok(cx('fexmac-cx').length === 0 && under('fexmac-cx').some(x => x.props && x.props.label === 'FEXMac'),
+         'a plugin can hide the CrossOver sections from the tools it names, keeping its own rows');
+    t.ok(cx('notproton-26.3').length === 2, 'and no other tool loses them');
+    hwritten.length = 0;
+    under('fexmac-cx').find(x => x.props && x.props.label === 'FEXMac').props.onChange(true);
+    t.ok(hwritten.length === 1 && hwritten[0].opts === 'NOTPROTON_FEXMAC=1 %command%',
+         'its rows still write the key our run script reads');
+  }
 
   // For a tool we did not install there is no run script of ours in the launch, so the
   // panel writes what that script would have exported: the dylib on the insert list and

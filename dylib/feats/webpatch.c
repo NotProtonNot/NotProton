@@ -47,8 +47,6 @@
 #define NP_FEATS "\032"
 // Stands for the runner variants read from the support directory.
 #define NP_VARS "\033"
-// Stands for the JS array of the tools NotProton installed, the same names
-// np_webpatch_set_tool_builds carries.
 #define NP_OUR_TOOLS "\034"
 
 #define NP_TOOL_NAME_MAX 128
@@ -519,6 +517,7 @@ static void feat_build(void) {
         }
         if ((np_conf_get(rec, "stage") || np_conf_get(rec, "overrides"))
             && !out_put(&rows, ",rn:1", 5)) goto done;
+        if (np_conf_get(rec, "hide_crossover") && !out_put(&rows, ",hc:1", 5)) goto done;
         if (type) {
             if (!out_put(&rows, ",ty:", 4) || !out_jsstr(&rows, type)) goto done;
         }
@@ -605,15 +604,16 @@ void np_webpatch_set_tool_builds(const char *const *names, const char *const *bu
                  archs && archs[i] ? archs[i] : "");
         g_var_tools++;
     }
-    // The same names as a JS array, for the gate that keeps this panel to our own tools.
     // They passed is_tool_name, so they need no escaping.
-    np_js_t j = js_alloc(g_var_tools * (NP_TOOL_NAME_MAX + 3) + 3);
+    np_js_t j = js_alloc(g_var_tools * (2 * NP_TOOL_NAME_MAX + 8) + 3);
     js_put(&j, "[", 1);
     for (size_t i = 0; i < g_var_tools; i++) {
         if (i) js_put(&j, ",", 1);
-        js_put(&j, "\"", 1);
+        js_put(&j, "[\"", 2);
         js_puts(&j, g_var_tool[i]);
-        js_put(&j, "\"", 1);
+        js_put(&j, "\",\"", 3);
+        js_puts(&j, g_var_build[i]);
+        js_put(&j, "\"]", 2);
     }
     js_put(&j, "]", 1);
     set_input(IN_OUR_TOOLS, js_done(&j));
@@ -1233,7 +1233,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "npTool=tool||\"\"," \
     "npFor=p=>\"*\"===p.slice(-1)?npTool.startsWith(p.slice(0,-1)):p===npTool," \
     "MSCXReady=" NP_READY ",MSCXFeat=(" NP_FEATS ").filter(f=>!f.tl||f.tl.some(npFor))," \
-    "MSCXVar=" NP_VARS "," \
+    "npCx=ours&&!MSCXFeat.some(f=>f.hc),MSCXVar=" NP_VARS "," \
     /* A toggle parent is satisfied by its on value; one that holds a value, such as a
        dropdown or a slider, by holding one at all rather than sitting on Default. */ \
     "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
@@ -1243,7 +1243,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     /* How deep the chain of parents runs, so a sub-option of a sub-option indents twice. */ \
     "dl=(k,n)=>{const p=MSCXFeat.find(x=>x.k===k);" \
     "return n<32&&p&&p.dep?dl(p.dep,n+1):n}," \
-    "vav=dev?MSCXVar.filter(v=>v.t.indexOf(tool)>=0):[]," \
+    "vav=dev&&npCx?MSCXVar.filter(v=>v.t.indexOf(tool)>=0):[]," \
     "vcur=G(\"NOTPROTON_RUNNER_VARIANT\").split(\"+\").filter(x=>x)," \
     "vids=vav.map(v=>v.v).filter((d,i,a)=>a.indexOf(d)===i)," \
     "vset=(id,val)=>{const keep=vcur.filter(x=>MSCXVar.some(v=>v.k===x&&v.v!==id))," \
@@ -1327,14 +1327,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "br=SL(\"#AppProperties_Shortcut_BrowseFiles\",\"Browse...\")," \
     "XF=(k,l,d,c)=>(0," RT ".jsx)(" BARREL ".D0,{label:l,description:d,childrenContainerWidth:\"min\"," \
     "children:(0," RT ".jsx)(\"div\",{className:\"MSCXBtns\",children:c})},k)," \
-    "exe=X&&(ours||ex)&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Launch Executable\",\"Launch Executable\",\"Launch Executable\"),children:[" \
+    "exe=X&&(npCx||ex)&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Launch Executable\",\"Launch Executable\",\"Launch Executable\"),children:[" \
     "XF(\"target\",npL(\"Executable\",\"Executable\",\"Executable\"),ex||undefined,[" \
     "ex&&bt(SL(\"#Button_Remove\",\"Remove\"),()=>X.write(\"\",\"\"),\"remove\")," \
-    "ours&&bt(br,()=>pk({strTitle:npL(\"Choose a Program to Launch\",\"选择要启动的程序\",\"Scegli il programma da avviare\")," \
+    "npCx&&bt(br,()=>pk({strTitle:npL(\"Choose a Program to Launch\",\"选择要启动的程序\",\"Scegli il programma da avviare\")," \
     "rgFilters:[{strFileTypeName:npL(\"Windows Programs (*.exe, *.bat)\",\"Windows 程序 (*.exe, *.bat)\"," \
     "\"Programmi Windows (*.exe, *.bat)\"),rFilePatterns:[\"*.exe\",\"*.bat\"],bUseAsDefault:!0}]," \
     "strInitialFile:ex||X.home},p=>X.write(p,\"\")),\"pick\")])," \
-    "ours&&ex&&XF(\"dir\",npL(\"Start Executable From\",\"Start Executable From\",\"Start Executable From\"),sd,[" \
+    "npCx&&ex&&XF(\"dir\",npL(\"Start Executable From\",\"Start Executable From\",\"Start Executable From\"),sd,[" \
     "sd!==exd&&bt(SL(\"#AppProperties_Customization_Reset\",\"Reset\"),()=>X.write(ex,\"\"),\"reset\")," \
     "bt(br,()=>pk({strTitle:SL(\"#AppProperties_Shortcut_ChooseStartDirectoryDialogTitle\",\"Choose Start Directory\")," \
     "strInitialFile:sd,bChooseDirectory:!0},p=>{const n=p.replace(/\\/+$/,\"\")||\"/\";X.write(ex,n===exd?\"\":n)}),\"pick\")])" \
@@ -1378,12 +1378,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
        with nothing to deliver. */ \
     "const npRows=ours?MSCXFeat:MSCXFeat.filter(f=>!f.rn&&(f.ty" \
     "?/^NOTPROTON_ENV_/.test(f.k):f.rq||(f.ev||[]).length))," \
-    /* Graphics, upscaling, controllers and the runner variants are all CrossOver's, so
-       they are drawn only for the tools NotProton installed. Another tool in the same
-       folder -- a macOS to macOS one, say -- gets nothing from us rather than a page
-       about a Windows runner it does not use. */ \
-    "npBody=[ours&&head," \
-    "ours&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
+    "npBody=[npCx&&head," \
+    "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",w(\"CX_GRAPHICS_BACKEND\",v.data||\"auto\",\"auto\")]]" \
     ".concat(!clearUnused||\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]])" \
@@ -1400,7 +1396,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:npL(\"Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)\",\"Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)\",\"Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)\")," \
     "checked:\"0\"===G(\"NOTPROTON_RETINA_DPI\"),onChange:v=>s([[\"NOTPROTON_RETINA_DPI\",w(\"NOTPROTON_RETINA_DPI\",v?\"0\":\"1\",\"1\")]])},\"NOTPROTON_RETINA_DPI\")" \
     "]},\"gfx\")," \
-    "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
+    "npCx&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
     "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione del gioco)\")," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \
@@ -1408,7 +1404,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "onChange:v=>s(dflt&&v.data===pick(k=>dflt(k)||\"\")" \
     "?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]]" \
     ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"0\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
-    "ours&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
+    "npCx&&dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"DXMT Frame Rate Limit\"," \
     "\"DXMT Frame Rate Limit\",\"DXMT Frame Rate Limit\")," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:FPS," \
@@ -1416,13 +1412,13 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "onChange:v=>s(dflt&&v.data===pickFps(k=>dflt(k)||\"\")" \
     "?[[\"DXMT_CONFIG\",fxFps(\"\")]]" \
     ":[[\"DXMT_CONFIG\",fxFps(v.data||(dflt?\"0\":\"\"))]])})},\"fps\")," \
-    "ours&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
+    "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
     "T(\"NOTPROTON_RAW_CONTROLLERS\",npL(\"Let Games Read Controllers Directly (May break Steam Input. Not recommended)\"," \
     "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
     "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"))," \
     "T(\"NOTPROTON_DISABLE_HIDRAW\",npL(\"Disable hidraw\",\"停用 hidraw\",\"Disattiva hidraw\"))" \
     "]},\"ctl\")," \
-    "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
+    "npCx&&fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \
     "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\"),exe," \
     "dev&&(npRows.length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
@@ -1449,9 +1445,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_CX_OPTIONS_BODY(RT, BARREL) \
     "np=>{" \
     "const t=np.details,o=t.strLaunchOptions||\"\",tn=t.strCompatToolName||\"" NP_FALLBACK_TOOL "\"," \
-    "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0," \
+    "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0,ot=" NP_OUR_TOOLS ".find(x=>x[0]===tn)," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,has=k=>L.k.includes(k)," \
-    "lost=globalThis.MSCXDefaultsLost,DF=lost?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)||{}).override||" NP_CX_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
+    "lost=globalThis.MSCXDefaultsLost,DF=lost?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)" \
+    "||ot&&" NP_CX_BUILDS ".find(x=>x.build===ot[1]&&x.runner===(fex?\"fex\":\"rosetta\"))" \
+    "||{}).override||" NP_CX_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
     "fk=" NP_CX_FACTOR_ENTRY ",fpk=" NP_CX_FPS_ENTRY "," \
     "own=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
     "dfe=(DF[\"DXMT_CONFIG\"]||\"\").split(\";\").filter(e=>e.trim())," \
@@ -1460,7 +1458,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
     "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,tool:tn," \
-    "ours:tn===\"" NP_FALLBACK_TOOL "\"||" NP_OUR_TOOLS ".indexOf(tn)>=0," \
+    "ours:tn===\"" NP_FALLBACK_TOOL "\"||!!ot," \
     "dflt:lost?null:k=>DF[k],target:(" NP_CX_TARGET ")(o,t.unAppID,t.strInstallFolder||\"\"),head:" \
     "typeof MSCXPrefixRow==\"function\"&&(0," RT ".jsx)(\"div\",{className:\"MSCXRow\",ref:e=>e&&MSCXPrefixRow(e,t.unAppID)},\"npstate\")" \
     "})}"

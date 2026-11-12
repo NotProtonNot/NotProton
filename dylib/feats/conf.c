@@ -21,7 +21,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "tools", 8, 0 },     { "type", 1, 0 },        { "choice", 16, 0 },
     { "min", 1, 0 },
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
-    { "suffix", 1, 0 },    { NULL, 0, 0 }
+    { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { NULL, 0, 0 }
 };
 
 // label and variant fall back to the record's id, so a variant that is the only one in
@@ -224,6 +224,14 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
             *detail = "tools";
             return NP_CONF_BAD_VALUE;
         }
+        if (strcmp(n, "hide_crossover") == 0 && strcmp(v, "1") != 0) {
+            *detail = "hide_crossover";
+            return NP_CONF_BAD_VALUE;
+        }
+    }
+    if (np_conf_get(rec, "hide_crossover") && !np_conf_get(rec, "tools")) {
+        *detail = "tools";
+        return NP_CONF_REQUIRED;
     }
     // A parent is looked up by id at launch, so it has to be one.
     v = np_conf_get(rec, "depends");

@@ -1,6 +1,3 @@
-// Prints what the reader makes of a fixture tree, in the normalised form from
-// conf-format.md, so dylib/tests/conf-fixtures/EXPECTED can judge it the same way it
-// judges compat_run.sh.
 #include "../feats/conf.h"
 
 #include <stdio.h>

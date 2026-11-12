@@ -389,7 +389,9 @@ NP_CONF_NAMES
       if (names[i] == "env" && !envok(vals[i])) { detail = "env"; return "bad-value" }
       if (names[i] == "choice" && choiceval(vals[i]) == "") { detail = "choice"; return "bad-value" }
       if (names[i] == "tools" && !toolok(vals[i])) { detail = "tools"; return "bad-value" }
+      if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
     }
+    if (("hide_crossover" in cnt) && !("tools" in cnt)) { detail = "tools"; return "missing-required" }
     if (("depends" in cnt) && !idok(first["depends"])) { detail = "depends"; return "bad-value" }
     if (("section" in cnt) && first["section"] != "dev") { detail = "section"; return "bad-value" }
     if (!("type" in cnt)) return ""
@@ -444,8 +446,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove", f, " ")
