@@ -149,7 +149,8 @@ struct PrefixToolsTests {
 
     @Test("Every tool is offered under the name the loader resolves")
     func toolNamesAreBare() {
-        #expect(WineTool.allCases.map(\.rawValue) == ["winecfg", "regedit", "taskmgr"])
+        #expect(WineTool.allCases.map(\.rawValue) == ["winecfg", "regedit", "taskmgr", "joycpl"])
+        #expect(WineTool.joycpl.arguments(runner: URL(filePath: "/cx")) == ["/cx/lib/wine/x86_64-windows/control.exe", "joy.cpl"])
         for tool in WineTool.allCases {
             #expect(!tool.rawValue.contains("/"), "\(tool) would not resolve as a builtin")
             #expect(!tool.rawValue.hasSuffix(".exe"))

@@ -5,7 +5,7 @@ NotProton enables the Steam Play experience from Linux Steam in the macOS Steam 
 This is done by forcibly enabling the Steam Play functionality in macOS Steam (which is
 present and inert) as well as by porting some components of Valve's Proton to macOS.
 
-This tool is intended to be used with the stable Steam Client (version 1792618285) as well as the beta Steam Client (version 1792626604) paired with **CrossOver 26.3 or CrossOver [Preview](https://www.codeweavers.com/preview)
+This tool is intended to be used with the stable Steam Client (version 1794424036) as well as the beta Steam Client (version 1792626604) paired with **CrossOver 26.3 or CrossOver [Preview](https://www.codeweavers.com/preview)
 20260821 / 20261006 / 20261015**, with more supported versions to come.
 
 **Tuxera NTFS is not supported. Tuxera has a bad bug that causes corruption. I've reported the bug to them. If you need NTFS, Paragon NTFS may work better, but I have not tested it. I will be implementing a work around for this (horrible) bug soon.**

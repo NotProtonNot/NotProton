@@ -9,12 +9,21 @@ enum WineTool: String, CaseIterable, Sendable {
     case winecfg
     case regedit
     case taskmgr
+    case joycpl
 
     var label: String {
         switch self {
         case .winecfg: String(localized: "Wine Configuration")
         case .regedit: String(localized: "Registry Editor")
         case .taskmgr: String(localized: "Task Manager")
+        case .joycpl: String(localized: "Game Controllers")
+        }
+    }
+
+    func arguments(runner: URL) -> [String] {
+        switch self {
+        case .joycpl: [runner.appending(path: "lib/wine/x86_64-windows/control.exe").path(percentEncoded: false), "joy.cpl"]
+        default: [rawValue]
         }
     }
 }
@@ -216,7 +225,7 @@ enum PrefixTools {
         let loader = try readyLoader(step: step, prefix: prefix, runner: runner, flavor: flavor)
         try Shell.detach(
             loader.path(percentEncoded: false),
-            [tool.rawValue],
+            tool.arguments(runner: runner),
             environment: environment(prefix: prefix, runner: runner, flavor: flavor)
         )
     }

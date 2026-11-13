@@ -1,6 +1,3 @@
-// Plugin and variant descriptor files, as specified in conf-format.md. One reader for
-// both, so the two kinds cannot drift apart; compat_run.sh reads the same grammar and
-// both are checked against dylib/tests/conf-fixtures.
 #ifndef NP_CONF_H
 #define NP_CONF_H
 

@@ -30,6 +30,36 @@ for (const form of Object.keys(FORMS)) {
        'while one of ours still renders');
   t.ok(panel(emit, form, undefined, { tools: [] }).render({ details: details('', { strCompatToolName: '' }) }) !== null,
        'an unpinned game renders with no tool list');
+  {
+    const { render: PA } = panel(emit, form, undefined,
+                                 { tools: ['notproton-26.3', 'arc-compat=26.3.0.39832'] });
+    const shown = tool => {
+      const n = PA({ details: details('', { strCompatToolName: tool }) });
+      return n === null ? [] : sections(walk(n));
+    };
+    t.ok(shown('arc-compat').includes('Graphics') && shown('notproton-26.3').includes('Graphics'),
+         'a tool that runs our run script on a CrossOver build gets the CrossOver sections');
+    t.ok(!shown('fexmac').includes('Graphics'), 'while a tool that runs no CrossOver build does not');
+  }
+  {
+    const HIDE = JSON.stringify([
+      { k: 'NOTPROTON_FEXMAC', l: 'FEXMac', on: '1', off: '', dep: '', d: '', tl: ['fexmac*'], hc: 1 },
+    ]).replace(/"(\w+)":/g, '$1:');
+    const { render: PH, written: hwritten } = panel(emit, form, undefined,
+      { feats: HIDE, tools: ['notproton-26.3', 'fexmac-cx=26.3.0.39832'] });
+    const under = tool => {
+      const n = PH({ details: details('', { strCompatToolName: tool }) });
+      return n === null ? [] : walk(n);
+    };
+    const cx = tool => sections(under(tool)).filter(l => l === 'Graphics' || l === 'Controllers');
+    t.ok(cx('fexmac-cx').length === 0 && under('fexmac-cx').some(x => x.props && x.props.label === 'FEXMac'),
+         'a plugin can hide the CrossOver sections from the tools it names, keeping its own rows');
+    t.ok(cx('notproton-26.3').length === 2, 'and no other tool loses them');
+    hwritten.length = 0;
+    under('fexmac-cx').find(x => x.props && x.props.label === 'FEXMac').props.onChange(true);
+    t.ok(hwritten.length === 1 && hwritten[0].opts === 'NOTPROTON_FEXMAC=1 %command%',
+         'its rows still write the key our run script reads');
+  }
 
   // For a tool we did not install there is no run script of ours in the launch, so the
   // panel writes what that script would have exported: the dylib on the insert list and
@@ -128,7 +158,7 @@ for (const form of Object.keys(FORMS)) {
   }
 
   let r = nodes('');
-  t.ok(toggles(r).length === 7 && sections(r).length === 5, 'automatic shows seven toggles in five sections');
+  t.ok(toggles(r).length === 8 && sections(r).length === 5, 'automatic shows eight toggles in five sections');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 3, 'three dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
@@ -216,13 +246,21 @@ for (const form of Object.keys(FORMS)) {
   const root = P({ details: details('') });
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
-  t.ok(classes.length === 7 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
+  t.ok(classes.length === 8 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
   const raw = o => nodes(o).find(x => x.props.label === 'Let Games Read Controllers Directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
   written.length = 0;
   nodes('').find(x => x.props.label === 'Disable hidraw').props.onChange(true);
   t.ok(last().trim() === 'NOTPROTON_DISABLE_HIDRAW=1 %command%', `hidraw (${last()})`);
+  const dpi = o => nodes(o).find(x => x.props.label === "Don't Scale Windows DPI (Fixes games that only offer low resolutions when High Resolution is on)");
+  t.ok(dpi('').props.checked === false && dpi('NOTPROTON_RETINA_DPI=0').props.checked === true, 'the DPI row reads the opt-out');
+  written.length = 0;
+  dpi('').props.onChange(true);
+  t.ok(last().trim() === 'NOTPROTON_RETINA_DPI=0 %command%', `the DPI row writes the opt-out (${last()})`);
+  written.length = 0;
+  dpi('NOTPROTON_RETINA_DPI=0 WINEMSYNC=1').props.onChange(false);
+  t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning the DPI row off removes it (${last()})`);
   written.length = 0;
   raw('').props.onChange(true);
   t.ok(last().trim() === 'NOTPROTON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);

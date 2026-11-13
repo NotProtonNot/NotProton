@@ -218,6 +218,14 @@ async function buildCases(form) {
   t.ok(row(game('notproton-26.1-fex'), 'MSync').props.checked === false &&
        row(game('notproton-fex'), 'MSync').props.checked === true,
        'a FEX build\'s set beats the FEX defaults only for that build');
+  {
+    const ga = panel(emit, form, g, { fexTools: FEX_TOOLS.concat('notproton-26.1-fex', 'arc-fex'),
+                                      tools: ['notproton-26.1', 'arc=26.1', 'arc-fex=26.1'] }).render;
+    const adapter = tool => walk(ga({ details: details('%command%', { strCompatToolName: tool }) }));
+    t.ok(row(adapter('arc'), 'MSync').props.checked === true &&
+         row(adapter('arc-fex'), 'MSync').props.checked === false,
+         'a tool that runs one of our builds shows that build\'s set for its runner');
+  }
 
   version().props.onChange({ data: 'notproton-25.0' });
   t.ok(row(h.render(page), 'High Resolution').props.checked === true,
