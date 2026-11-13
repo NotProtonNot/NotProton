@@ -266,11 +266,11 @@ static int resolve_home_path(char *out, size_t size, const char *home, const cha
     return snprintf(out, size, "%s/%s", home, rel) < (int)size;
 }
 
-static int feat_exists(const char *home, const char *rel) {
+static int feat_exists(const char *home, const char *rel, int executable) {
     char path[2048];
     struct stat st;
     if (!resolve_home_path(path, sizeof(path), home, rel)) return 0;
-    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode) && (!executable || access(path, X_OK) == 0);
 }
 
 typedef struct { np_conf_rec_t *list; int count; } feat_ctx_t;
@@ -481,6 +481,7 @@ static void feat_build(void) {
         const char *type = np_conf_get(rec, "type");
         const char *dflt = np_conf_get(rec, "default");
         const char *inj = np_conf_get(rec, "inject");
+        const char *helper = np_conf_get(rec, "session_helper");
         const char *fn, *fv;
         int it = 0, nreq = 0, ok = 0;
         char item[NP_CONF_ID_MAX + 32];
@@ -491,12 +492,13 @@ static void feat_build(void) {
         while (np_conf_next(rec, &it, &fn, &fv)) {
             if (strcmp(fn, "requires") != 0) continue;
             nreq++;
-            if (ok || !feat_exists(home, fv)) continue;
+            if (ok || !feat_exists(home, fv, 0)) continue;
             // The first that exists is the one a page without our run script inserts.
             ok = 1;
             if (!resolve_home_path(resolved, sizeof(resolved), home, fv)) resolved[0] = 0;
         }
         if (!nreq) ok = 1;
+        if (helper && !feat_exists(home, helper, 1)) ok = 0;
         len = snprintf(item, sizeof(item), "%s\"%s\":%d", i ? "," : "", rec->id, ok);
         if (len < 0 || len >= (int)sizeof(item) || !out_put(&ready, item, (size_t)len)) goto done;
 
@@ -515,7 +517,7 @@ static void feat_build(void) {
         if (*resolved && inj && strcmp(inj, "1") == 0) {
             if (!out_put(&rows, ",rq:", 4) || !out_jsstr(&rows, resolved)) goto done;
         }
-        if ((np_conf_get(rec, "stage") || np_conf_get(rec, "overrides"))
+        if ((helper || np_conf_get(rec, "stage") || np_conf_get(rec, "overrides"))
             && !out_put(&rows, ",rn:1", 5)) goto done;
         if (np_conf_get(rec, "hide_crossover") && !out_put(&rows, ",hc:1", 5)) goto done;
         if (type) {
@@ -1374,7 +1376,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "||{data:String(pf(f(\"DXMT_CONFIG\")||\"\"))}).data:\"\"," \
     "pickFps=f=>pfp(f(\"DXMT_CONFIG\")||\"\");" \
     /* Without our run script behind it a row can only be what a launch option can carry,
-       so one asking for a staged DLL or an override is not offered, and neither is one
+       so one asking for a session helper, staged DLL or override is not offered, and neither is one
        with nothing to deliver. */ \
     "const npRows=ours?MSCXFeat:MSCXFeat.filter(f=>!f.rn&&(f.ty" \
     "?/^NOTPROTON_ENV_/.test(f.k):f.rq||(f.ev||[]).length))," \

@@ -446,8 +446,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage session_helper tools type choice min max step default suffix hide_crossover", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 1 8 1 16 1 1 1 1 1 1", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove", f, " ")
@@ -2871,6 +2871,9 @@ else
 $uielement_arg" > "$loader_contents/Info.plist"
 fi
 
+# Keep the original loader for helpers, before staging the game bundle.
+np_session_wine_loader="$WINELOADER"
+
 # Invokes macOS Game Mode
 if [ -z "$game_runner" ]; then
   (
@@ -3070,11 +3073,50 @@ kill_wine_prefix() {
   fi
 }
 
+np_session_helper_pids=""
+
+np_start_session_helpers() {
+  while IFS= read -r np_session_helper; do
+    [ -n "$np_session_helper" ] || continue
+    WINELOADER="$np_session_wine_loader" "$np_session_helper" "$$" "$np_session_wine_loader" "$WINEPREFIX" \
+      </dev/null >> "$log" 2>&1 8>&- 9>&- &
+    np_session_helper_pids="${np_session_helper_pids:+$np_session_helper_pids }$!"
+  done <<NP_SESSION_HELPERS
+$np_feat_helpers
+NP_SESSION_HELPERS
+}
+
+np_stop_session_helpers() {
+  # shellcheck disable=SC2086 # split the list of numeric PIDs
+  set -- $np_session_helper_pids
+  np_session_helper_pids=""
+  [ "$#" -gt 0 ] || return 0
+  kill -TERM "$@" 2>/dev/null || true
+  np_session_ticks=0
+  while [ "$np_session_ticks" -lt 50 ]; do
+    np_session_running=0
+    for np_session_pid do
+      if kill -0 "$np_session_pid" 2>/dev/null; then np_session_running=1; fi
+    done
+    [ "$np_session_running" -eq 1 ] || break
+    sleep 0.1
+    np_session_ticks=$((np_session_ticks + 1))
+  done
+  for np_session_pid do
+    kill -KILL "$np_session_pid" 2>/dev/null || true
+    if wait "$np_session_pid"; then :; else
+      np_session_status=$?
+      [ "$np_session_status" -eq 143 ] || np_feat_log "session helper $np_session_pid exited with status $np_session_status"
+    fi
+  done
+}
+
 # Steam's "Exit Game" and the client shutting the game down both send a
 # termination signal to this run script, this handles it
 # shellcheck disable=SC2329 # the trap below invokes this
 terminate() {
   np_terminated=1
+  np_stop_session_helpers
   echo "=== termination signal received, killing wine prefix ===" >> "$log" 2>&1 || true
   kill_wine_prefix
   [ -n "$open_pid" ] && kill "$open_pid" 2>/dev/null || true
@@ -3115,7 +3157,11 @@ np_feat_requires() {
   done
 }
 np_feat_installed() {
-  [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]
+  if [ -n "$(np_feat_first "$1" requires)" ] && [ -z "$(np_feat_requires "$1")" ]; then return 1; fi
+  np_feat_inst_helper=$(np_feat_first "$1" session_helper)
+  [ -z "$np_feat_inst_helper" ] && return 0
+  np_feat_inst_helper=$(np_home_path "$np_feat_inst_helper")
+  [ -f "$np_feat_inst_helper" ] && [ -x "$np_feat_inst_helper" ]
 }
 np_feat_switched() {
   eval "np_feat_sv=\${$1-}"
@@ -3159,6 +3205,8 @@ np_feat_list=$(np_conf_ids "$np_conf_feat_table")
 
 np_feat_dylibs=""
 np_feat_envs=""
+np_feat_helpers=""
+
 while IFS= read -r np_feat_key; do
   [ -n "$np_feat_key" ] || continue
   if ! np_feat_installed "$np_feat_key"; then
@@ -3181,6 +3229,12 @@ while IFS= read -r np_feat_key; do
             np_feat_log "$np_feat_key will be loaded from $np_feat_lib" ;;
       esac
     fi
+  fi
+
+  np_feat_helper=$(np_feat_first "$np_feat_key" session_helper)
+  if [ -n "$np_feat_helper" ]; then
+    np_feat_helpers="$np_feat_helpers
+$(np_home_path "$np_feat_helper")"
   fi
 
   np_feat_stage=$(np_feat_first "$np_feat_key" stage)
@@ -3294,6 +3348,10 @@ for launched_app in "$loader_app" ${game_runner:+"$game_app"}; do
     fi
   fi
 done
+
+trap np_stop_session_helpers EXIT
+np_start_session_helpers
+
 if [ -n "$game_runner" ]; then
   shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
   inserts="$STEAM_DYLD_INSERT_LIBRARIES"
@@ -3363,6 +3421,10 @@ open_pid=$!
 /usr/bin/caffeinate -d -i -w "$open_pid" >> "$log" 2>&1 &
 status=0
 wait "$open_pid" || status=$?
+
+np_stop_session_helpers
+trap - EXIT
+
 echo "=== game exited status=$status, killing wine prefix ===" >> "$log" 2>&1 || true
 kill_wine_prefix
 [ -z "$STEAM_COMPAT_DATA_PATH" ] \

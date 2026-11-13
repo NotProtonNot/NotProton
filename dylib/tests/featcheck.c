@@ -125,6 +125,18 @@ int main(void) {
     make_asset("assets/a.dylib");
     ok(strcmp(ready_json(), "{\"NOTPROTON_A\":1}") == 0, "is ready");
 
+    puts("== a session helper needs an executable and the NotProton runner");
+    clear_descs();
+    write_desc("10-helper.conf",
+               "[NOTPROTON_HELPER]\nlabel = Helper\nsession_helper = assets/session helper\n");
+    ok(strcmp(ready_json(), "{\"NOTPROTON_HELPER\":0}") == 0, "missing helper is not ready");
+    make_asset("assets/session helper");
+    ok(strcmp(ready_json(), "{\"NOTPROTON_HELPER\":0}") == 0, "non-executable helper is not ready");
+    snprintf(cmd, sizeof(cmd), "chmod +x '%s/assets/session helper'", g_home);
+    ok(system(cmd) == 0, "helper made executable");
+    ok(strcmp(ready_json(), "{\"NOTPROTON_HELPER\":1}") == 0, "executable helper is ready");
+    ok(strstr(feats_json(), ",rn:1") != NULL, "helper is restricted to NotProton runners");
+
     puts("== repeated requires are any-of");
     clear_descs();
     write_desc("10-b.conf",
