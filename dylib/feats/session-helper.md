@@ -18,5 +18,6 @@ sending SIGKILL and reaping it.
 
 The helper should stay in the foreground and manage any child processes it
 starts. A child can keep the Wine session open after the game's foreground
-windows close. For a Windows child process that should end with the Wine
-session, launch it as a Wine background process.
+windows close if not managed correctly.
+For a Windows child process that should end with the Wine session,
+launch it as a Wine background process.
