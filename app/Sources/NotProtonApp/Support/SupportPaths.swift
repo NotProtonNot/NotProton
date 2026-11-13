@@ -22,6 +22,7 @@ enum SupportPaths {
 
     static var bridge: URL { support.appending(path: "bridge") }
     static var runners: URL { support.appending(path: "runners") }
+    static var variants: URL { support.appending(path: "variants") }
     static var backups: URL { support.appending(path: "backups") }
     static var launchers: URL { support.appending(path: "launchers") }
 

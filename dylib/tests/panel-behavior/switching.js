@@ -9,10 +9,12 @@ if (!emit) { console.error('usage: switching.js <emit>'); process.exit(2); }
 
 const DXMT = ['DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG'];
 const D3DM = ['D3DM_ENABLE_METALFX'];
+const D3DM_ALL = ['D3DM_ENABLE_METALFX', 'D3DM_SUPPORT_DXR', 'D3DM_MTL4', 'D3DM_MAX_FPS'];
 const NVEXT = ['DXMT_ENABLE_NVEXT'];
 const DLSS_ON = 'CX_GRAPHICS_BACKEND=dxmt DXMT_ENABLE_NVEXT=1';
 const UPSCALED = 'CX_GRAPHICS_BACKEND=dxmt DXMT_METALFX_SPATIAL_SWAPCHAIN=1'
                + ' DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2.0';
+const D3DM_FULL = 'CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1 D3DM_SUPPORT_DXR=1 D3DM_MTL4=0 D3DM_MAX_FPS=60';
 
 // Whichever backend is chosen, the arguments the others own have to be gone and the
 // arguments no backend owns have to survive.
@@ -22,9 +24,11 @@ const CASES = [
   { to: 'wined3d',  from: UPSCALED, gone: DXMT, kept: [] },
   { to: 'dxmt',     from: 'CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1', gone: D3DM, kept: [] },
   { to: 'dxvk',     from: 'CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1', gone: D3DM, kept: [] },
+  { to: 'dxmt',     from: D3DM_FULL, gone: D3DM_ALL, kept: [] },
   // Automatic resolves to either backend, so neither one's arguments are stale.
   { to: '',         from: UPSCALED, gone: [], kept: DXMT },
   { to: '',         from: 'CX_GRAPHICS_BACKEND=d3dmetal D3DM_ENABLE_METALFX=1', gone: [], kept: D3DM },
+  { to: '',         from: D3DM_FULL, gone: [], kept: D3DM_ALL },
   // The dxmt DLSS row is the exception: it shows under dxmt alone, so automatic has
   // nowhere to switch the flag off and has to take it along.
   { to: '',         from: DLSS_ON, gone: NVEXT, kept: [] },
