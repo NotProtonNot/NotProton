@@ -2815,6 +2815,12 @@ np_game_names
 loader_root="$HOME/Library/Application Support/notproton/launchers/$app_id"
 mkdir -p "$loader_root"
 loader_app="$loader_root/$bundle_name.app"
+np_game_host="$np_support/bridge/game-host"
+np_game_client="$np_support/bridge/game-client.dylib"
+np_single_icon=0
+if [ "${NOTPROTON_SINGLE_GAME_ICON:-1}" = 1 ] && [ -x "$np_game_host" ] && [ -f "$np_game_client" ]; then
+  np_single_icon=1
+fi
 find "$loader_root" -maxdepth 1 -name '.build.*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 loader_work=$(mktemp -d "$loader_root/.build.XXXXXX")
 loader_stage="$loader_work/new/$bundle_name.app"
@@ -2834,7 +2840,8 @@ game_runner=""
 display_name_xml=$game_name_xml
 localized_arg=""
 uielement_arg=""
-if [ -z "$user_dllpath" ]; then
+# The game host owns the Wine session when the single-icon feature is active.
+if [ -z "$user_dllpath" ] && [ "$np_single_icon" != 1 ]; then
   game_runner="$loader_root/runner"
   game_app="$game_runner/lib/wine/${wine_unix##*/}/wine.app"
   # Begone, unwanted Wine processes! Stay out of my dock!
@@ -2911,10 +2918,20 @@ fi
 if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
 fi
+if [ -n "\$NOTPROTON_GAME_CHANNEL" ]; then
+  client="\$(dirname "\$WINELOADER")/game-client.dylib"
+  export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$client"
+fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
 exec "$WINELOADER" "\$@"
 LAUNCHER
+chmod +x "$loader_macos/launcher"
+if [ "$np_single_icon" = 1 ]; then
+  mv "$loader_macos/launcher" "$loader_macos/wine-launch.sh"
+  cp "$np_game_host" "$loader_macos/launcher"
+  cp "$np_game_client" "$loader_macos/game-client.dylib"
   chmod +x "$loader_macos/launcher"
+fi
 fi
 
 bundle_listing() {
