@@ -14,6 +14,13 @@ char *np_nativeplatform_javascript(void) {
     return NULL;
 }
 
+// The badges come from the catalogue the dylib keeps. A check hands them over instead,
+// so what the tiles do is checked without a Steam library on the machine running it.
+char *np_catalog_javascript(const char *steam_root) {
+    const char *set = getenv("NP_TEST_BADGES");
+    return set && *set ? strdup(set) : NULL;
+}
+
 static void put_panel(const char *body) {
     for (const char *p = body; *p; p++) {
         const char *text = marker_text(*p);
@@ -31,6 +38,14 @@ static void set_sample_data(void) {
         { "notproton-empty", "25.0", "CrossOver 25", 0, "" },
     };
     np_webpatch_set_builds(builds, sizeof builds / sizeof builds[0]);
+    // What tuning.c works out for the Mac this is running on would make the checks read
+    // differently on every machine, so the page is handed a fixed pair of sets instead.
+    // NP_TEST_MAC carries the summary, which lands inside a JS string on the page.
+    const char *mac = getenv("NP_TEST_MAC");
+    np_webpatch_set_tuning("CX_GRAPHICS_BACKEND=dxmt\nNOTPROTON_RETINA=1\n"
+                           "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5;d3d11.preferredMaxFrameRate=120\n",
+                           "CX_GRAPHICS_BACKEND=dxmt\nFEX_X87REDUCEDPRECISION=1\n",
+                           mac ? mac : "Apple M4 Max, 40 GPU cores, 64 GB, 3456x2234 at 120 Hz");
 }
 
 int main(int argc, char **argv) {
@@ -65,6 +80,14 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) puts(names[i]);
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "badge-js") == 0) {
+        fputs(NP_BADGE_JS, stdout);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "stat-js") == 0) {
+        fputs(NP_STAT_JS, stdout);
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "prefix-row") == 0) {
         fputs(NP_CX_PREFIX_ROW, stdout);
         return 0;
@@ -89,7 +112,7 @@ int main(int argc, char **argv) {
         fputs(NP_LIBRARY_WINDOWS_SUMMARY, stdout);
         return 0;
     }
-    fputs("usage: emit component|statement[-data] [fallback [fex-tool...]]|migration|compat-hint|"
+    fputs("usage: emit component|statement[-data] [fallback [fex-tool...]]|migration|compat-hint|badge-js|stat-js|"
           "image-files-label|library-windows-hint|library-windows-summary|prefix-row|barrel-names\n",
           stderr);
     return 2;

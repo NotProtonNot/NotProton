@@ -51,6 +51,30 @@ void np_webpatch_set_defaults(const char *rosetta, const char *fex) {
     snprintf(g_pub_fex, sizeof g_pub_fex, "%s", fex ? fex : "");
 }
 
+// The probe reads the real GPU and display, which a check of what the page publishes has
+// no use for: a fixed machine keeps the recommended set the same on every Mac this runs on.
+static char g_pub_mac[256];
+static int g_pub_tuning_calls;
+
+void np_webpatch_set_tuning(const char *rosetta, const char *fex, const char *mac) {
+    g_pub_tuning_calls++;
+    snprintf(g_pub_mac, sizeof g_pub_mac, "%s", mac ? mac : "");
+}
+
+const np_machine_t *np_machine(void) {
+    static const np_machine_t m = { 1, "Apple M4 Max", 40, 16, 64, 27, 3456, 2234, 120 };
+    return &m;
+}
+
+void np_machine_summary(const np_machine_t *m, char *out, size_t size) {
+    snprintf(out, size, "%s", m && m->chip[0] ? m->chip : "");
+}
+
+int np_tuning_recommend(const np_machine_t *m, uint32_t runner, char *out, size_t size) {
+    snprintf(out, size, "WINEMSYNC=1\n");
+    return 1;
+}
+
 static np_webpatch_build_t g_pub[4];
 static char g_pub_override[4][NP_DEFAULTS_TEXT_MAX + 1];
 static size_t g_pub_count;

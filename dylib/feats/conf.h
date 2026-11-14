@@ -8,7 +8,7 @@
 #define NP_CONF_REC_BUF  4096   // a record's fields, names and values together
 #define NP_CONF_RECORDS_MAX 32  // per directory, counted across its files
 
-typedef enum { NP_CONF_PLUGIN, NP_CONF_VARIANT } np_conf_kind;
+typedef enum { NP_CONF_PLUGIN, NP_CONF_VARIANT, NP_CONF_RULE } np_conf_kind;
 
 // One record's fields in the order they were read, as "name\0value\0" pairs.
 typedef struct {

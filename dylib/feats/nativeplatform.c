@@ -58,7 +58,7 @@ static char *read_output(int fd, pid_t pid, long long deadline) {
     return buf;
 }
 
-static char *run_helper(void) {
+static char *run_helper(const char *mode) {
     const char *home = np_home_dir();
     if (!home) return NULL;
     char tool[PATH_MAX], vdf[PATH_MAX];
@@ -86,7 +86,9 @@ static char *run_helper(void) {
     posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
     posix_spawn_file_actions_adddup2(&actions, fds[1], STDOUT_FILENO);
     posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
-    char *argv[] = { tool, vdf, "--platforms", NULL };
+    char mode_arg[32];
+    snprintf(mode_arg, sizeof mode_arg, "%s", mode);
+    char *argv[] = { tool, vdf, mode_arg, NULL };
     pid_t pid;
     long long deadline = now_ms() + HELPER_TIMEOUT_MS;
     int rc = posix_spawn(&pid, tool, &actions, &attr, argv, *_NSGetEnviron());
@@ -144,7 +146,7 @@ static const char *take_list(const char **at, const char *key, size_t *len) {
 }
 
 char *np_nativeplatform_javascript(void) {
-    char *out = run_helper();
+    char *out = run_helper("--platforms");
     if (!out) return NULL;
     const char *at = out;
     size_t mac_len = 0, windows_len = 0;
@@ -163,4 +165,11 @@ char *np_nativeplatform_javascript(void) {
                  (int)mac_len, mac, (int)windows_len, windows);
     free(out);
     return js;
+}
+
+// What Valve's testing says about every game the client knows, one "appid mac deck
+// anticheat" line each. NULL from a helper that predates the mode, which is a catalogue
+// that knows only the games on disk.
+char *np_nativeplatform_compat(void) {
+    return run_helper("--compat");
 }

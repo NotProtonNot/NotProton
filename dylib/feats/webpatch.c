@@ -3,12 +3,14 @@
 #include "compatsvc.h"
 #include "../util/buildid.h"
 #include "conf.h"
+#include "catalog.h"
 #include "nativeplatform.h"
 #include "../util/file.h"
 #include "../util/log.h"
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -48,16 +50,20 @@
 // Stands for the runner variants read from the support directory.
 #define NP_VARS "\033"
 #define NP_OUR_TOOLS "\034"
+// Stands for the settings this Mac is best run with, set by np_webpatch_set_tuning.
+#define NP_TUNED "\035"
 
 #define NP_TOOL_NAME_MAX 128
 
 #define NP_UNREAD_DEFAULTS "{rosetta:null,fex:null}"
+// No probe, so no row: the page cannot say what this Mac wants.
+#define NP_NO_TUNING "{rosetta:null,fex:null,mac:\"\"}"
 
 enum { IN_FALLBACK_TOOL, IN_FEX_TOOLS, IN_DEFAULTS, IN_BUILDS, IN_READY, IN_FEATS, IN_VARS,
-       IN_OUR_TOOLS, IN_COUNT };
+       IN_OUR_TOOLS, IN_TUNED, IN_COUNT };
 typedef struct { char *text[IN_COUNT]; } np_inputs_t;
 static const char *const g_unset[IN_COUNT] = { "", "[]", NP_UNREAD_DEFAULTS, "[]", "{}", "[]", "[]",
-                                               "[]" };
+                                               "[]", NP_NO_TUNING };
 static pthread_key_t g_inputs_key;
 static pthread_once_t g_inputs_once = PTHREAD_ONCE_INIT;
 
@@ -176,8 +182,12 @@ static int is_setting_key(const char *str, size_t n) {
 }
 
 static int is_setting_value(const char *str, size_t n) {
+    // The value is written into a double-quoted JS string, so what it may not carry is a
+    // quote, a backslash or a control character. DXMT_CONFIG joins its clauses with a
+    // semicolon, and a value holding more than one of them is still only a string.
     for (size_t i = 0; i < n; i++)
-        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '=') return 0;
+        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '='
+            && str[i] != ';') return 0;
     return 1;
 }
 
@@ -219,6 +229,23 @@ static int is_label(const char *str) {
     for (; *str; str++)
         if ((unsigned char)*str < 0x20 || *str == '"' || *str == '\\') return 0;
     return 1;
+}
+
+void np_webpatch_set_tuning(const char *rosetta, const char *fex, const char *mac) {
+    // A summary with a quote or a control character in it would land inside a JS string,
+    // so an unprintable name costs the row its line rather than the page its syntax.
+    if (mac && !is_label(mac)) mac = NULL;
+    np_js_t j = js_alloc(48 + 3 * (strlen(rosetta ? rosetta : "") + strlen(fex ? fex : ""))
+                            + strlen(mac ? mac : ""));
+    js_puts(&j, "{rosetta:");
+    js_settings(&j, rosetta);
+    js_puts(&j, ",fex:");
+    js_settings(&j, fex);
+    js_puts(&j, ",mac:\"");
+    js_puts(&j, mac ? mac : "");
+    js_puts(&j, "\"}");
+    if (!j.ok) NP_WARN("webpatch: the settings for this Mac do not fit the page, it hides them");
+    set_input(IN_TUNED, js_done(&j));
 }
 
 void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count) {
@@ -311,6 +338,7 @@ static const char *marker_text(char c) {
     if (c == NP_DEFAULTS[0]) return input_text(IN_DEFAULTS);
     if (c == NP_BUILDS[0]) return input_text(IN_BUILDS);
     if (c == NP_OUR_TOOLS[0]) return input_text(IN_OUR_TOOLS);
+    if (c == NP_TUNED[0]) return input_text(IN_TUNED);
     if (c == NP_READY[0] || c == NP_FEATS[0]) {
         if (!g_feat_ready_done) feat_build();
         return input_text(c == NP_READY[0] ? IN_READY : IN_FEATS);
@@ -1140,9 +1168,17 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_PREFIX_LOG NP_WEB_TEXT("Open Log", "Open Log", "Apri registro")
 #define NP_PREFIX_APP NP_WEB_TEXT("Couldn't find the NotProton app. Move NotProton to Applications, open it and click Install again.", "Couldn't find the NotProton app. Move NotProton to Applications, open it and click Install again.", "App NotProton non trovata. Sposta NotProton in Applicazioni, aprila e fai di nuovo clic su Installa.")
 
+// What a game's own sessions on this Mac came to. Never a claim about the game itself,
+// which is why every one of these says "this Mac".
+#define NP_VERDICT_VERIFIED_TEXT NP_WEB_TEXT("CrossOver Verified on this Mac", "\u672c\u673a CrossOver \u5df2\u9a8c\u8bc1", "Verificato con CrossOver su questo Mac")
+#define NP_VERDICT_PLAYABLE_TEXT NP_WEB_TEXT("Runs on this Mac", "\u53ef\u5728\u672c\u673a\u8fd0\u884c", "Funziona su questo Mac")
+#define NP_VERDICT_BROKEN_TEXT NP_WEB_TEXT("Has not run on this Mac", "\u672c\u673a\u5c1a\u672a\u6210\u529f\u8fd0\u884c", "Non \u00e8 ancora partito su questo Mac")
+#define NP_VERDICT_RUNS_TEXT NP_WEB_TEXT("runs", "\u8fd0\u884c", "avvii")
+#define NP_VERDICT_CRASHES_TEXT NP_WEB_TEXT("crashes", "\u5d29\u6e83", "arresti")
+
 #define NP_CX_PREFIX_ROW \
     "globalThis.MSCXPrefixRow=(e,id)=>{if(e.npApp===id)return;e.npStop&&e.npStop();e.npApp=id;let ter" \
-    "m='',busy=0,timer=0,t0=0,stopped=0,live=0;const T={need:" \
+    "m='',busy=0,timer=0,t0=0,stopped=0,live=0,vlast=null;const T={need:" \
     NP_PREFIX_NEED \
     ",backup:" \
     NP_PREFIX_BACKUP \
@@ -1166,9 +1202,30 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     NP_PREFIX_LOG \
     ",app:" \
     NP_PREFIX_APP \
+    ",vV:" \
+    NP_VERDICT_VERIFIED_TEXT \
+    ",vP:" \
+    NP_VERDICT_PLAYABLE_TEXT \
+    ",vB:" \
+    NP_VERDICT_BROKEN_TEXT \
+    ",vR:" \
+    NP_VERDICT_RUNS_TEXT \
+    ",vC:" \
+    NP_VERDICT_CRASHES_TEXT \
     "},el=(tag,cls,txt)=>{const n=e.ownerDocument.createElement(tag);if(cls)n.className=cls;if(txt!=n" \
     "ull)n.textContent=txt;return n},btn=(txt,main,off,on)=>{const b=el('button','MSCXBtn'+(main?' MS" \
-    "CXMain':''),txt);b.disabled=!!off;b.onclick=on;return b},call=r=>MSCXRoute(r,id).then(j=>JSON.pa" \
+    "CXMain':''),txt);b.disabled=!!off;b.onclick=on;return b},"    /* The badge: what this game's own sessions here came to, and the numbers behind it.
+       A game that has never run on this Mac has no verdict, so it gets no badge rather
+       than a claim nothing stands behind. The last state is kept, so a rebuild starting
+       does not blank it out. */ \
+    "vrow=s=>{const v=s&&s.verdict||'unknown';if('unknown'===v)return null;" \
+    "const n=el('div','MSCXVerdict MSCXVerdict-'+v),m=s.minutes|0;" \
+    "n.append(el('div','MSCXVerdictTitle','verified'===v?T.vV:'playable'===v?T.vP:T.vB)," \
+    "el('div','MSCXVerdictInfo',[T.vR+': '+(s.runs|0),T.vC+': '+(s.crashes|0)," \
+    "m>=60?((m/60)|0)+'h '+(m%60)+'m':m+'m'," \
+    "s.runBuild&&'CrossOver '+s.runBuild," \
+    "s.runBackend&&'auto'!==s.runBackend&&s.runBackend].filter(Boolean).join(' \\u00b7 ')));" \
+    "return n},call=r=>MSCXRoute(r,id).then(j=>JSON.pa" \
     "rse(j||'{}')),refresh=()=>{if(stopped)return;if(!e.isConnected||e.npApp!==id)return stop();return MSCXRoute('NotProton.PrefixState#1',id).t" \
     "hen(j=>draw(JSON.parse(j))).catch(()=>{if(stopped||!e.isConnected||e.npApp!==id)return;clearTimeout(timer);if(busy||live)timer=setTimeout(refresh,500);else e.style.display='none'})},start=r=>{term='';busy=1;t0=Date.now();draw(null);cal" \
     "l(r).then(j=>{j.error==='spawn'&&(term='failed')},()=>0).finally(()=>{busy=0;refresh()})},pair=off=>{const r=el('div','MSCXBtns');r.app" \
@@ -1181,8 +1238,15 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ",0,()=>call('NotProton.OpenPrefixLog#1').catch(()=>0)));k.push(r);s&&s.needsRebuild&&s.app&&!s.r" \
     "unning&&k.push(pair(0))}else if(term)k.push(el('div','',term==='done-backup'?T.doneBackup:T.done" \
     "));else if(s&&s.needsRebuild){if(!s.app)k.push(el('div','',T.app));else{k.push(el('div','',s.run" \
-    "ning?T.running:T.need),pair(s.running));s.running&&(timer=setTimeout(refresh,3e3))}}e.replaceChi" \
-    "ldren(...k);e.style.display=k.length?'':'none'};e.style.flexDirection='column';e.style.gap='8px'" \
+    "ning?T.running:T.need),pair(s.running));s.running&&(timer=setTimeout(refresh,3e3))}}" \
+    /* The badge outlives the rest of the row: it is what the game has done here, not what
+       the prefix is doing now, so it stays while a rebuild runs, and it alone is reason
+       enough to show the row at all. */ \
+    /* A state that carries no verdict at all is one this row cannot read, so it keeps
+       the last one it could rather than dropping the badge. A verdict of "unknown" is an
+       answer, and it does drop it. */ \
+    "s&&s.verdict&&(vlast=s);const vb=vrow(vlast);" \
+    "e.replaceChildren(...(vb?[vb]:[]).concat(k));e.style.display=vb||k.length?'':'none'};e.style.flexDirection='column';e.style.gap='8px'" \
     ";e.style.display='none';const on=v=>{if(!e.isConnected)return e.npStop();v.detail===id&&!busy&&(" \
     "term='',refresh())};const stop=e.npStop=()=>{stopped=1;clearTimeout(timer);observer?.disconnect();globalThis.removeEventListener?.('mscxstat" \
     "e',on)};const observer=globalThis.MutationObserver?new globalThis.MutationObserver(()=>{if(!e.isConnected)stop()}):null;observer?.observe(e.ownerDocument,{childList:true,subtree:true});globalThis.addEventListener?.('mscxstate',on);refresh()};"
@@ -1210,7 +1274,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXBar>div{position:absolute;top:0;bottom:0;left:-30%;width:30%;background:#1a9fff;" \
     "animation:MSCXSlide 1.2s linear infinite}" \
     "@keyframes MSCXSlide{from{left:-30%}to{left:100%}}" \
-    ".MSCXKeys{margin-top:5px;opacity:.75}\""
+    ".MSCXKeys{margin-top:5px;opacity:.75}" \
+    ".MSCXVerdict{display:flex;flex-direction:column;gap:2px;padding:9px 12px;border-radius:3px;" \
+    "background:rgba(59,63,72,.5);border-left:3px solid #67707b}" \
+    ".MSCXVerdict-verified{border-left-color:#5ba32b}" \
+    ".MSCXVerdict-playable{border-left-color:#e1b000}" \
+    ".MSCXVerdict-broken{border-left-color:#c23b22}" \
+    ".MSCXVerdictTitle{font-size:14px;line-height:18px;color:#dfe3e6}" \
+    ".MSCXVerdictInfo{font-size:12px;line-height:16px;color:#8f98a0}\""
 
 #define NP_CX_BARREL(X) X(XY) X(m) X(Yh) X($n) X(Vb) X(D0) X(y4) X(J1) X(d3) X(gz)
 #define NP_CX_BARREL_C(n) #n,
@@ -1223,6 +1294,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 #define NP_CX_DEFAULTS "(globalThis.MSCXDefaultsData||(globalThis.MSCXDefaultsData=" NP_DEFAULTS "))"
 #define NP_CX_BUILDS "(globalThis.MSCXBuilds||(globalThis.MSCXBuilds=" NP_BUILDS "))"
+#define NP_CX_TUNED "(globalThis.MSCXTuned||(globalThis.MSCXTuned=" NP_TUNED "))"
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_PANEL(RT, BARREL) \
@@ -1378,7 +1450,20 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
        with nothing to deliver. */ \
     "const npRows=ours?MSCXFeat:MSCXFeat.filter(f=>!f.rn&&(f.ty" \
     "?/^NOTPROTON_ENV_/.test(f.k):f.rq||(f.ev||[]).length))," \
+    /* What this Mac asks for, worked out by tuning.c from the chip, the GPU, the memory
+       and the panel. Only the current runner's set is offered, and only the keys in it are
+       written: a row the hardware does not decide keeps whatever it was set to. */ \
+    "npTune=" NP_CX_TUNED ",npTuneSet=npTune[fex?\"fex\":\"rosetta\"]," \
+    "npTuneKeys=npTuneSet?Object.keys(npTuneSet):[]," \
+    "npTuned=npTuneKeys.length&&npTuneKeys.every(k=>G(k)===npTuneSet[k])," \
     "npBody=[npCx&&head," \
+    "npCx&&npTuneKeys.length&&(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:npL(\"This Mac\",\"本机\",\"Questo Mac\"),children:XF(\"tune\"," \
+    "npL(\"Recommended Graphics Settings\",\"推荐的图形设置\",\"Impostazioni grafiche consigliate\")," \
+    "npTune.mac||undefined," \
+    "[bt(npTuned?npL(\"In Use\",\"已应用\",\"In uso\")" \
+    ":npL(\"Use Recommended\",\"使用推荐设置\",\"Usa le impostazioni consigliate\")," \
+    "()=>s(npTuneKeys.map(k=>[k,npTuneSet[k]])),\"tune\")])},\"mac\")," \
     "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",w(\"CX_GRAPHICS_BACKEND\",v.data||\"auto\",\"auto\")]]" \
@@ -1501,6 +1586,22 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "bMatchWidth:!1,rgOptions:BL.map(x=>({data:x.id,label:x.label}))," \
     "selectedOption:b?b.id:\"\",onChange:v=>{const p=BL.find(x=>x.id===v.data);if(!p)return;" \
     "si(p.id);sr(p.runner===\"fex\"?1:0);clr()}},\"version\"):null," \
+    /* The badges on the library, the game page and the store, as one switch. It takes
+       effect as soon as the tiles next draw, and is kept for the next time Steam starts. */ \
+    "(0," RT ".jsx)(" BARREL ".y4,{label:" NP_WEB_TEXT("Show Mac compatibility badges", "\u663e\u793a Mac \u517c\u5bb9\u6027\u5fbd\u7ae0", "Mostra i badge di compatibilit\u00e0 Mac") "," \
+    "description:" NP_WEB_TEXT("An Apple badge on each game in your library and on its page, coloured by how it is expected to run on this Mac.", "An Apple badge on each game in your library and on its page, coloured by how it is expected to run on this Mac.", "Un badge Apple su ogni gioco della libreria e sulla sua pagina, colorato in base a come dovrebbe funzionare su questo Mac.") "," \
+    "checked:!globalThis.__NOTPROTON_BADGES_OFF__," \
+    "onChange:v=>{globalThis.__NOTPROTON_BADGES_OFF__=!v;bump(c=>c+1);" \
+    "send(\"NotProton.SetBadges#1\",v?1:0,\"\").catch(e=>console.error(\"NotProton: the badge setting was not saved\",e))}},\"badges\")," \
+    /* The store is Valve's page, reached through the web helper's debugger, which is a
+       port on this Mac that other programs here could use too. That is a different thing
+       to agree to than a badge, so it has its own switch, and says what it costs. */ \
+    "(0," RT ".jsx)(" BARREL ".y4,{label:" NP_WEB_TEXT("Show Mac compatibility in the Store and Wishlist", "\u5728\u5546\u5e97\u548c\u613f\u671b\u5355\u4e2d\u663e\u793a Mac \u517c\u5bb9\u6027", "Mostra la compatibilit\u00e0 Mac nel Negozio e nella Lista dei desideri") "," \
+    "description:" NP_WEB_TEXT("Uses Steam's built-in web debugger, which opens a port on this Mac that other programs running here can reach while Steam is open. Changes when Steam restarts.", "Uses Steam's built-in web debugger, which opens a port on this Mac that other programs running here can reach while Steam is open. Changes when Steam restarts.", "Usa il debugger web integrato di Steam, che apre una porta su questo Mac raggiungibile dagli altri programmi in esecuzione mentre Steam \u00e8 aperto. Cambia al riavvio di Steam.") "," \
+    "disabled:!!globalThis.__NOTPROTON_BADGES_OFF__," \
+    "checked:!globalThis.__NOTPROTON_STORE_OFF__&&!globalThis.__NOTPROTON_BADGES_OFF__," \
+    "onChange:v=>{globalThis.__NOTPROTON_STORE_OFF__=!v;bump(c=>c+1);" \
+    "send(\"NotProton.SetBadges#1\",v?3:2,\"\").catch(e=>console.error(\"NotProton: the store setting was not saved\",e))}},\"store\")," \
     "b?btn(\"apply\",(" NP_WEB_IS_IT "?\"Applica come predefinite a tutti gli strumenti di compatibilit\\u00e0 \"+kind:\"Apply as defaults for all \"+kind+\" Compatibility Tools\")," NP_WEB_TEXT("Apply", "Apply", "Applica") ",apply,ok||void 0):null" \
     "]},\"defaults\")})};" \
     "return()=>{const up=typeof globalThis.MSCXUseState==\"function\"&&typeof globalThis.MSCXUseEffect==\"function\"" \
@@ -1776,6 +1877,132 @@ static const np_gate_t g_fixes[] = {
     "\" .SVGIcon_WindowsLogo{width:13px;height:13px}.\"+" NP_C6 "().CheckboxWithImage+" \
     "\" .SVGIcon_WindowsLogo rect{fill:inherit}\"}),(0," NP_C2 ".jsx)(" NP_C11 ".Xz0,{})]})"
 
+// The badge on a game's tile: an Apple mark coloured by what this Mac knows about the
+// game. Apple's mark is Apple's trademark; it is used here as the Mac indicator the
+// project asked for, the way Valve's own badge marks the Deck.
+#define NP_APPLE_PATH \
+    "M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 " \
+    "71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 " \
+    "40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 " \
+    "43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 " \
+    "53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 " \
+    "83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"
+
+// The badge, drawn the way the Deck's are: a filled disc in the tier's colour with the
+// mark inside it, since a tinted glyph on its own says very little at this size. Unknown
+// is the one that is not filled, the way the Deck's dashed circle is not.
+//
+// Everything is set on the elements rather than through a stylesheet. A sheet added to
+// this page is dropped without a word, and an unstyled badge is one nobody can see.
+#define NP_BADGE_TIERS \
+    "{good:{bg:\"#59bf40\",fg:\"#ffffff\",bd:\"none\"}," \
+    "issues:{bg:\"#ffc82c\",fg:\"#1b2838\",bd:\"none\"}," \
+    "blocked:{bg:\"#d94126\",fg:\"#ffffff\",bd:\"none\"}," \
+    /* Passed Valve's Proton testing but not yet run here: the green of a good sign, as a
+       ring rather than a fill, because the fill is for what this Mac has seen. */ \
+    "likely:{bg:\"rgba(23,29,37,.82)\",fg:\"#59bf40\",bd:\"2px solid #59bf40\"}," \
+    "unknown:{bg:\"rgba(23,29,37,.82)\",fg:\"#c6d4df\",bd:\"1.5px dashed #8b929a\"}}"
+
+#define NP_BADGE_JS \
+    "window.__NOTPROTON_TIERS__=" NP_BADGE_TIERS ";" \
+    /* The mark carries its own size, so it never falls back to whatever a renderer
+       picks for an SVG that has none. It sits a hair high, because the leaf makes the
+       shape top-heavy and a true centre looks low. */ \
+    "window.__NOTPROTON_MARK__=(npR,npPx)=>(0,npR.jsx)(\"svg\"," \
+    "{viewBox:\"0 0 814 1000\",width:npPx,height:Math.round(npPx*1000/814)," \
+    "focusable:\"false\",style:{display:\"block\",flex:\"0 0 auto\",marginTop:\"-1px\"}," \
+    "children:(0,npR.jsx)(\"path\",{d:\"" NP_APPLE_PATH "\",fill:\"currentColor\"})});" \
+    "window.__NOTPROTON_DISC__=(npR,npTier,npPx)=>{" \
+    "const npT=window.__NOTPROTON_TIERS__[npTier]||window.__NOTPROTON_TIERS__.unknown;" \
+    "return(0,npR.jsx)(\"div\",{className:\"NPDisc NPDisc-\"+npTier," \
+    "style:{width:npPx+\"px\",height:npPx+\"px\",flex:\"0 0 auto\",boxSizing:\"border-box\"," \
+    "display:\"flex\",alignItems:\"center\",justifyContent:\"center\",borderRadius:\"50%\"," \
+    "background:npT.bg,color:npT.fg,border:npT.bd}," \
+    "children:window.__NOTPROTON_MARK__(npR,Math.round(npPx*.46))})};" \
+    /* The tile draws its own icons in a row that only appears under the pointer, so the
+       badge sits in the corner on its own, above the art and out of the way of clicks. */ \
+    /* A tile that has something of its own in the bottom corner gets the badge at the
+       top instead. The element is copied rather than changed, since the one handed in
+       may be drawn elsewhere as it is. */ \
+    "window.__NOTPROTON_PLACE__=(npEl,npTop)=>{try{" \
+    "return!npEl||!npTop?npEl:{...npEl,props:{...npEl.props," \
+    "style:{...npEl.props.style,bottom:\"auto\",top:\"8px\"}}}" \
+    "}catch(npX){return npEl}};" \
+    "window.__NOTPROTON_BADGE__=(npApp,npR,npS)=>{try{" \
+    "const npM=window.__NOTPROTON_COMPAT__,npId=npApp&&npApp.appid,npE=npM&&npId&&npM[npId];" \
+    "if(!npE||!npR||window.__NOTPROTON_BADGES_OFF__)return null;" \
+    "return(0,npR.jsx)(\"div\",{className:\"NPBadge NPBadge-\"+npE[0],title:npE[1]," \
+    "style:{position:\"absolute\",left:\"8px\",bottom:\"8px\",zIndex:10,display:\"flex\"," \
+    "borderRadius:\"50%\",boxShadow:\"0 1px 4px rgba(0,0,0,.65)\",pointerEvents:\"none\"}," \
+    "children:window.__NOTPROTON_DISC__(npR,npE[0],26)})" \
+    "}catch(npX){return null}};\n"
+
+// The same verdict as a stat on the game's page, built to match the ones Steam puts
+// beside it: its own icon, its own label, its own detail line.
+#define NP_STAT_LABEL NP_WEB_TEXT("MAC", "\u672c\u673a", "MAC")
+#define NP_STAT_GOOD NP_WEB_TEXT("Verified", "\u5df2\u9a8c\u8bc1", "Verificato")
+#define NP_STAT_ISSUES NP_WEB_TEXT("Playable", "\u53ef\u8fd0\u884c", "Giocabile")
+#define NP_STAT_BLOCKED NP_WEB_TEXT("Unsupported", "\u4e0d\u652f\u6301", "Non supportato")
+#define NP_STAT_LIKELY NP_WEB_TEXT("Likely", "\u53ef\u80fd\u53ef\u7528", "Probabile")
+#define NP_STAT_UNKNOWN NP_WEB_TEXT("Unknown", "\u672a\u77e5", "Sconosciuto")
+
+#define NP_STAT_JS \
+    "window.__NOTPROTON_STAT__=(npP,npR,npS)=>{try{" \
+    "const npM=window.__NOTPROTON_COMPAT__," \
+    "npId=npP&&(npP.details&&npP.details.unAppID||npP.overview&&npP.overview.appid)," \
+    "npE=npM&&npId&&npM[npId];" \
+    "if(!npE||!npR||window.__NOTPROTON_BADGES_OFF__)return null;" \
+    "const npW={good:" NP_STAT_GOOD ",likely:" NP_STAT_LIKELY ",issues:" NP_STAT_ISSUES ",blocked:" NP_STAT_BLOCKED \
+    ",unknown:" NP_STAT_UNKNOWN "}[npE[0]]||" NP_STAT_UNKNOWN ";" \
+    "let npC={};try{npC=npS&&npS()||{}}catch(x){}" \
+    "return(0,npR.jsxs)(\"div\",{className:(npC.GameStat||\"\")+\" NPStat NPBadge-\"+npE[0]," \
+    "title:npE[1],children:[" \
+    "(0,npR.jsx)(\"div\",{className:(npC.GameStatIcon||\"\")+\" NPStatIcon\"," \
+    "style:{display:\"flex\",alignItems:\"center\",justifyContent:\"center\"}," \
+    "children:window.__NOTPROTON_DISC__(npR,npE[0],30)})," \
+    "(0,npR.jsxs)(\"div\",{className:npC.GameStatRight||\"\",children:[" \
+    "(0,npR.jsx)(\"div\",{className:npC.PlayBarLabel||\"\",children:" NP_STAT_LABEL "})," \
+    "(0,npR.jsx)(\"div\",{className:npC.PlayBarDetailLabel||\"\",children:npW})]})]})" \
+    "}catch(npX){return null}};\n"
+
+// The game's own page, where the stat sits in the row with Play Time and Achievements.
+// Separate from the tile's gates: one of the two drifting leaves the other working.
+static const np_gate_t g_detail_badge[] = {
+    { "(0," NP_C1 ".jsxs)(\"div\",{className:" NP_C2 "().GameStatsSection,children:[",
+      "(0," NP_C1 ".jsxs)(\"div\",{className:" NP_C2 "().GameStatsSection,children:["
+      "window.__NOTPROTON_STAT__(this.props," NP_C1 "," NP_C2 "),", 1, 0 },
+};
+#define NP_DETAIL_BADGE_COUNT (sizeof(g_detail_badge) / sizeof(g_detail_badge[0]))
+
+static const np_gate_t g_library_badges[] = {
+    // Where the tile chooses its compatibility icon. Ours is worked out first, into a
+    // name the row below can also see, and takes the slot when there is one to show.
+    { "let " NP_C1 "=null;!" NP_C2 "&&" NP_C3 "?" NP_C1 "=(0," NP_C4 ".jsx)(" NP_C5
+      ".g,{display:" NP_C6 ",overview:" NP_C7 ",className:" NP_C8 "().SteamDeckCompatIcon}):!"
+      NP_C3 "&&" NP_C9 "&&!" NP_C7 ".BIsMusicAlbum()&&(" NP_C1 "=(0," NP_C4 ".jsx)(" NP_C10
+      ",{overview:" NP_C7 "}));",
+      "let npNPB=window.__NOTPROTON_BADGE__(" NP_C7 "," NP_C4 "," NP_C8 ");"
+      "let " NP_C1 "=null;!" NP_C2 "&&" NP_C3 "?" NP_C1 "=(0," NP_C4 ".jsx)(" NP_C5
+      ".g,{display:" NP_C6 ",overview:" NP_C7 ",className:" NP_C8 "().SteamDeckCompatIcon}):!"
+      NP_C3 "&&" NP_C9 "&&!" NP_C7 ".BIsMusicAlbum()&&(" NP_C1 "=(0," NP_C4 ".jsx)(" NP_C10
+      ",{overview:" NP_C7 "}));", 1, 0 },
+    /* The row Steam keeps its own icons in only appears while the tile is hovered, so the
+       badge is put beside that row rather than inside it, as a child of the tile itself.
+       It is placed by the stylesheet, in the corner the Deck's badge uses. This anchor and
+       the one above stand or fall together: the whole set is checked before any of it is
+       written, so npNPB is never read unless it was declared. */
+    { "!" NP_C3 "&&!" NP_C4 "&&!" NP_C5 "&&(0," NP_C1 ".jsx)(\"div\",{className:(0," NP_C6
+      ".A)(" NP_C2 "().LibraryItemBoxShine," NP_C7 ")}),(0," NP_C1 ".jsx)(\"div\",{className:"
+      NP_C2 "().LibraryItemOverlayOuterArea,",
+      /* The first of those three flags is the wide featured tile, which keeps its Play
+         button in the corner the badge would otherwise take. */
+      "!" NP_C3 "&&!" NP_C4 "&&!" NP_C5 "&&(0," NP_C1 ".jsx)(\"div\",{className:(0," NP_C6
+      ".A)(" NP_C2 "().LibraryItemBoxShine," NP_C7 ")}),window.__NOTPROTON_PLACE__(npNPB,"
+      NP_C3 "),(0," NP_C1 ".jsx)(\"div\",{className:" NP_C2 "().LibraryItemOverlayOuterArea,",
+      1, 0 },
+};
+#define NP_LIBRARY_BADGE_COUNT (sizeof(g_library_badges) / sizeof(g_library_badges[0]))
+
 static const np_gate_t g_library_filters[] = {
     // Library list and search
     { "if(!" NP_C1 "(" NP_C2 "[" NP_C3 ".W6]," NP_C4 "(" NP_C5 "))||!" NP_C1 "(" NP_C2 "[" NP_C3 ".sc],",
@@ -1963,6 +2190,39 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         fix_live -= fix_on[NP_NATIVE_MAC_FILTER_FIX] + fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX];
         fix_on[NP_NATIVE_MAC_FILTER_FIX] = fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX] = 0;
     }
+    // The tile badges stand on their own: an anchor that drifts costs the badges and
+    // leaves the Windows filter alone, and a library with nothing known about it shows
+    // no badge rather than a row of empty ones.
+    char *badges_js = NULL;
+    int badges_on[NP_LIBRARY_BADGE_COUNT] = {0};
+    int library_badges = 1;
+    for (size_t g = 0; g < NP_LIBRARY_BADGE_COUNT; g++) {
+        size_t n = count_matches(s, src_len, g_library_badges[g].find);
+        badges_on[g] = n == (size_t)g_library_badges[g].expect;
+        if (badges_on[g]) continue;
+        if (n) NP_WARN("webpatch: tile badge anchor %zu expected %d occurrence(s), found %zu; "
+                       "no Mac badges", g, g_library_badges[g].expect, n);
+        library_badges = 0;
+    }
+    // The game's own page carries the same verdict as a stat of its own.
+    int detail_on[NP_DETAIL_BADGE_COUNT] = {0};
+    int detail_badge = 1;
+    for (size_t g = 0; g < NP_DETAIL_BADGE_COUNT; g++) {
+        size_t n = count_matches(s, src_len, g_detail_badge[g].find);
+        detail_on[g] = n == (size_t)g_detail_badge[g].expect;
+        if (detail_on[g]) continue;
+        if (n) NP_WARN("webpatch: game page stat anchor %zu expected %d occurrence(s), found %zu; "
+                       "no Mac stat", g, g_detail_badge[g].expect, n);
+        detail_badge = 0;
+    }
+    if (library_badges || detail_badge) {
+        char root[PATH_MAX];
+        const char *home = np_home_dir();
+        snprintf(root, sizeof root, "%s/Library/Application Support/Steam", home ? home : "");
+        badges_js = np_catalog_javascript(root);
+        if (!badges_js) library_badges = detail_badge = 0;
+    }
+
     int library_filter = fix_on[NP_NATIVE_MAC_FILTER_FIX] || fix_on[NP_UPDATED_NATIVE_MAC_FILTER_FIX];
     int library_on[NP_LIBRARY_FILTER_COUNT] = {0};
     for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++) {
@@ -1980,9 +2240,10 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         library_filter = 0;
     }
 
-    if (!shape && !fix_live) {
+    if (!shape && !fix_live && !library_badges && !detail_badge) {
         free(native_mac_js);
-        return NULL;   // Not the part carrying the compat UI.
+        free(badges_js);
+        return NULL;   // Not the part carrying the compat UI or the library tiles.
     }
 
     int    gate_on[NP_GATE_MAX] = {0};
@@ -2022,9 +2283,19 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
                           !out_put(&out, NP_RUNS_EXE_JS, sizeof(NP_RUNS_EXE_JS) - 1))) {
         free(out.buf);
         free(native_mac_js);
+        free(badges_js);
         return NULL;
     }
     free(native_mac_js);
+    if ((library_badges || detail_badge)
+        && (!out_put(&out, badges_js, strlen(badges_js))
+            || !out_put(&out, NP_BADGE_JS, sizeof(NP_BADGE_JS) - 1)
+            || !out_put(&out, NP_STAT_JS, sizeof(NP_STAT_JS) - 1))) {
+        free(out.buf);
+        free(badges_js);
+        return NULL;
+    }
+    free(badges_js);
     unsigned char can_start[256] = {0};
     for (size_t g = 0; shape && g < shape->count; g++)
         if (gate_on[g]) mark_start(can_start, shape->gates[g].find);
@@ -2032,6 +2303,10 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
         if (fix_on[f]) mark_start(can_start, g_fixes[f].find);
     for (size_t g = 0; library_filter && g < NP_LIBRARY_FILTER_COUNT; g++)
         if (library_on[g]) mark_start(can_start, g_library_filters[g].find);
+    for (size_t g = 0; library_badges && g < NP_LIBRARY_BADGE_COUNT; g++)
+        if (badges_on[g]) mark_start(can_start, g_library_badges[g].find);
+    for (size_t g = 0; detail_badge && g < NP_DETAIL_BADGE_COUNT; g++)
+        if (detail_on[g]) mark_start(can_start, g_detail_badge[g].find);
     for (size_t i = 0; i < src_len; ) {
         size_t plain = i;
         while (plain < src_len && !can_start[(unsigned char)s[plain]]) plain++;
@@ -2057,6 +2332,16 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
             used = match_at(s, src_len, i, g_library_filters[g].find, caps);
             if (used) { hit = &g_library_filters[g]; break; }
         }
+        for (size_t g = 0; !hit && library_badges && g < NP_LIBRARY_BADGE_COUNT; g++) {
+            if (!badges_on[g]) continue;
+            used = match_at(s, src_len, i, g_library_badges[g].find, caps);
+            if (used) { hit = &g_library_badges[g]; break; }
+        }
+        for (size_t g = 0; !hit && detail_badge && g < NP_DETAIL_BADGE_COUNT; g++) {
+            if (!detail_on[g]) continue;
+            used = match_at(s, src_len, i, g_detail_badge[g].find, caps);
+            if (used) { hit = &g_detail_badge[g]; break; }
+        }
         int ok = hit ? out_expand(&out, hit->replace, caps)
                      : out_put(&out, s + i, 1);
         if (!ok) { free(out.buf); return NULL; }
@@ -2067,6 +2352,8 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
     out.buf[out.len] = '\0';
     *out_len = out.len;
     if (library_filter) NP_LOG("webpatch: Windows library filter button added");
+    if (library_badges) NP_LOG("webpatch: Mac compatibility badges added to the library tiles");
+    if (detail_badge) NP_LOG("webpatch: Mac compatibility stat added to the game page");
     NP_LOG("webpatch: [%s] %zu gates, %zu fixes applied",
            shape ? shape->name : "no compat UI", gate_live, fix_live);
     return out.buf;

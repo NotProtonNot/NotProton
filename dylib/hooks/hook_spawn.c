@@ -1,5 +1,6 @@
 // Strips our own insert and SDL block list from child processes
 #include "hooks.h"
+#include "../feats/store.h"
 #include "../util/log.h"
 
 #include <spawn.h>
@@ -198,13 +199,18 @@ static char **np_without_insert(char *const envp[]) {
 static int np_hook_execve(const char *path, char *const argv[], char *const envp[]) {
     int keep = np_target_keeps_insert(path);
     char **clean = keep ? np_with_insert(envp) : np_without_insert(envp);
-    if (!clean)
+    // Steam starts its web helper this way, after a fork, so this is where the helper is
+    // given its debugger. See np_spawn_filtered for the other way in.
+    char **args = np_store_helper_args(path, argv);
+    if (args) NP_LOG("[spawn] web helper started with its debugger on 127.0.0.1:%d", NP_STORE_PORT);
+    if (!clean && !args)
         return orig_execve(path, argv, envp);
 
     NP_DBG("[spawn] execve '%s' %s the insert", path, keep ? "with" : "without");
-    int rc = orig_execve(path, argv, (char *const *)clean);
+    int rc = orig_execve(path, args ? (char *const *)args : argv, clean ? (char *const *)clean : envp);
     // Only reached when the exec failed, since a successful one replaced this image.
     free(clean);
+    free(args);
     return rc;
 }
 
@@ -215,12 +221,18 @@ static int np_spawn_filtered(fn_posix_spawn orig, const char *api,
                                    char *const argv[], char *const envp[]) {
     int keep = np_target_keeps_insert(path);
     char **clean = keep ? np_with_insert(envp) : np_without_insert(envp);
-    if (!clean)
+    // The web helper is started with its debugger listening on this machine, which is how
+    // the store's pages are reached. Its own children and every other program are not.
+    char **args = np_store_helper_args(path, argv);
+    if (args) NP_LOG("[spawn] web helper started with its debugger on 127.0.0.1:%d", NP_STORE_PORT);
+    if (!clean && !args)
         return orig(pid, path, fa, attr, argv, envp);
 
     NP_DBG("[spawn] %s '%s' %s the insert", api, path, keep ? "with" : "without");
-    int rc = orig(pid, path, fa, attr, argv, (char *const *)clean);
+    int rc = orig(pid, path, fa, attr, args ? (char *const *)args : argv,
+                  clean ? (char *const *)clean : envp);
     free(clean);
+    free(args);
     return rc;
 }
 

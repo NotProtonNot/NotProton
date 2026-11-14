@@ -31,6 +31,14 @@ static const np_conf_spec_t kVariant[] = {
     { "build", 8, 0 }, { "remove", 32, 0 }, { NULL, 0, 0 }
 };
 
+// A launch rule: what has to be true of the game, and what to pass it when it is. Every
+// condition given has to match, so a rule with none would match everything and is refused.
+static const np_conf_spec_t kRule[] = {
+    { "label", 1, 0 },    { "appid", 32, 0 },   { "engine", 1, 0 },
+    { "launcher", 1, 0 }, { "exe", 4, 0 },      { "option", 16, 0 },
+    { "note", 1, 0 },     { NULL, 0, 0 }
+};
+
 static int conf_space(char c) { return c == ' ' || (c >= '\t' && c <= '\r'); }
 
 static void conf_trim(char *v) {
@@ -39,7 +47,8 @@ static void conf_trim(char *v) {
 }
 
 static const np_conf_spec_t *conf_spec(np_conf_kind kind, const char *name) {
-    const np_conf_spec_t *s = kind == NP_CONF_PLUGIN ? kPlugin : kVariant;
+    const np_conf_spec_t *s = kind == NP_CONF_PLUGIN ? kPlugin
+                            : kind == NP_CONF_RULE   ? kRule : kVariant;
     for (; s->name; s++)
         if (strcmp(s->name, name) == 0) return s;
     return NULL;
@@ -180,9 +189,37 @@ static int conf_build_ok(const char *v) {
 
 // What a record needs beyond the grammar: the fields the tables mark required, and the
 // rules a value has to keep. Returns a code, with *detail set when it names a field.
+// An appid is Steam's, so it is digits and fits in 32 bits.
+static int conf_appid_ok(const char *v) {
+    if (!v || !*v || strlen(v) > 10) return 0;
+    for (const char *p = v; *p; p++)
+        if (*p < '0' || *p > '9') return 0;
+    return 1;
+}
+
+// What a rule may say about the game it is for. The names are the ones game.c reads.
+static int conf_engine_ok(const char *v) {
+    return strcmp(v, "unreal") == 0 || strcmp(v, "unity") == 0;
+}
+
+static int conf_launcher_ok(const char *v) {
+    return strcmp(v, "ea") == 0 || strcmp(v, "ubisoft") == 0
+        || strcmp(v, "epic") == 0 || strcmp(v, "rockstar") == 0;
+}
+
+// An option is passed to the game as one word, so it carries no quoting of its own and
+// nothing a shell would take for its own.
+static int conf_option_ok(const char *v) {
+    if (!v || !*v || strlen(v) > 64) return 0;
+    for (const char *p = v; *p; p++)
+        if ((unsigned char)*p <= ' ' || strchr("\"'`$\\;&|<>()*?[]{}!~#", *p)) return 0;
+    return 1;
+}
+
 static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
                                const char **detail) {
-    const np_conf_spec_t *s = kind == NP_CONF_PLUGIN ? kPlugin : kVariant;
+    const np_conf_spec_t *s = kind == NP_CONF_PLUGIN ? kPlugin
+                            : kind == NP_CONF_RULE   ? kRule : kVariant;
     const char *type, *mn, *mx, *step, *dflt, *n, *v;
     int it = 0, values;
 
@@ -191,6 +228,32 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
             *detail = s->name;
             return NP_CONF_REQUIRED;
         }
+
+    if (kind == NP_CONF_RULE) {
+        // A rule that matches on nothing would be a rule for every game ever installed.
+        if (!np_conf_get(rec, "appid") && !np_conf_get(rec, "engine")
+            && !np_conf_get(rec, "launcher") && !np_conf_get(rec, "exe")) {
+            *detail = "appid";
+            return NP_CONF_REQUIRED;
+        }
+        // And one that matches but says nothing has nothing to do.
+        if (!np_conf_get(rec, "option") && !np_conf_get(rec, "note")) {
+            *detail = "option";
+            return NP_CONF_REQUIRED;
+        }
+        while (np_conf_next(rec, &it, &n, &v)) {
+            const char *bad = NULL;
+            if (strcmp(n, "appid") == 0 && !conf_appid_ok(v)) bad = "appid";
+            else if (strcmp(n, "engine") == 0 && !conf_engine_ok(v)) bad = "engine";
+            else if (strcmp(n, "launcher") == 0 && !conf_launcher_ok(v)) bad = "launcher";
+            else if (strcmp(n, "option") == 0 && !conf_option_ok(v)) bad = "option";
+            if (bad) {
+                *detail = bad;
+                return NP_CONF_BAD_VALUE;
+            }
+        }
+        return NULL;
+    }
 
     if (kind == NP_CONF_VARIANT) {
         const char *dst = np_conf_get(rec, "dst");

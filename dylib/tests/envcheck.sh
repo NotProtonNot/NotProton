@@ -209,6 +209,64 @@ is "the run log names what came from the defaults" \
   "MTL_HUD_ENABLED=1 WINEMSYNC=1 ROSETTA_ADVERTISE_AVX=0 CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5" \
   "$np_defaulted"
 is "the run log names the file" "defaults-rosetta" "${np_defaults_file##*/}"
+
+# What the dylib worked out for this one game, read after the settings someone chose: it
+# fills in what nothing else said and never argues with what did.
+echo "== Settings worked out for the game =="
+STEAM_COMPAT_DATA_PATH="$work/compatdata/480"
+mkdir -p "$STEAM_COMPAT_DATA_PATH"
+export STEAM_COMPAT_DATA_PATH
+printf 'CX_GRAPHICS_BACKEND=d3dmetal\nNOTPROTON_RETINA=1\nMTL_HUD_ENABLED=0\n' \
+  > "$STEAM_COMPAT_DATA_PATH/notproton-advice"
+clear
+eval "$defaults"
+is "the advice fills in what the defaults left out" "1" "${NOTPROTON_RETINA-unset}"
+is "and the defaults keep what they set" "dxmt 1" "$CX_GRAPHICS_BACKEND $MTL_HUD_ENABLED"
+clear
+CX_GRAPHICS_BACKEND=wined3d
+export CX_GRAPHICS_BACKEND
+eval "$defaults"
+is "a setting on the game itself beats both" "wined3d" "$CX_GRAPHICS_BACKEND"
+unset -v CX_GRAPHICS_BACKEND
+# Someone who would rather set everything themselves turns the whole thing off.
+clear
+: > "$np_support/no-auto-settings"
+eval "$defaults"
+is "the opt-out file stops the advice" "unset" "${NOTPROTON_RETINA-unset}"
+is "and leaves the defaults alone" "dxmt" "$CX_GRAPHICS_BACKEND"
+rm -f "$np_support/no-auto-settings"
+clear
+rm -f "$STEAM_COMPAT_DATA_PATH/notproton-advice"
+eval "$defaults"
+is "a game with no advice is just the defaults" "unset dxmt" \
+  "${NOTPROTON_RETINA-unset} $CX_GRAPHICS_BACKEND"
+
+# The words a launch rule says the game needs, which are added to the ones it already has.
+rule_args=$(sed -n '/^np_rule_args() {$/,/^}$/p' "$SRC")
+eval "$rule_args"
+printf -- '-nostartupmovies -dx11\n' > "$STEAM_COMPAT_DATA_PATH/notproton-advice-args"
+np_advice_file="$STEAM_COMPAT_DATA_PATH/notproton-advice"
+is "a rule's words are added" "-nostartupmovies -dx11" \
+  "$(np_rule_args /game/thing.exe | tr '\n' ' ' | sed 's/ $//')"
+is "a word the game already has is not added twice" "-nostartupmovies" \
+  "$(np_rule_args /game/thing.exe -dx11 | tr '\n' ' ' | sed 's/ $//')"
+# Every word is judged on its own, and only a plain flag gets through. Nothing here
+# reaches a shell -- the words become the game's own arguments -- so what this keeps out
+# is a file someone edited by hand into something the game should not be handed.
+printf -- 'thing.txt -ok ;rm / -a=1 -x;rm "-q\n' > "$STEAM_COMPAT_DATA_PATH/notproton-advice-args"
+is "only plain flags get through" "-ok -a=1" \
+  "$(np_rule_args /game/thing.exe | tr '\n' ' ' | sed 's/ $//')"
+np_advice_file=""
+is "the opt-out stops the words too" "" "$(np_rule_args /game/thing.exe)"
+np_advice_file="$STEAM_COMPAT_DATA_PATH/notproton-advice"
+verb=run
+is "and nothing is added to a verb that is not a launch" "" "$(np_rule_args /game/thing.exe)"
+verb=waitforexitandrun
+rm -f "$STEAM_COMPAT_DATA_PATH/notproton-advice-args"
+is "a game with no words gets none" "" "$(np_rule_args /game/thing.exe)"
+unset -v STEAM_COMPAT_DATA_PATH
+clear
+eval "$defaults"
 eval "$drop"
 is "a defaulted AVX2 is logged as one" "defaults-rosetta" "$avx_from"
 is "a defaulted AVX2 keeps its 0" "0" "$ROSETTA_ADVERTISE_AVX"

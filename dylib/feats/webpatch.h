@@ -24,6 +24,11 @@ void np_webpatch_set_tool_builds(const char *const *names, const char *const *bu
 // NULL for a runner whose file couldn't be read, which hides the page.
 void np_webpatch_set_defaults(const char *rosetta, const char *fex);
 
+// The settings this Mac is best run with, per runner, as KEY=VALUE lines, and one line
+// naming the Mac they were worked out from. NULL lines, or a summary with a quote or a
+// control character in it, hide the row that applies them.
+void np_webpatch_set_tuning(const char *rosetta, const char *fex, const char *mac);
+
 #define NP_WEBPATCH_BUILDS_MAX 32
 
 typedef struct {

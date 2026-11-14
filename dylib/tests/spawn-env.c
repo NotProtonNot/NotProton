@@ -18,6 +18,10 @@ void *DobbySymbolResolver(const char *image_name, const char *symbol_name) {
     return NULL;
 }
 
+// What this checks is the environment a child is given. Its arguments are the store's
+// business, and nothing here is the web helper, so they are left as they come.
+char **np_store_helper_args(const char *path, char *const argv[]) { return NULL; }
+
 int np_hooks_env_lists_label(const char *var, const char *label) {
     (void)var; (void)label;
     return 0;
