@@ -1162,7 +1162,16 @@ np_defaults_file="$np_support/defaults-$np_defaults_runner"
 if [ -n "${np_build-}" ] && [ -f "$np_support/defaults-override-$np_build-$np_defaults_runner" ]; then
   np_defaults_file="$np_support/defaults-override-$np_build-$np_defaults_runner"
 fi
-if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_defaults_file" ]; then
+# What the dylib worked out for this game on this Mac, from the chip and the GPU and from
+# what the game's own files ask for. It is read after the settings someone chose, so it
+# only ever fills in what nothing else has said, and a file in the support folder turns it
+# off for people who would rather set everything themselves.
+np_advice_file="$STEAM_COMPAT_DATA_PATH/notproton-advice"
+if [ -f "$np_support/no-auto-settings" ] || [ -z "${STEAM_COMPAT_DATA_PATH-}" ]; then
+  np_advice_file=""
+fi
+for np_src in "$np_defaults_file" "$np_advice_file"; do
+ if [ "$verb" = waitforexitandrun ] && [ -n "$np_src" ] && [ -f "$np_src" ] && [ -r "$np_src" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     key=${line%%=*}
     value=${line#*=}
@@ -1222,9 +1231,35 @@ if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_de
     eval "[ -z \"\${$key+x}\" ]" || continue
     export "${line?}"
     np_defaulted="$np_defaulted${np_defaulted:+ }$line"
-  done < "$np_defaults_file"
-fi
+  done < "$np_src"
+ fi
+done
 [ "${CX_GRAPHICS_BACKEND-}" != auto ] || unset -v CX_GRAPHICS_BACKEND
+
+# Words a launch rule says this game needs, from ~/Library/Application Support/notproton/
+# rules/*.conf by way of the catalogue. Printed rather than applied, so what would be
+# added can be read on its own, and so the caller keeps its own arguments.
+np_rule_args() {
+  [ "$verb" = waitforexitandrun ] || return 0
+  [ -n "${np_advice_file-}" ] || return 0
+  np_args_file="$STEAM_COMPAT_DATA_PATH/notproton-advice-args"
+  [ -f "$np_args_file" ] && [ -r "$np_args_file" ] || return 0
+  # Only flags, and only ones the game was not already given: a rule adds to what someone
+  # set, it never says it twice and it never passes a word that could be a file name.
+  np_have=" $* "
+  for np_arg in $(tr -d '\n' < "$np_args_file"); do
+    case "$np_arg" in -*) ;; *) continue ;; esac
+    case "$np_arg" in *[!A-Za-z0-9._=:+-]*) continue ;; esac
+    case "$np_have" in *" $np_arg "*) continue ;; esac
+    np_have="$np_have$np_arg "
+    printf '%s\n' "$np_arg"
+  done
+}
+
+for np_arg in $(np_rule_args "$@"); do
+  set -- "$@" "$np_arg"
+  echo "=== launch rule adds $np_arg ===" >> "$log" 2>&1 || true
+done
 
 np_dropped=""
 if [ "${wine_unix##*/}" = aarch64-unix ]; then
@@ -1584,12 +1619,50 @@ set_switch_state() {
   fi
 }
 
+# How this game has run on this Mac, so the Compatibility page can say so: a format line,
+# then healthy sessions, failed sessions, the seconds they lasted, and the health, build
+# and graphics backend of the last one. A session that says nothing about the build still
+# counts its seconds, since it is time the game ran.
+record_history() {
+  record="$STEAM_COMPAT_DATA_PATH/notproton-sessions"
+  np_h=0 np_f=0 np_secs=0
+  if [ "$(head -1 "$record" 2>/dev/null)" = 1 ]; then
+    {
+      read -r _ || true
+      read -r np_h || true
+      read -r np_f || true
+      read -r np_secs || true
+    } < "$record"
+  fi
+  # A file someone edited, or one a half-written save left behind, starts the count over
+  # rather than carrying a number the page would then show.
+  case "$np_h$np_f$np_secs" in
+    *[!0-9]* | "") np_h=0 np_f=0 np_secs=0 ;;
+  esac
+  case "$1" in
+    healthy) np_h=$((np_h + 1)) ;;
+    failed)  np_f=$((np_f + 1)) ;;
+  esac
+  # Capped where no play session reaches, so a clock that jumped cannot make the total
+  # say years.
+  case "$2" in
+    "" | *[!0-9]*) ;;
+    *) if [ "$2" -le 86400 ]; then np_secs=$((np_secs + $2)); fi ;;
+  esac
+  if ! printf '1\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+       "$np_h" "$np_f" "$np_secs" "$1" "$np_build" "${CX_GRAPHICS_BACKEND:-auto}" > "$record.$$" \
+     || ! mv -f "$record.$$" "$record"; then
+    rm -f "$record.$$"
+  fi
+}
+
 # The switch record is old build, its name, then the healthy sessions since or "failed".
 # Two healthy sessions clear it.
 record_session() {
   switch="$STEAM_COMPAT_DATA_PATH/notproton-switch"
   health=$(session_health "$1" "$2" "$3")
   echo "=== session health: $health after $2s ===" >> "$log" 2>&1 || true
+  record_history "$health" "$2"
   case "$health" in
     healthy)
       printf '%s\n' "$np_build" > "$STEAM_COMPAT_DATA_PATH/notproton-healthy" 2>/dev/null || true

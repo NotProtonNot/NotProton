@@ -122,6 +122,13 @@ jobs:
           make -s compatsvc-check
           make -s prefixstate-check
           make -s defaults-check
+          make -s tuning-check
+          make -s verdict-check
+          make -s advice-check
+          make -s game-check
+          make -s rules-check
+          make -s catalog-check
+          make -s store-check
           make -s compatpage-check
           make -s defaults-drift
           make -s shortcutcheck

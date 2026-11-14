@@ -144,6 +144,12 @@ bool np_compat_tool_by_name(const char *name, size_t n, np_compat_tool_info_t *o
     return false;
 }
 
+// The badge switch, recorded rather than kept, so the route can be checked on its own.
+static int g_badges = -1;
+int np_catalog_set_enabled(int on) { g_badges = on; return 1; }
+static int g_store = -1;
+int np_store_set_enabled(int on) { g_store = on; return 1; }
+
 int np_defaults_save(uint32_t runner, const char *text) {
     saved_runner = runner;
     saved_text = text;

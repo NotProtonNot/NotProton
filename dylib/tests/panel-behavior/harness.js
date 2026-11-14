@@ -34,13 +34,15 @@ const FORMS = {
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
                { fallback = 'notproton', fexTools = [], names = ['R0', 'B0'], data = false, drop = [],
                  ready, feats, vars,
+                 // Extra variables for the emitter, for data it reads from the environment.
+                 env: extraEnv = {},
                  // What an install would carry. The panel renders for these and no others.
                  tools = ['notproton', 'notproton-26.3', 'notproton-fex', 'notproton-fex-rosetta',
                           'notproton-rosetta'],
                } = {}) {
   // Feature rows are handed over rather than read from disk, so a check reads the same
   // on any machine and says nothing about which features an install carries.
-  const env = { ...process.env };
+  const env = { ...process.env, ...extraEnv };
   if (ready !== undefined) env.NP_TEST_READY = ready;
   if (feats !== undefined) env.NP_TEST_FEATS = feats;
   if (vars !== undefined) env.NP_TEST_VARS = vars;

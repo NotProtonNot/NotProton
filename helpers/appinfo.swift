@@ -1,6 +1,9 @@
 // Reads Steam's appinfo.vdf cache and prints key=value metadata for one app on
 // stdout. Usage: appinfo <appinfo.vdf> <appid>.
 // With --platforms instead of an appid it prints mac= and windows= appid lists.
+// With --compat it prints one "appid mac deck anticheat" line per game: whether it lists
+// a macOS build, Valve's Steam Deck category (0 unknown, 1 unsupported, 2 playable,
+// 3 verified), and whether any of Valve's tests failed it for its anti-cheat.
 //
 // common/icon is a 32x32 thumbnail. common/clienticon is the real multi-res
 // icon, and the two hashes differ for most apps, so the icon cannot be
@@ -48,8 +51,9 @@ if args.count == 4, args[1] == "--same-bundle" {
 }
 
 let platforms = args.count == 3 && args[2] == "--platforms"
-guard args.count == 3, platforms || UInt32(args[2]) != nil else {
-    fputs("usage: appinfo <appinfo.vdf> <appid>|--platforms\n", stderr)
+let compat = args.count == 3 && args[2] == "--compat"
+guard args.count == 3, platforms || compat || UInt32(args[2]) != nil else {
+    fputs("usage: appinfo <appinfo.vdf> <appid>|--platforms|--compat\n", stderr)
     exit(2)
 }
 
@@ -261,9 +265,42 @@ func printPlatforms(_ b: [UInt8]) throws {
     print("windows=" + windows.map(String.init).joined(separator: ","))
 }
 
+// What Valve's own testing says about a game under Proton, which is the nearest thing to
+// a verdict there is for a game nobody has installed here. The anti-cheat result is the
+// part that carries over to CrossOver unchanged: an anti-cheat that refuses Proton
+// refuses Wine, whoever built it.
+func printCompat(_ b: [UInt8]) throws {
+    var lines: [String] = []
+    let complete = try forEachApp(b) { id, keys in
+        guard case .section(let common)? = try keys()["common"] else { return true }
+        guard case .string(let type)? = common["type"], type.lowercased() == "game" else { return true }
+        var mac = 0
+        if case .string(let oslist)? = common["oslist"], oslist.split(separator: ",").contains("macos") { mac = 1 }
+        var deck: Int64 = 0
+        var anticheat = 0
+        if case .section(let report)? = common["steam_deck_compatibility"] {
+            if case .number(let category)? = report["category"], (0...3).contains(category) { deck = category }
+            for list in ["tests", "steamos_tests"] {
+                guard case .section(let tests)? = report[list] else { continue }
+                for case .section(let test) in tests.values {
+                    if case .string(let token)? = test["token"], token.contains("UnsupportedAntiCheat") { anticheat = 1 }
+                }
+            }
+        }
+        lines.append("\(id) \(mac) \(deck) \(anticheat)")
+        return true
+    }
+    guard complete else { throw VDFError.truncated }
+    print(lines.joined(separator: "\n"))
+}
+
 do {
     if platforms {
         try printPlatforms(bytes)
+        exit(0)
+    }
+    if compat {
+        try printCompat(bytes)
         exit(0)
     }
     let wantAppID = UInt32(args[2])!

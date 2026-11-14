@@ -1,10 +1,24 @@
 #include "compatpage.h"
 #include "compat.h"
 #include "defaults.h"
+#include "machine.h"
+#include "tuning.h"
 #include "webpatch.h"
 #include "../util/log.h"
 
 #include <stdlib.h>
+
+// What this Mac asks for, which the page offers as one button beside the settings it
+// writes. A runner whose set could not be worked out is passed as NULL, and the row for
+// it stays off the page rather than offering settings nothing stands behind.
+static void publish_tuning(void) {
+    const np_machine_t *m = np_machine();
+    char rosetta[NP_DEFAULTS_TEXT_MAX + 1], fex[NP_DEFAULTS_TEXT_MAX + 1], mac[256];
+    int has_rosetta = np_tuning_recommend(m, NP_DEFAULTS_ROSETTA, rosetta, sizeof rosetta);
+    int has_fex = np_tuning_recommend(m, NP_DEFAULTS_FEX, fex, sizeof fex);
+    np_machine_summary(m, mac, sizeof mac);
+    np_webpatch_set_tuning(has_rosetta ? rosetta : NULL, has_fex ? fex : NULL, mac);
+}
 
 static void publish_defaults(void) {
     char rosetta[NP_DEFAULTS_TEXT_MAX + 1], fex[NP_DEFAULTS_TEXT_MAX + 1];
@@ -29,6 +43,7 @@ static void publish_defaults(void) {
     }
     if (read) np_webpatch_set_defaults(rosetta, fex);
     else np_webpatch_set_defaults(NULL, NULL);
+    publish_tuning();
     np_webpatch_set_builds(builds, n);
     free(own);
 }
