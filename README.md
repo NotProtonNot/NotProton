@@ -39,6 +39,21 @@ I would have done things differently had I been aware of that.
 
 Thanks to everyone who has positively contributed to macOS gaming. 
 
+Mac compatibility:
+
+NotProton works out how each game should be run on your Mac and how likely it is to run, and shows
+it where Steam shows the Steam Deck's: an Apple badge on every game in the library (downloaded or
+not), a stat on the game's page, and a block on store and wishlist pages. Green means it has run
+well on this Mac, a green ring means Valve's Proton testing passed it, yellow means something is in
+the way, red means it cannot work (an anti-cheat, usually), and a dashed ring means nothing is known.
+
+The graphics settings that suit the Mac and the game are applied at launch unless you set your own.
+Everything can be turned off under Steam → Preferences → Compatibility. The store part uses Steam's
+built-in web debugger, which opens a port on your Mac while Steam is running, and has its own switch.
+
+Read ```docs/mac-compatibility.md``` for what each badge means, where the answers come from, the
+launch rules in ```~/Library/Application Support/notproton/rules/```, and what the store switch costs.
+
 Developer Notes:
 
 As far as the source structure goes, the macOS app itself is located in the ```app``` folder. The core logic is in ```dylib```.
