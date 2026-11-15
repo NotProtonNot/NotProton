@@ -129,6 +129,7 @@ lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
 plistbuddy=/usr/libexec/PlistBuddy
 lsappinfo=/usr/bin/lsappinfo
+osascript=/usr/bin/osascript
 games_arg="  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>"
 # display name, bundle ID, executable, extra keys
 bundle_plist() {
@@ -163,6 +164,10 @@ np_game_names() {
 }
 np_game_running() {
   [ -n "$("$lsappinfo" find bundleid="com.notproton.launcher.$1" 2>/dev/null)" ]
+}
+np_game_mode() {
+  # shellcheck disable=SC2016 # $ is JavaScript here
+  "$osascript" -l JavaScript -e 'ObjC.import("Foundation");function run(a){if(!$.NSURL.fileURLWithPath(a[0]).setResourceValueForKeyError(a[1]==="off","_NSURLApplicationPrefersGameModeDisabledKey",$()))throw "not set"}' "$1" "$2"
 }
 np_game_mode_by_key() {
   np_macos=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
@@ -1173,7 +1178,8 @@ if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_de
       FEX_X87REDUCEDPRECISION=[01])
         [ "${wine_unix##*/}" = aarch64-unix ] || continue ;;
       MTL_HUD_ENABLED=[01] | DXMT_ENABLE_NVEXT=[01] | DXMT_METALFX_SPATIAL_SWAPCHAIN=[01] | \
-      WINEMSYNC=[01] | NOTPROTON_RETINA=[01] | NOTPROTON_RETINA_DPI=[01] | NOTPROTON_RAW_CONTROLLERS=[01] | NOTPROTON_DISABLE_HIDRAW=[01]) ;;
+      WINEMSYNC=[01] | NOTPROTON_RETINA=[01] | NOTPROTON_RETINA_DPI=[01] | NOTPROTON_RAW_CONTROLLERS=[01] | NOTPROTON_DISABLE_HIDRAW=[01] | \
+      NOTPROTON_GAME_MODE=[01]) ;;
       DXMT_CONFIG=*\;*)
         dxmt_added=""
         old_ifs=$IFS; IFS=";"
@@ -3294,6 +3300,37 @@ for launched_app in "$loader_app" ${game_runner:+"$game_app"}; do
     fi
   fi
 done
+game_mode_app=${game_runner:+$game_app}
+game_mode_app=${game_mode_app:-$loader_app}
+game_mode_off="$loader_root/.game-mode-off"
+if [ "${NOTPROTON_GAME_MODE-}" = 0 ]; then
+  if np_game_mode "$game_mode_app" off >> "$log" 2>&1; then
+    grep -qxF "$game_mode_app" "$game_mode_off" 2> /dev/null || printf '%s\n' "$game_mode_app" >> "$game_mode_off"
+    echo "game mode turned off by NOTPROTON_GAME_MODE" >> "$log" 2>&1 || true
+  else
+    echo "game mode could not be turned off" >> "$log" 2>&1 || true
+  fi
+elif [ -s "$game_mode_off" ]; then
+  game_mode_kept=""
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    if [ ! -d "$b" ]; then
+      game_mode_kept="$game_mode_kept$b
+"
+    elif np_game_mode "$b" on >> "$log" 2>&1; then
+      echo "game mode turned back on" >> "$log" 2>&1 || true
+    else
+      echo "game mode could not be turned back on" >> "$log" 2>&1 || true
+      game_mode_kept="$game_mode_kept$b
+"
+    fi
+  done < "$game_mode_off"
+  if [ -n "$game_mode_kept" ]; then
+    printf '%s' "$game_mode_kept" > "$game_mode_off"
+  else
+    rm -f "$game_mode_off"
+  fi
+fi
 if [ -n "$game_runner" ]; then
   shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
   inserts="$STEAM_DYLD_INSERT_LIBRARIES"

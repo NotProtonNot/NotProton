@@ -1420,7 +1420,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "]},\"ctl\")," \
     "npCx&&fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
     "children:D(\"FEX_X87REDUCEDPRECISION\"," \
-    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\"),exe," \
+    "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")," \
+    "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Miscellaneous\",\"Miscellaneous\",\"Miscellaneous\"),children:[" \
+    "(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:npL(\"Disable macOS Game Mode\",\"Disable macOS Game Mode\",\"Disable macOS Game Mode\")," \
+    "checked:\"0\"===G(\"NOTPROTON_GAME_MODE\"),onChange:v=>s([[\"NOTPROTON_GAME_MODE\",w(\"NOTPROTON_GAME_MODE\",v?\"0\":\"1\",\"1\")]])},\"NOTPROTON_GAME_MODE\")" \
+    "]},\"misc\")," \
+    "exe," \
     "dev&&(npRows.length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
     "children:vids.map(V).concat(npRows.filter(f=>!f.dep||on1(f.dep))" \

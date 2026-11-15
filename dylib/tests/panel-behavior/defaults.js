@@ -321,6 +321,18 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!r.some(x => (x.type === 'Button' || x.type === 'button') && x.props.children === 'Reset to defaults'),
        'a game has no Reset to defaults');
 
+  {
+    const off = { rosetta: { ...SAVED.rosetta, NOTPROTON_GAME_MODE: '0' }, fex: SAVED.fex };
+    const { render: PG, written: gw } = panel(emit, form, globalsWith(off), { fexTools: FEX_TOOLS });
+    const gm = o => row(walk(PG({ details: details(o, { strCompatToolName: 'notproton' }) })), 'Disable macOS Game Mode');
+    const gwLast = () => (gw.length ? gw[gw.length - 1].opts : '');
+    t.ok(gm('%command%').props.checked === true, 'a default of 0 shows Game Mode disabled');
+    gw.length = 0;
+    gm('%command%').props.onChange(false);
+    t.ok(/(^|\s)NOTPROTON_GAME_MODE=1(\s|$)/.test(gwLast()), `a game turns Game Mode back on over the default (${gwLast()})`);
+    t.ok(gm('NOTPROTON_GAME_MODE=1 %command%').props.checked === false, "the game's 1 wins over the default");
+  }
+
   r = nodes('MTL_HUD_ENABLED=0 CX_GRAPHICS_BACKEND=auto %command%');
   t.ok(row(r, 'Metal HUD').props.checked === false, "the game's 0 wins over the default");
   t.ok(dropdowns(r)[0].props.selectedOption === '', "the game's Automatic wins over the default");

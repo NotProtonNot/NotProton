@@ -290,6 +290,30 @@ done
 chmod 644 "$np_support/defaults-fex"
 rm -f "$np_support/defaults-fex"
 
+echo "== Game Mode default =="
+gm_wine_unix=$wine_unix
+wine_unix="/R R/lib/wine/x86_64-unix"
+cp "$np_support/defaults-rosetta" "$work/rosetta.gm"
+printf 'NOTPROTON_GAME_MODE=0\n' > "$np_support/defaults-rosetta"
+unset -v NOTPROTON_GAME_MODE
+eval "$defaults"
+is "a default of 0 turns Game Mode off" "defaults-rosetta 0" "${np_defaults_file##*/} ${NOTPROTON_GAME_MODE-unset}"
+export NOTPROTON_GAME_MODE=1
+eval "$defaults"
+is "the game's 1 wins over the default" "1" "$NOTPROTON_GAME_MODE"
+unset -v NOTPROTON_GAME_MODE
+printf 'NOTPROTON_GAME_MODE=no\n' > "$np_support/defaults-rosetta"
+eval "$defaults"
+is "a Game Mode value other than 0 or 1 is skipped" "unset" "${NOTPROTON_GAME_MODE-unset}"
+mv "$work/rosetta.gm" "$np_support/defaults-rosetta"
+wine_unix="/R R/lib/wine/aarch64-unix"
+printf 'NOTPROTON_GAME_MODE=0\n' > "$np_support/defaults-fex"
+eval "$defaults"
+is "FEX takes the Game Mode default too" "defaults-fex 0" "${np_defaults_file##*/} ${NOTPROTON_GAME_MODE-unset}"
+rm -f "$np_support/defaults-fex"
+unset -v NOTPROTON_GAME_MODE
+wine_unix=$gm_wine_unix
+
 echo "== Per-build defaults =="
 printf 'WINEMSYNC=1\nFEX_X87REDUCEDPRECISION=0\n' > "$np_support/defaults-fex"
 printf 'MTL_HUD_ENABLED=1\nFEX_X87REDUCEDPRECISION=1\n' > "$np_support/defaults-override-26.1-fex"
