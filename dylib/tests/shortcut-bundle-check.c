@@ -9,20 +9,24 @@ int   np_log_level;
 FILE *np_log_file;
 
 static uint32_t updated[16];
+static char     fixed[16][24];
 static int      updated_count;
 static uint64_t create_ret;
 static int      create_calls;
 
 const char *np_compat_tool_dir(void) { return "/nonexistent-tool"; }
-int np_compat_app_runs_tool(uint32_t appid) { return appid != 1510; }
+int np_compat_app_runs_tool(uint32_t appid) { return appid != 1510 && appid != 0x80001510u; }
 
 int fake_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *actions,
                const posix_spawnattr_t *attr, char *const argv[], char *const envp[]) {
     assert(strcmp(path, "/bin/sh") == 0 && strcmp(argv[1], "/nonexistent-tool/run") == 0);
     const char *image = _dyld_get_image_name(0);
     size_t dir = (size_t)(strrchr(image, '/') - image);
-    assert(strcmp(argv[2], "shortcut-icons") == 0 && argv[5] == NULL);
-    assert(strlen(argv[4]) == dir && strncmp(argv[4], image, dir) == 0);
+    int fix = strcmp(argv[2], "shortcut-fix") == 0;
+    assert(fix || strcmp(argv[2], "shortcut-icons") == 0);
+    assert(argv[5 + fix] == NULL);
+    assert(strlen(argv[4 + fix]) == dir && strncmp(argv[4 + fix], image, dir) == 0);
+    if (updated_count < 16) snprintf(fixed[updated_count], sizeof(fixed[0]), "%s", fix ? argv[4] : "");
     short flags = 0;
     sigset_t mask;
     assert(posix_spawnattr_getflags(attr, &flags) == 0 && posix_spawnattr_getsigmask(attr, &mask) == 0);
@@ -80,7 +84,7 @@ int main(void) {
     assert(create(440, NP_APP_KIND_DLC, 1) == 1);
     assert(create(0, 1, 1) == 1);
     assert(create(1510, 1, 1) == 1);
-    assert(create(0x80000000u, 1, 1) == 1);
+    assert(create(0x80001510u, 1, 1) == 1);
     assert(count() == 0);
 
     assert(create(440, 1, 1) == 1);
@@ -91,7 +95,12 @@ int main(void) {
     assert(create(440, 1, 1) == 1);
     assert(count() == 3);
     assert(updated[2] == 440 && create_calls == 9);
+    assert(fixed[0][0] == 0 && fixed[2][0] == 0);
 
-    printf("shortcut-bundle-check: DLC, native, zero-ID, negative-ID, unbuilt and unbound shortcuts skipped, each create updated in order\n");
+    assert(create(2462597574u, 1, 1) == 1);
+    assert(count() == 4);
+    assert(updated[3] == 2462597574u && strcmp(fixed[3], "10576776043572494336") == 0);
+
+    printf("shortcut-bundle-check: DLC, native, zero-ID, unbuilt and unbound shortcuts skipped, each create updated in order, non-Steam shortcuts fixed\n");
     return 0;
 }
