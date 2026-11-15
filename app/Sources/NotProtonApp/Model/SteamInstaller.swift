@@ -204,6 +204,7 @@ enum SteamInstaller {
                 AppLog.note("install: could not record the rebuild app: \(error.localizedDescription)")
             }
         }
+        AppLog.note("install: \(dylib.path(percentEncoded: false)) uuid \(MachOBuild.identity(of: dylib)?.joined(separator: ",") ?? "unreadable")")
         report(.finished)
         return InstallOutcome(
             stoppedClient: stopped,

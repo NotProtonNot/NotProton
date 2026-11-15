@@ -20,6 +20,7 @@
 #include <mach-o/dyld.h>
 #include <crt_externs.h>
 #include <libgen.h>
+#include <dlfcn.h>
 
 #define STEAMCLIENT_DYLIB "steamclient.dylib"
 #define STEAMUI_DYLIB     "steamui.dylib"
@@ -251,6 +252,25 @@ static void np_log_platform_overrides(void) {
 }
 
 // Steam Helper runs /usr/bin/profiles at startup. If a user has SIP disabled, profiles would inherit the insert and crash, yikes.
+static const char *image_uuid(const void *base, char *out, size_t size) {
+    const struct mach_header_64 *mh = base;
+    snprintf(out, size, "unknown");
+    if (!mh || mh->magic != MH_MAGIC_64) return out;
+    const uint8_t *cursor = (const uint8_t *)(mh + 1);
+    for (uint32_t i = 0; i < mh->ncmds; i++) {
+        const struct load_command *lc = (const struct load_command *)cursor;
+        if (lc->cmd == LC_UUID) {
+            const uint8_t *u = ((const struct uuid_command *)lc)->uuid;
+            snprintf(out, size, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+                     u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7],
+                     u[8], u[9], u[10], u[11], u[12], u[13], u[14], u[15]);
+            return out;
+        }
+        cursor += lc->cmdsize;
+    }
+    return out;
+}
+
 static int is_main_helper(const char *pn) {
     if (strcmp(pn, "Steam Helper") != 0)
         return 0;
@@ -283,6 +303,11 @@ static void np_init(void) {
 
     NP_LOG("np_init: loaded into %s (pid %d) version %s",
            pn, getpid(), NOTPROTON_VERSION);
+    Dl_info self;
+    char uuid[40];
+    if (dladdr((const void *)&np_init, &self) && self.dli_fname)
+        NP_LOG("np_init: image %s uuid %s", self.dli_fname,
+               image_uuid(self.dli_fbase, uuid, sizeof uuid));
 
     np_log_platform_overrides();
     np_compat_export_tools_path();
