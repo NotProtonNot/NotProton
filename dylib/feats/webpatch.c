@@ -176,8 +176,10 @@ static int is_setting_key(const char *str, size_t n) {
 }
 
 static int is_setting_value(const char *str, size_t n) {
+    // ';' joins DXMT_CONFIG's clauses. It is safe inside the JS string this lands in.
     for (size_t i = 0; i < n; i++)
-        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '=') return 0;
+        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '='
+            && str[i] != ';') return 0;
     return 1;
 }
 

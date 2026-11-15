@@ -643,7 +643,7 @@ helpers-install: $(ICONMAKER) $(APPINFO)
 
 dobby:
 	@mkdir -p $(DOBBY_DIR)
-	cd $(DOBBY_DIR) && cmake $(CURDIR)/vendor/dobby \
+	cd $(DOBBY_DIR) && cmake "$(CURDIR)/vendor/dobby" \
 		-DCMAKE_OSX_ARCHITECTURES=arm64 \
 		-DCMAKE_OSX_DEPLOYMENT_TARGET=$(MIN_VER) \
 		-DDOBBY_DEBUG=OFF \

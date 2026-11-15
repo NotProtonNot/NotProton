@@ -113,6 +113,12 @@ static void check_defaults(void) {
                            "\"DXMT_CONFIG\":\"d3d11.metalSpatialUpscaleFactor=1.5\"},"
                            "fex:{\"MTL_HUD_ENABLED\":\"0\"}}") != 0)
         wrong("the defaults are %s", marker_text(NP_DEFAULTS[0]));
+    // Frame cap and upscale factor together, which the panel writes as one value.
+    np_webpatch_set_defaults("DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5;d3d11.preferredMaxFrameRate=60", "");
+    if (strcmp(marker_text(NP_DEFAULTS[0]), "{rosetta:{\"DXMT_CONFIG\":"
+                           "\"d3d11.metalSpatialUpscaleFactor=1.5;d3d11.preferredMaxFrameRate=60\"},"
+                           "fex:{}}") != 0)
+        wrong("a DXMT_CONFIG with two clauses gives %s", marker_text(NP_DEFAULTS[0]));
     np_webpatch_set_defaults("FOO=\"});alert(1);({\nwinemsync=1\nWINEMSYNC=1\nNOEQUALS\n=1", "");
     if (strcmp(marker_text(NP_DEFAULTS[0]), "{rosetta:{\"WINEMSYNC\":\"1\"},fex:{}}") != 0)
         wrong("lines the page cannot take give %s", marker_text(NP_DEFAULTS[0]));
