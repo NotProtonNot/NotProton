@@ -50,20 +50,16 @@
 // Stands for the runner variants read from the support directory.
 #define NP_VARS "\033"
 #define NP_OUR_TOOLS "\034"
-// Stands for the settings this Mac is best run with, set by np_webpatch_set_tuning.
-#define NP_TUNED "\035"
 
 #define NP_TOOL_NAME_MAX 128
 
 #define NP_UNREAD_DEFAULTS "{rosetta:null,fex:null}"
-// No probe, so no row: the page cannot say what this Mac wants.
-#define NP_NO_TUNING "{rosetta:null,fex:null,mac:\"\"}"
 
 enum { IN_FALLBACK_TOOL, IN_FEX_TOOLS, IN_DEFAULTS, IN_BUILDS, IN_READY, IN_FEATS, IN_VARS,
-       IN_OUR_TOOLS, IN_TUNED, IN_COUNT };
+       IN_OUR_TOOLS, IN_COUNT };
 typedef struct { char *text[IN_COUNT]; } np_inputs_t;
 static const char *const g_unset[IN_COUNT] = { "", "[]", NP_UNREAD_DEFAULTS, "[]", "{}", "[]", "[]",
-                                               "[]", NP_NO_TUNING };
+                                               "[]" };
 static pthread_key_t g_inputs_key;
 static pthread_once_t g_inputs_once = PTHREAD_ONCE_INIT;
 
@@ -182,12 +178,8 @@ static int is_setting_key(const char *str, size_t n) {
 }
 
 static int is_setting_value(const char *str, size_t n) {
-    // The value is written into a double-quoted JS string, so what it may not carry is a
-    // quote, a backslash or a control character. DXMT_CONFIG joins its clauses with a
-    // semicolon, and a value holding more than one of them is still only a string.
     for (size_t i = 0; i < n; i++)
-        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '='
-            && str[i] != ';') return 0;
+        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '=') return 0;
     return 1;
 }
 
@@ -229,23 +221,6 @@ static int is_label(const char *str) {
     for (; *str; str++)
         if ((unsigned char)*str < 0x20 || *str == '"' || *str == '\\') return 0;
     return 1;
-}
-
-void np_webpatch_set_tuning(const char *rosetta, const char *fex, const char *mac) {
-    // A summary with a quote or a control character in it would land inside a JS string,
-    // so an unprintable name costs the row its line rather than the page its syntax.
-    if (mac && !is_label(mac)) mac = NULL;
-    np_js_t j = js_alloc(48 + 3 * (strlen(rosetta ? rosetta : "") + strlen(fex ? fex : ""))
-                            + strlen(mac ? mac : ""));
-    js_puts(&j, "{rosetta:");
-    js_settings(&j, rosetta);
-    js_puts(&j, ",fex:");
-    js_settings(&j, fex);
-    js_puts(&j, ",mac:\"");
-    js_puts(&j, mac ? mac : "");
-    js_puts(&j, "\"}");
-    if (!j.ok) NP_WARN("webpatch: the settings for this Mac do not fit the page, it hides them");
-    set_input(IN_TUNED, js_done(&j));
 }
 
 void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count) {
@@ -338,7 +313,6 @@ static const char *marker_text(char c) {
     if (c == NP_DEFAULTS[0]) return input_text(IN_DEFAULTS);
     if (c == NP_BUILDS[0]) return input_text(IN_BUILDS);
     if (c == NP_OUR_TOOLS[0]) return input_text(IN_OUR_TOOLS);
-    if (c == NP_TUNED[0]) return input_text(IN_TUNED);
     if (c == NP_READY[0] || c == NP_FEATS[0]) {
         if (!g_feat_ready_done) feat_build();
         return input_text(c == NP_READY[0] ? IN_READY : IN_FEATS);
@@ -1294,7 +1268,6 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 #define NP_CX_DEFAULTS "(globalThis.MSCXDefaultsData||(globalThis.MSCXDefaultsData=" NP_DEFAULTS "))"
 #define NP_CX_BUILDS "(globalThis.MSCXBuilds||(globalThis.MSCXBuilds=" NP_BUILDS "))"
-#define NP_CX_TUNED "(globalThis.MSCXTuned||(globalThis.MSCXTuned=" NP_TUNED "))"
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_PANEL(RT, BARREL) \
@@ -1450,20 +1423,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
        with nothing to deliver. */ \
     "const npRows=ours?MSCXFeat:MSCXFeat.filter(f=>!f.rn&&(f.ty" \
     "?/^NOTPROTON_ENV_/.test(f.k):f.rq||(f.ev||[]).length))," \
-    /* What this Mac asks for, worked out by tuning.c from the chip, the GPU, the memory
-       and the panel. Only the current runner's set is offered, and only the keys in it are
-       written: a row the hardware does not decide keeps whatever it was set to. */ \
-    "npTune=" NP_CX_TUNED ",npTuneSet=npTune[fex?\"fex\":\"rosetta\"]," \
-    "npTuneKeys=npTuneSet?Object.keys(npTuneSet):[]," \
-    "npTuned=npTuneKeys.length&&npTuneKeys.every(k=>G(k)===npTuneSet[k])," \
     "npBody=[npCx&&head," \
-    "npCx&&npTuneKeys.length&&(0," RT ".jsx)(" BARREL ".XY," \
-    "{label:npL(\"This Mac\",\"本机\",\"Questo Mac\"),children:XF(\"tune\"," \
-    "npL(\"Recommended Graphics Settings\",\"推荐的图形设置\",\"Impostazioni grafiche consigliate\")," \
-    "npTune.mac||undefined," \
-    "[bt(npTuned?npL(\"In Use\",\"已应用\",\"In uso\")" \
-    ":npL(\"Use Recommended\",\"使用推荐设置\",\"Usa le impostazioni consigliate\")," \
-    "()=>s(npTuneKeys.map(k=>[k,npTuneSet[k]])),\"tune\")])},\"mac\")," \
     "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",w(\"CX_GRAPHICS_BACKEND\",v.data||\"auto\",\"auto\")]]" \
@@ -1598,15 +1558,6 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "checked:!globalThis.__NOTPROTON_BADGES_OFF__," \
     "onChange:v=>{globalThis.__NOTPROTON_BADGES_OFF__=!v;bump(c=>c+1);" \
     "send(\"NotProton.SetBadges#1\",v?1:0,\"\").catch(e=>console.error(\"NotProton: the badge setting was not saved\",e))}},\"badges\")," \
-    /* The store is Valve's page, reached through the web helper's debugger, which is a
-       port on this Mac that other programs here could use too. That is a different thing
-       to agree to than a badge, so it has its own switch, and says what it costs. */ \
-    "(0," RT ".jsx)(" BARREL ".y4,{label:" NP_WEB_TEXT("Show Mac compatibility in the Store and Wishlist", "\u5728\u5546\u5e97\u548c\u613f\u671b\u5355\u4e2d\u663e\u793a Mac \u517c\u5bb9\u6027", "Mostra la compatibilit\u00e0 Mac nel Negozio e nella Lista dei desideri") "," \
-    "description:" NP_WEB_TEXT("Uses Steam's built-in web debugger, which opens a port on this Mac that other programs running here can reach while Steam is open. Changes when Steam restarts.", "Uses Steam's built-in web debugger, which opens a port on this Mac that other programs running here can reach while Steam is open. Changes when Steam restarts.", "Usa il debugger web integrato di Steam, che apre una porta su questo Mac raggiungibile dagli altri programmi in esecuzione mentre Steam \u00e8 aperto. Cambia al riavvio di Steam.") "," \
-    "disabled:!!globalThis.__NOTPROTON_BADGES_OFF__," \
-    "checked:!globalThis.__NOTPROTON_STORE_OFF__&&!globalThis.__NOTPROTON_BADGES_OFF__," \
-    "onChange:v=>{globalThis.__NOTPROTON_STORE_OFF__=!v;bump(c=>c+1);" \
-    "send(\"NotProton.SetBadges#1\",v?3:2,\"\").catch(e=>console.error(\"NotProton: the store setting was not saved\",e))}},\"store\")," \
     "b?btn(\"apply\",(" NP_WEB_IS_IT "?\"Applica come predefinite a tutti gli strumenti di compatibilit\\u00e0 \"+kind:\"Apply as defaults for all \"+kind+\" Compatibility Tools\")," NP_WEB_TEXT("Apply", "Apply", "Applica") ",apply,ok||void 0):null" \
     "]},\"defaults\")})};" \
     "return()=>{const up=typeof globalThis.MSCXUseState==\"function\"&&typeof globalThis.MSCXUseEffect==\"function\"" \
@@ -1905,9 +1856,6 @@ static const np_gate_t g_fixes[] = {
     "{good:{bg:\"#59bf40\",fg:\"#ffffff\",bd:\"none\"}," \
     "issues:{bg:\"#ffc82c\",fg:\"#1b2838\",bd:\"none\"}," \
     "blocked:{bg:\"#d94126\",fg:\"#ffffff\",bd:\"none\"}," \
-    /* Passed Valve's Proton testing but not yet run here: the green of a good sign, as a
-       ring rather than a fill, because the fill is for what this Mac has seen. */ \
-    "likely:{bg:\"rgba(23,29,37,.82)\",fg:\"#59bf40\",bd:\"2px solid #59bf40\"}," \
     "unknown:{bg:\"rgba(23,29,37,.82)\",fg:\"#c6d4df\",bd:\"1.5px dashed #8b929a\"}}"
 
 #define NP_BADGE_JS \
@@ -1950,7 +1898,6 @@ static const np_gate_t g_fixes[] = {
 #define NP_STAT_GOOD NP_WEB_TEXT("Verified", "\u5df2\u9a8c\u8bc1", "Verificato")
 #define NP_STAT_ISSUES NP_WEB_TEXT("Playable", "\u53ef\u8fd0\u884c", "Giocabile")
 #define NP_STAT_BLOCKED NP_WEB_TEXT("Unsupported", "\u4e0d\u652f\u6301", "Non supportato")
-#define NP_STAT_LIKELY NP_WEB_TEXT("Likely", "\u53ef\u80fd\u53ef\u7528", "Probabile")
 #define NP_STAT_UNKNOWN NP_WEB_TEXT("Unknown", "\u672a\u77e5", "Sconosciuto")
 
 #define NP_STAT_JS \
@@ -1959,7 +1906,7 @@ static const np_gate_t g_fixes[] = {
     "npId=npP&&(npP.details&&npP.details.unAppID||npP.overview&&npP.overview.appid)," \
     "npE=npM&&npId&&npM[npId];" \
     "if(!npE||!npR||window.__NOTPROTON_BADGES_OFF__)return null;" \
-    "const npW={good:" NP_STAT_GOOD ",likely:" NP_STAT_LIKELY ",issues:" NP_STAT_ISSUES ",blocked:" NP_STAT_BLOCKED \
+    "const npW={good:" NP_STAT_GOOD ",issues:" NP_STAT_ISSUES ",blocked:" NP_STAT_BLOCKED \
     ",unknown:" NP_STAT_UNKNOWN "}[npE[0]]||" NP_STAT_UNKNOWN ";" \
     "let npC={};try{npC=npS&&npS()||{}}catch(x){}" \
     "return(0,npR.jsxs)(\"div\",{className:(npC.GameStat||\"\")+\" NPStat NPBadge-\"+npE[0]," \

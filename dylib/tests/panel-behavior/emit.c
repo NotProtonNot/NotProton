@@ -38,14 +38,6 @@ static void set_sample_data(void) {
         { "notproton-empty", "25.0", "CrossOver 25", 0, "" },
     };
     np_webpatch_set_builds(builds, sizeof builds / sizeof builds[0]);
-    // What tuning.c works out for the Mac this is running on would make the checks read
-    // differently on every machine, so the page is handed a fixed pair of sets instead.
-    // NP_TEST_MAC carries the summary, which lands inside a JS string on the page.
-    const char *mac = getenv("NP_TEST_MAC");
-    np_webpatch_set_tuning("CX_GRAPHICS_BACKEND=dxmt\nNOTPROTON_RETINA=1\n"
-                           "DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=1.5;d3d11.preferredMaxFrameRate=120\n",
-                           "CX_GRAPHICS_BACKEND=dxmt\nFEX_X87REDUCEDPRECISION=1\n",
-                           mac ? mac : "Apple M4 Max, 40 GPU cores, 64 GB, 3456x2234 at 120 Hz");
 }
 
 int main(int argc, char **argv) {

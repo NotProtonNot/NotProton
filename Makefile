@@ -11,7 +11,7 @@ CFLAGS   := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) $(AVAIL) \
 LDFLAGS  := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
             -dynamiclib -install_name @rpath/notproton.dylib
 
-FRAMEWORKS := -framework CoreFoundation -framework CoreGraphics -framework IOKit
+FRAMEWORKS := -framework CoreFoundation -framework CoreGraphics
 
 DOBBY_DIR  := build/dobby
 DOBBY_LIBS := $(DOBBY_DIR)/libdobby.a \
@@ -48,16 +48,12 @@ SRCS := \
 	dylib/feats/webui.c \
 	dylib/feats/compatsvc.c \
 	dylib/feats/defaults.c \
-	dylib/feats/machine.c \
-	dylib/feats/tuning.c \
 	dylib/feats/compatpage.c \
 	dylib/feats/prefixstate.c \
 	dylib/feats/verdict.c \
 	dylib/feats/game.c \
-	dylib/feats/advice.c \
+	dylib/feats/badge.c \
 	dylib/feats/catalog.c \
-	dylib/feats/rules.c \
-	dylib/feats/store.c \
 	dylib/feats/usershortcuts.c \
 	dylib/feats/conf.c \
 	dylib/feats/webpatch.c \
@@ -86,7 +82,7 @@ DEPS := $(OBJS:.o=.d)
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
-        compatsvc-check prefixstate-check defaults-check tuning-check verdict-check advice-check game-check rules-check catalog-check store-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
+        compatsvc-check prefixstate-check defaults-check verdict-check game-check badge-check catalog-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -223,63 +219,35 @@ $(DEFAULTS_CHECK): dylib/tests/defaults-check.c dylib/feats/defaults.c dylib/fea
 defaults-check: $(DEFAULTS_CHECK)
 	@$(DEFAULTS_CHECK)
 
-STORE_CHECK := $(OUT_DIR)/store-check
-
-$(STORE_CHECK): dylib/tests/store-check.c dylib/feats/store.c dylib/feats/store.h $(STORE_PAGE_H) \
-                dylib/util/file.c vendor/cJSON.c
-	@mkdir -p $(dir $@)
-	$(TEST_CC) -Ivendor -I$(GENERATED_DIR) -o $@ dylib/tests/store-check.c dylib/util/file.c vendor/cJSON.c
-
-store-check: $(STORE_CHECK)
-	@$(STORE_CHECK)
-	@if command -v node >/dev/null 2>&1; then node dylib/tests/store-page.js; \
-	  else echo "==> store-page: node not found, skipped"; fi
-
 CATALOG_CHECK := $(OUT_DIR)/catalog-check
 
 $(CATALOG_CHECK): dylib/tests/catalog-check.c dylib/feats/catalog.c dylib/feats/catalog.h \
-                  dylib/feats/advice.c dylib/feats/rules.c dylib/feats/game.c \
-                  dylib/feats/machine.c dylib/feats/tuning.c dylib/feats/verdict.c \
-                  dylib/feats/conf.c dylib/util/pe.c dylib/util/file.c
+                  dylib/feats/badge.c dylib/feats/game.c dylib/feats/verdict.c dylib/util/file.c
 	@mkdir -p $(dir $@)
-	$(TEST_CC) -o $@ dylib/tests/catalog-check.c dylib/feats/advice.c dylib/feats/rules.c \
-	  dylib/feats/game.c dylib/feats/machine.c dylib/feats/tuning.c dylib/feats/verdict.c \
-	  dylib/feats/conf.c dylib/util/pe.c dylib/util/file.c dylib/util/log.c \
-	  -framework CoreGraphics -framework CoreFoundation -framework IOKit
+	$(TEST_CC) -o $@ dylib/tests/catalog-check.c dylib/feats/badge.c dylib/feats/game.c \
+	  dylib/feats/verdict.c dylib/util/file.c dylib/util/log.c
 
 catalog-check: $(CATALOG_CHECK)
 	@$(CATALOG_CHECK)
 
-RULES_CHECK := $(OUT_DIR)/rules-check
-
-$(RULES_CHECK): dylib/tests/rules-check.c dylib/feats/rules.c dylib/feats/rules.h \
-                dylib/feats/conf.c dylib/feats/conf.h dylib/feats/game.h
-	@mkdir -p $(dir $@)
-	$(TEST_CC) -o $@ dylib/tests/rules-check.c dylib/feats/conf.c
-
-rules-check: $(RULES_CHECK)
-	@$(RULES_CHECK)
-
 GAME_CHECK := $(OUT_DIR)/game-check
 
-$(GAME_CHECK): dylib/tests/game-check.c dylib/feats/game.c dylib/feats/game.h \
-               dylib/util/pe.c dylib/util/file.c
+$(GAME_CHECK): dylib/tests/game-check.c dylib/feats/game.c dylib/feats/game.h
 	@mkdir -p $(dir $@)
-	$(TEST_CC) -o $@ dylib/tests/game-check.c dylib/util/pe.c dylib/util/file.c
+	$(TEST_CC) -o $@ dylib/tests/game-check.c
+
+BADGE_CHECK := $(OUT_DIR)/badge-check
+
+$(BADGE_CHECK): dylib/tests/badge-check.c dylib/feats/badge.c dylib/feats/badge.h \
+                dylib/feats/game.c dylib/feats/verdict.c
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/badge-check.c dylib/feats/game.c dylib/feats/verdict.c
+
+badge-check: $(BADGE_CHECK)
+	@$(BADGE_CHECK)
 
 game-check: $(GAME_CHECK)
 	@$(GAME_CHECK)
-
-ADVICE_CHECK := $(OUT_DIR)/advice-check
-
-$(ADVICE_CHECK): dylib/tests/advice-check.c dylib/feats/advice.c dylib/feats/advice.h \
-                 dylib/feats/tuning.c dylib/feats/verdict.c dylib/feats/game.c dylib/feats/game.h
-	@mkdir -p $(dir $@)
-	$(TEST_CC) -o $@ dylib/tests/advice-check.c dylib/feats/tuning.c dylib/feats/verdict.c \
-	  dylib/feats/game.c dylib/util/pe.c dylib/util/file.c
-
-advice-check: $(ADVICE_CHECK)
-	@$(ADVICE_CHECK)
 
 VERDICT_CHECK := $(OUT_DIR)/verdict-check
 
@@ -289,17 +257,6 @@ $(VERDICT_CHECK): dylib/tests/verdict-check.c dylib/feats/verdict.c dylib/feats/
 
 verdict-check: $(VERDICT_CHECK)
 	@$(VERDICT_CHECK)
-
-TUNING_CHECK := $(OUT_DIR)/tuning-check
-
-$(TUNING_CHECK): dylib/tests/tuning-check.c dylib/feats/tuning.c dylib/feats/tuning.h \
-                 dylib/feats/machine.h dylib/feats/defaults.c dylib/feats/defaults.h \
-                 dylib/util/buildid.h dylib/util/file.c dylib/util/file.h
-	@mkdir -p $(dir $@)
-	$(TEST_CC) -o $@ dylib/tests/tuning-check.c dylib/util/file.c
-
-tuning-check: $(TUNING_CHECK)
-	@$(TUNING_CHECK)
 
 COMPATPAGE_CHECK := $(OUT_DIR)/compatpage-check
 
@@ -586,7 +543,6 @@ panel-behavior:
 	node $(PANEL_TESTS)/behavior.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/switching.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/launch-options.js $(OUT_DIR)/panel-emit && \
-	node $(PANEL_TESTS)/tuning.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/badge.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/shell.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/migration.js $(OUT_DIR)/panel-emit && \
@@ -631,15 +587,6 @@ $(RUN_SCRIPT_H): dylib/feats/compat_run.sh dylib/embed_script.py
 	python3 dylib/embed_script.py $< $@ RUN_SCRIPT
 
 $(OUT_DIR)/dylib/feats/compat.o: $(RUN_SCRIPT_H)
-
-# The script the store's pages are given, carried in the dylib the same way.
-STORE_PAGE_H := $(GENERATED_DIR)/store_page.h
-
-$(STORE_PAGE_H): dylib/feats/store_page.js dylib/embed_script.py
-	@mkdir -p $(dir $@)
-	python3 dylib/embed_script.py $< $@ np_store_page_js
-
-$(OUT_DIR)/dylib/feats/store.o: $(STORE_PAGE_H)
 
 SUPPORT_DIR        := $(HOME)/Library/Application Support/notproton
 OVERLAY_SHIM_SRC   := overlay-shim/overlay_shim.m
@@ -740,7 +687,7 @@ helpers-install: $(ICONMAKER) $(APPINFO)
 
 dobby:
 	@mkdir -p $(DOBBY_DIR)
-	cd $(DOBBY_DIR) && cmake "$(CURDIR)/vendor/dobby" \
+	cd $(DOBBY_DIR) && cmake $(CURDIR)/vendor/dobby \
 		-DCMAKE_OSX_ARCHITECTURES=arm64 \
 		-DCMAKE_OSX_DEPLOYMENT_TARGET=$(MIN_VER) \
 		-DDOBBY_DEBUG=OFF \

@@ -327,24 +327,6 @@ for (const form of Object.keys(FORMS)) {
     const on = page.sent[page.sent.length - 1];
     t.ok(page.g.__NOTPROTON_BADGES_OFF__ === false && on.appid === 1, 'and turning it on again is kept too');
 
-    // The store has a switch of its own, since what it costs is a port and not a badge.
-    const store = () => page.r().find(x => x.type === 'ToggleField' && /Store and Wishlist/.test(x.props.label));
-    t.ok(!!store() && store().props.checked === true, 'the store has its own switch, on to begin with');
-    t.ok(/port on this Mac/.test(store().props.description), 'which says what it opens');
-    t.ok(/restart/.test(store().props.description), 'and that it changes when Steam restarts');
-    store().props.onChange(false);
-    await settle();
-    const soff = page.sent[page.sent.length - 1];
-    t.ok(soff.route === 'NotProton.SetBadges#1' && soff.appid === 2 && page.g.__NOTPROTON_STORE_OFF__ === true,
-         `turning it off is kept apart from the badges (${soff.appid})`);
-    t.ok(page.g.__NOTPROTON_BADGES_OFF__ === false, 'which stay on');
-    store().props.onChange(true);
-    await settle();
-    t.ok(page.sent[page.sent.length - 1].appid === 3, 'and turning it on again is kept');
-    sw().props.onChange(false);
-    await settle();
-    t.ok(store().props.disabled === true && store().props.checked === false,
-         'with every badge off, the store row is off and cannot be turned on alone');
   }
   const nodes = (opts, tool = 'notproton') =>
     walk(P({ details: details(opts, { strCompatToolName: tool }) }));

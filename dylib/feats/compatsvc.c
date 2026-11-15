@@ -17,7 +17,6 @@
 #include "catalog.h"
 #include "defaults.h"
 #include "prefixstate.h"
-#include "store.h"
 #include "webui.h"
 #include "../resolver/anchor.h"
 #include "../util/file.h"
@@ -490,15 +489,12 @@ static int set_defaults(uintptr_t request, uintptr_t response) {
         ? RESULT_OK : RESULT_FAIL;
 }
 
-// The Mac badges, on or off. The number that carries an appid for the other routes
-// carries the choice here: anything but zero is on.
+// Mac badges on or off. The appid field carries the choice: non-zero is on.
 static int set_badges(uintptr_t request, uintptr_t response) {
     uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
     uint32_t on       = (has_bits & SPECIFY_HAS_APPID)
                       ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
     (void)response;
-    // Two switches on one route: 0 and 1 are the badges off and on, 2 and 3 the store's.
-    if (on >= 2) return np_store_set_enabled(on == 3) ? RESULT_OK : RESULT_FAIL;
     return np_catalog_set_enabled(on != 0) ? RESULT_OK : RESULT_FAIL;
 }
 

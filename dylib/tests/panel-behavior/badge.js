@@ -37,7 +37,6 @@ const MAP = {
   620: ['blocked', 'This game uses Easy Anti-Cheat, which does not run under CrossOver on macOS.'],
   730: ['issues', 'This game starts through Ubisoft Connect.'],
   440: ['unknown', 'This game has not run on this Mac yet.'],
-  550: ['likely', 'Verified on Steam Deck through Proton.'],
 };
 
 let failed = 0;
@@ -96,18 +95,6 @@ const ok = (cond, what) => { if (!cond) failed++; console.log(`  ${cond ? 'PASS'
      'a style module that throws still leaves a badge');
   ok(w2.g.window.__NOTPROTON_BADGE__({ appid: 480 }, null, w2.styles) === null,
      'and no React is no badge, not a crash');
-}
-
-// Passed Valve's Proton testing but not run here: a green ring, since the fill is kept
-// for what this Mac has actually seen.
-{
-  const w = world(MAP);
-  const d = w.g.window.__NOTPROTON_BADGE__({ appid: 550 }, React, w.styles).props.children.props.style;
-  ok(/solid #59bf40/.test(d.border) && d.color === '#59bf40', 'likely is a green ring');
-  ok(d.background !== '#59bf40', 'and not the fill a game that ran here gets');
-  const stat = w.g.window.__NOTPROTON_STAT__({ details: { unAppID: 550 } }, React,
-    () => ({ GameStat: 'GS', GameStatIcon: 'GSI', GameStatRight: 'GSR', PlayBarLabel: 'PBL', PlayBarDetailLabel: 'PBD' }));
-  ok(stat.props.children[1].props.children[1].props.children === 'Likely', 'which the game page calls Likely');
 }
 
 // The switch in Settings: off is no badge and no stat, and on again brings both back
