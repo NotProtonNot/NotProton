@@ -1744,6 +1744,8 @@ static const np_gate_t g_fixes[] = {
       1, 0 },
     { "this.m_bServicesInitialized=!0,SteamClient.UI.NotifyAppInitialized()",
       "this.m_bServicesInitialized=!0," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1, 0 },
+    { "(\"small_mode\")," NP_C1 "=!" NP_C2 "||" NP_C3 "," NP_C4 "=" NP_C1 "," NP_C5 "=200,",
+      "(\"small_mode\")," NP_C1 "=!" NP_C2 "||" NP_C3 "," NP_C4 "=!!0," NP_C5 "=200,", 1, 0 },
     // Pr means macOS, td means Windows.
     // Steam Play makes every game count as available, so the Apple filter goes by oslist.
     // Games missing from appinfo.vdf, and other platforms, keep Steam's check.
