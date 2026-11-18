@@ -157,5 +157,51 @@ const need = { needsRebuild: true, app: true, running: false, rebuild: '' };
     w.listeners.mscxstate({ detail: 480 });
     assert(!w.listeners.mscxstate, 'a row that left the page stops listening');
   }
+  // The badge: what the game's own sessions on this Mac came to.
+  {
+    const badge = () => w.row.children.find(c => (c.className || '').startsWith('MSCXVerdict'));
+    const ran = { needsRebuild: false, app: true, running: false, rebuild: '',
+                  verdict: 'verified', runs: 4, crashes: 0, minutes: 192,
+                  runBuild: '26.3', runBackend: 'dxmt' };
+    var w = world([ran]);
+    w.g.MSCXPrefixRow(w.row, 480); await w.settle(); await w.settle();
+    assert.equal(w.row.style.display, '', 'a verdict alone is reason enough to show the row');
+    assert.equal(badge().className, 'MSCXVerdict MSCXVerdict-verified');
+    assert.equal(badge().children[0].textContent, 'CrossOver Verified on this Mac');
+    assert.equal(badge().children[1].textContent, 'runs: 4 \u00b7 crashes: 0 \u00b7 3h 12m \u00b7 CrossOver 26.3 \u00b7 dxmt');
+  }
+  {
+    const w = world([{ needsRebuild: false, app: true, rebuild: '', verdict: 'playable',
+                       runs: 1, crashes: 2, minutes: 7, runBuild: '', runBackend: 'auto' }]);
+    w.g.MSCXPrefixRow(w.row, 480); await w.settle(); await w.settle();
+    const b = w.row.children[0];
+    assert.equal(b.className, 'MSCXVerdict MSCXVerdict-playable');
+    assert.equal(b.children[0].textContent, 'Runs on this Mac');
+    // A build nobody recorded and a backend nobody chose are left off rather than guessed.
+    assert.equal(b.children[1].textContent, 'runs: 1 \u00b7 crashes: 2 \u00b7 7m');
+  }
+  {
+    // A game that has never run here gets no badge at all.
+    const w = world([{ needsRebuild: false, app: true, rebuild: '', verdict: 'unknown',
+                       runs: 0, crashes: 0, minutes: 0 }]);
+    w.g.MSCXPrefixRow(w.row, 480); await w.settle(); await w.settle();
+    assert.equal(w.row.children.length, 0);
+    assert.equal(w.row.style.display, 'none', 'and nothing to show hides the row');
+  }
+  {
+    // The badge says what the game has done, not what the prefix is doing, so starting a
+    // rebuild leaves it where it is.
+    const w = world([{ needsRebuild: true, app: true, running: false, rebuild: '',
+                       verdict: 'broken', runs: 0, crashes: 3, minutes: 2,
+                       runBuild: '26.3', runBackend: 'dxvk' },
+                     { needsRebuild: true, app: true, rebuild: 'copy' }]);
+    w.g.MSCXPrefixRow(w.row, 480); await w.settle(); await w.settle();
+    assert.equal(w.row.children[0].children[0].textContent, 'Has not run on this Mac');
+    w.buttons()[1].onclick(); await w.settle(); await w.settle(); await w.settle();
+    assert.equal(w.row.children[0].className, 'MSCXVerdict MSCXVerdict-broken',
+                 'the badge stays while the rebuild runs');
+    assert(w.texts().includes('Copying your files\u2026'), 'and the rebuild shows under it');
+  }
   console.log('PASS: rebuild row hides, offers, progresses, finishes, fails, waits for the game and finds no app');
+  console.log('PASS: the badge shows what this Mac has seen, and nothing when it has seen nothing');
 })().catch(e => { console.error(e); process.exit(1); });

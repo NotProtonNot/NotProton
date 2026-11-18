@@ -50,6 +50,10 @@ SRCS := \
 	dylib/feats/defaults.c \
 	dylib/feats/compatpage.c \
 	dylib/feats/prefixstate.c \
+	dylib/feats/verdict.c \
+	dylib/feats/game.c \
+	dylib/feats/badge.c \
+	dylib/feats/catalog.c \
 	dylib/feats/usershortcuts.c \
 	dylib/feats/conf.c \
 	dylib/feats/webpatch.c \
@@ -78,7 +82,7 @@ DEPS := $(OBJS:.o=.d)
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
-        compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
+        compatsvc-check prefixstate-check defaults-check verdict-check game-check badge-check catalog-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -194,7 +198,7 @@ PREFIXSTATE_CHECK := $(OUT_DIR)/prefixstate-check
 prefixstate-check:
 	@if [ ! -f dylib/tests/prefixstate-check.c ]; then $(call SKIP,prefixstate-check,dylib/tests/prefixstate-check.c); exit 0; fi; \
 	mkdir -p $(OUT_DIR) && \
-	$(TEST_CC) -o $(PREFIXSTATE_CHECK) dylib/tests/prefixstate-check.c && \
+	$(TEST_CC) -o $(PREFIXSTATE_CHECK) dylib/tests/prefixstate-check.c dylib/feats/verdict.c && \
 	$(PREFIXSTATE_CHECK)
 
 COMPATSVC_CHECK := $(OUT_DIR)/compatsvc-check
@@ -214,6 +218,45 @@ $(DEFAULTS_CHECK): dylib/tests/defaults-check.c dylib/feats/defaults.c dylib/fea
 
 defaults-check: $(DEFAULTS_CHECK)
 	@$(DEFAULTS_CHECK)
+
+CATALOG_CHECK := $(OUT_DIR)/catalog-check
+
+$(CATALOG_CHECK): dylib/tests/catalog-check.c dylib/feats/catalog.c dylib/feats/catalog.h \
+                  dylib/feats/badge.c dylib/feats/game.c dylib/feats/verdict.c dylib/util/file.c
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/catalog-check.c dylib/feats/badge.c dylib/feats/game.c \
+	  dylib/feats/verdict.c dylib/util/file.c dylib/util/log.c
+
+catalog-check: $(CATALOG_CHECK)
+	@$(CATALOG_CHECK)
+
+GAME_CHECK := $(OUT_DIR)/game-check
+
+$(GAME_CHECK): dylib/tests/game-check.c dylib/feats/game.c dylib/feats/game.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/game-check.c
+
+BADGE_CHECK := $(OUT_DIR)/badge-check
+
+$(BADGE_CHECK): dylib/tests/badge-check.c dylib/feats/badge.c dylib/feats/badge.h \
+                dylib/feats/game.c dylib/feats/verdict.c
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/badge-check.c dylib/feats/game.c dylib/feats/verdict.c
+
+badge-check: $(BADGE_CHECK)
+	@$(BADGE_CHECK)
+
+game-check: $(GAME_CHECK)
+	@$(GAME_CHECK)
+
+VERDICT_CHECK := $(OUT_DIR)/verdict-check
+
+$(VERDICT_CHECK): dylib/tests/verdict-check.c dylib/feats/verdict.c dylib/feats/verdict.h
+	@mkdir -p $(dir $@)
+	$(TEST_CC) -o $@ dylib/tests/verdict-check.c
+
+verdict-check: $(VERDICT_CHECK)
+	@$(VERDICT_CHECK)
 
 COMPATPAGE_CHECK := $(OUT_DIR)/compatpage-check
 
@@ -502,6 +545,7 @@ panel-behavior:
 	node $(PANEL_TESTS)/behavior.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/switching.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/launch-options.js $(OUT_DIR)/panel-emit && \
+	node $(PANEL_TESTS)/badge.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/shell.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/migration.js $(OUT_DIR)/panel-emit && \
 	node $(PANEL_TESTS)/localization.js $(OUT_DIR)/panel-emit && \

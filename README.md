@@ -39,6 +39,14 @@ I would have done things differently had I been aware of that.
 
 Thanks to everyone who has positively contributed to macOS gaming. 
 
+Mac compatibility:
+
+Each installed game gets an Apple badge in the corner of its library tile and a MAC stat on its
+page: green if it has run well on this Mac, yellow if a launcher is in the way or it has crashed
+here, red if it carries an anti-cheat or has only ever crashed, and a dashed ring if it has not run
+here yet. It is all worked out from this Mac. Turn it off under Steam → Preferences → Compatibility.
+See ```docs/mac-compatibility.md```.
+
 Developer Notes:
 
 As far as the source structure goes, the macOS app itself is located in the ```app``` folder. The core logic is in ```dylib```.

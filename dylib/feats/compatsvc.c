@@ -14,6 +14,7 @@
 
 #include "compatsvc.h"
 #include "compat.h"
+#include "catalog.h"
 #include "defaults.h"
 #include "prefixstate.h"
 #include "webui.h"
@@ -35,6 +36,7 @@
 #define ROUTE_SET_DEFAULTS         "NotProton.SetDefaults#1"
 #define ROUTE_SET_TOOL_DEFAULTS    "NotProton.SetToolDefaults#1"
 #define ROUTE_APPLY_TOOL_DEFAULTS  "NotProton.ApplyToolDefaults#1"
+#define ROUTE_SET_BADGES            "NotProton.SetBadges#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -487,6 +489,15 @@ static int set_defaults(uintptr_t request, uintptr_t response) {
         ? RESULT_OK : RESULT_FAIL;
 }
 
+// Mac badges on or off. The appid field carries the choice: non-zero is on.
+static int set_badges(uintptr_t request, uintptr_t response) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    uint32_t on       = (has_bits & SPECIFY_HAS_APPID)
+                      ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
+    (void)response;
+    return np_catalog_set_enabled(on != 0) ? RESULT_OK : RESULT_FAIL;
+}
+
 static int tool_build(const char *tool, size_t n, char *build, size_t size, uint32_t *runner) {
     np_compat_tool_info_t info;
     if (np_compat_tool_by_name(tool, n, &info) && info.build && strlen(info.build) < size) {
@@ -566,6 +577,8 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
         || !np_webui_register_route(ROUTE_APPLY_TOOL_DEFAULTS, specify_request, specify_response,
                                     apply_tool_defaults))
         NP_WARN("compatsvc: the Settings page cannot save default compatibility settings");
+    if (!np_webui_register_route(ROUTE_SET_BADGES, specify_request, specify_response, set_badges))
+        NP_WARN("compatsvc: the Settings page cannot turn the Mac badges off");
 
     g_routes = NP_COMPATSVC_READY;
 

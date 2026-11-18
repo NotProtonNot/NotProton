@@ -308,6 +308,26 @@ let failed = 0;
 for (const form of Object.keys(FORMS)) {
   const { render: P, written } = panel(emit, form, globalsWith(SAVED), { fexTools: FEX_TOOLS });
   const t = runner(form);
+
+  // The switch for the Mac badges: one row, kept by its own route, felt at once. Only the
+  // statement shape carries the Settings page at all.
+  if (form === 'statement') {
+    const page = openPage(form, BUILDS);
+    const sw = () => page.r().find(x => x.type === 'ToggleField' && x.props.label === 'Show Mac compatibility badges');
+    t.ok(!!sw(), 'the Settings page offers the badge switch');
+    t.ok(sw().props.checked === true, 'which is on until someone turns it off');
+    sw().props.onChange(false);
+    await settle();
+    t.ok(page.g.__NOTPROTON_BADGES_OFF__ === true, 'turning it off is felt at once');
+    const off = page.sent[page.sent.length - 1];
+    t.ok(off.route === 'NotProton.SetBadges#1' && off.appid === 0, `and is kept (${off.route}, ${off.appid})`);
+    t.ok(sw().props.checked === false, 'the row then shows it off');
+    sw().props.onChange(true);
+    await settle();
+    const on = page.sent[page.sent.length - 1];
+    t.ok(page.g.__NOTPROTON_BADGES_OFF__ === false && on.appid === 1, 'and turning it on again is kept too');
+
+  }
   const nodes = (opts, tool = 'notproton') =>
     walk(P({ details: details(opts, { strCompatToolName: tool }) }));
   const dropdowns = ns => ns.filter(x => x.type === 'Dropdown');

@@ -1,6 +1,7 @@
 // Prefix state for the Compatibility page. Mirrors the run script's checks
 // (prefix_machine, notproton-build) so the page can say what a launch would say.
 #include "prefixstate.h"
+#include "verdict.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -283,6 +284,15 @@ static void json_string(json_t *j, const char *key, const char *value) {
     json_raw(j, "\"");
 }
 
+static void json_number(json_t *j, const char *key, int value) {
+    char text[16];
+    json_raw(j, j->len > 1 ? ",\"" : "\"");
+    json_raw(j, key);
+    json_raw(j, "\":");
+    snprintf(text, sizeof text, "%d", value);
+    json_raw(j, text);
+}
+
 static void json_bool(json_t *j, const char *key, int value) {
     json_raw(j, j->len > 1 ? ",\"" : "\"");
     json_raw(j, key);
@@ -341,6 +351,17 @@ int np_prefix_state_json(uint32_t appid, const np_prefix_state_t *st, char *out,
     json_bool(&j, "running", st->running);
     json_string(&j, "rebuild", st->rebuild);
     json_bool(&j, "app", st->app[0] != '\0');
+    // What the game's own sessions on this Mac came to. A game that has never run here
+    // reads "unknown", which is the page's cue to claim nothing about it.
+    np_verdict_t v;
+    np_verdict_read(st->compatdata, &v);
+    json_string(&j, "verdict", np_verdict_name(v.tier));
+    json_number(&j, "runs", v.healthy);
+    json_number(&j, "crashes", v.failed);
+    json_number(&j, "minutes", v.minutes);
+    json_string(&j, "lastRun", v.last);
+    json_string(&j, "runBuild", v.build);
+    json_string(&j, "runBackend", v.backend);
     json_raw(&j, "}");
     return j.ok ? (int)j.len : -1;
 }

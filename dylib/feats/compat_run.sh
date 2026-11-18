@@ -1623,12 +1623,46 @@ set_switch_state() {
   fi
 }
 
+# Per-game history for the Mac badge: format, healthy count, failed count, seconds played,
+# then the last session's health, build and backend.
+record_history() {
+  record="$STEAM_COMPAT_DATA_PATH/notproton-sessions"
+  np_h=0 np_f=0 np_secs=0
+  if [ "$(head -1 "$record" 2>/dev/null)" = 1 ]; then
+    {
+      read -r _ || true
+      read -r np_h || true
+      read -r np_f || true
+      read -r np_secs || true
+    } < "$record"
+  fi
+  # A damaged record starts over rather than carrying bad numbers.
+  case "$np_h$np_f$np_secs" in
+    *[!0-9]* | "") np_h=0 np_f=0 np_secs=0 ;;
+  esac
+  case "$1" in
+    healthy) np_h=$((np_h + 1)) ;;
+    failed)  np_f=$((np_f + 1)) ;;
+  esac
+  # Ignore a session longer than a day, which is a clock jump.
+  case "$2" in
+    "" | *[!0-9]*) ;;
+    *) if [ "$2" -le 86400 ]; then np_secs=$((np_secs + $2)); fi ;;
+  esac
+  if ! printf '1\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+       "$np_h" "$np_f" "$np_secs" "$1" "$np_build" "${CX_GRAPHICS_BACKEND:-auto}" > "$record.$$" \
+     || ! mv -f "$record.$$" "$record"; then
+    rm -f "$record.$$"
+  fi
+}
+
 # The switch record is old build, its name, then the healthy sessions since or "failed".
 # Two healthy sessions clear it.
 record_session() {
   switch="$STEAM_COMPAT_DATA_PATH/notproton-switch"
   health=$(session_health "$1" "$2" "$3")
   echo "=== session health: $health after $2s ===" >> "$log" 2>&1 || true
+  record_history "$health" "$2"
   case "$health" in
     healthy)
       printf '%s\n' "$np_build" > "$STEAM_COMPAT_DATA_PATH/notproton-healthy" 2>/dev/null || true

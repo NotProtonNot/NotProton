@@ -123,7 +123,8 @@ int main(void) {
           "{\"appid\":480,\"tool\":\"notproton-fex-41073\",\"toolDisplay\":\"CrossOver 2026 10 15-ARM64 - FEX\","
           "\"toolArch\":\"fex\",\"prefix\":true,\"prefixArch\":\"rosetta\",\"lastBuild\":\"26.3.0.39832\","
           "\"lastDisplay\":\"CrossOver \\\"26.3\\\"\",\"needsRebuild\":true,\"running\":false,"
-          "\"rebuild\":\"\",\"app\":false}",
+          "\"rebuild\":\"\",\"app\":false,\"verdict\":\"unknown\",\"runs\":0,\"crashes\":0,"
+          "\"minutes\":0,\"lastRun\":\"unknown\",\"runBuild\":\"\",\"runBackend\":\"\"}",
           state(480, "notproton-fex-41073"));
     check("the tool's build is what the app is asked to rebuild with", "27.0.0.41073-fex", st.tool_build);
     check("the prefix is found on the library holding the game",

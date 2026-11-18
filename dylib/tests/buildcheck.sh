@@ -266,6 +266,7 @@ $(extract tool_name)
 $(extract last_wine_build)
 $(extract session_health)
 $(extract set_switch_state)
+$(extract record_history)
 $(extract record_session)
 $(extract offer_switch_rebuild)"
 crash_log="$work/crash.log"
@@ -332,6 +333,37 @@ is "a game never seen working is not blamed on the switch" none "$([ -f "$data/n
 switch_world other-build
 session new-build "$crash_log" 5
 is "a game seen working on another build is not blamed on this switch" none "$([ -f "$data/notproton-switch" ] && state || echo none)"
+
+echo "== what the sessions add up to =="
+# The record the Compatibility page reads: healthy, failed, seconds, then the last
+# session's health, build and backend.
+history() { sed -n "$1p" "$data/notproton-sessions" 2>/dev/null || echo none; }
+switch_world old-build
+session new-build "$clean_log" 300
+is "a healthy session is counted" "1 0 300 healthy" \
+	"$(history 2) $(history 3) $(history 4) $(history 5)"
+session new-build "$clean_log" 600
+is "and the next one adds to it" "2 0 900 healthy" \
+	"$(history 2) $(history 3) $(history 4) $(history 5)"
+is "the build that ran it is recorded" new-build "$(history 6)"
+session new-build "$crash_log" 5
+is "a crash is counted apart from the runs" "2 1 905 failed" \
+	"$(history 2) $(history 3) $(history 4) $(history 5)"
+session new-build "$crash_log" 300
+is "a session that says nothing still counts its time" "2 1 1205 unknown" \
+	"$(history 2) $(history 3) $(history 4) $(history 5)"
+
+# A record that is not this format, or that holds something no run wrote, starts over
+# rather than carrying a number the page would then show.
+switch_world old-build
+printf '9\n7\n7\n7\nhealthy\nb\nd\n' > "$data/notproton-sessions"
+session new-build "$clean_log" 300
+is "a record in another format starts over" "1 0 300" "$(history 2) $(history 3) $(history 4)"
+printf '1\nmany\n0\n0\nhealthy\nb\nd\n' > "$data/notproton-sessions"
+session new-build "$clean_log" 300
+is "a count that is not a number starts over" "1 0 300" "$(history 2) $(history 3) $(history 4)"
+session new-build "$clean_log" -5
+is "a session of impossible length adds no time" "2 0 300" "$(history 2) $(history 3) $(history 4)"
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> buildcheck: all assertions hold"

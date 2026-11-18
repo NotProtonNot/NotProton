@@ -4,6 +4,8 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -16,6 +18,13 @@ static const char *g_platform_js;
 
 char *np_nativeplatform_javascript(void) {
     return g_platform_js ? strdup(g_platform_js) : NULL;
+}
+
+// The badges come from the catalogue the dylib keeps. A check hands them over instead,
+// so what the tiles do is checked without a Steam library on the machine running it.
+char *np_catalog_javascript(const char *steam_root) {
+    const char *set = getenv("NP_TEST_BADGES");
+    return set && *set ? strdup(set) : NULL;
 }
 
 static int g_wrong;
