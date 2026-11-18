@@ -61,6 +61,24 @@ for (const form of Object.keys(FORMS)) {
          'its rows still write the key our run script reads');
   }
 
+  {
+    const APPS = JSON.stringify([
+      { k: 'NOTPROTON_FH', l: 'Forza only', on: '1', off: '', dep: '', d: '', ap: ['2483190'] },
+      { k: 'NOTPROTON_ANY', l: 'Any game', on: '1', off: '', dep: '', d: '' },
+    ]).replace(/"(\w+)":/g, '$1:');
+    const labels = (render, app) => walk(render({ details: details('', { unAppID: app }) }))
+      .filter(x => x.props && x.props.label).map(x => x.props.label);
+    const { render: PA } = panel(emit, form, undefined, { feats: APPS });
+    t.ok(labels(PA, 2483190).includes('Forza only'), 'apps: shown for its game');
+    t.ok(!labels(PA, 287700).includes('Forza only') && labels(PA, 287700).includes('Any game'),
+         'apps: hidden for any other game');
+    const { render: PS } = panel(emit, form, undefined, { feats: APPS, showAll: 1 });
+    t.ok(labels(PS, 287700).includes('Forza only'), 'apps: show all');
+    const live = { document: { documentElement: { lang: 'en' } }, MSCXShowAllPlugins: true };
+    const { render: PL } = panel(emit, form, live, { feats: APPS });
+    t.ok(labels(PL, 287700).includes('Forza only'), 'apps: show all, switched on this session');
+  }
+
   // For a tool we did not install there is no run script of ours in the launch, so the
   // panel writes what that script would have exported: the dylib on the insert list and
   // the plugin's own env, in the form that carries a variable without our launch hook.

@@ -55,6 +55,7 @@ int main(int argc, char **argv) {
         }
         np_webpatch_set_tool_builds(ours, ran, ours, nours);
         np_webpatch_set_features(getenv("NP_TEST_READY"), getenv("NP_TEST_FEATS"));
+        np_webpatch_set_show_all(getenv("NP_TEST_SHOW_ALL") != NULL);
         np_webpatch_set_variants(getenv("NP_TEST_VARS"));
         put_panel(strncmp(form, "component", 9) == 0 ? NP_CX_OPTIONS_COMPONENT
                                                      : NP_CX_OPTIONS_STATEMENT);

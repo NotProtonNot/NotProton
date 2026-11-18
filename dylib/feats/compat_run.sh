@@ -402,6 +402,7 @@ NP_CONF_NAMES
     return eq ? trim(substr(s, 1, eq - 1)) : s
   }
   function toolok(s) { sub(/\*$/, "", s); return s ~ /^[A-Za-z0-9._-]+$/ }
+  function appok(s) { return s ~ /^[1-9][0-9]*$/ && length(s) <= 10 && s + 0 <= 4294967295 }
   function envok(s,   eq) {
     eq = index(s, "=")
     return eq > 1 && substr(s, 1, eq - 1) ~ /^[A-Z_][A-Z0-9_]*$/
@@ -426,6 +427,7 @@ NP_CONF_NAMES
       if (names[i] == "env" && !envok(vals[i])) { detail = "env"; return "bad-value" }
       if (names[i] == "choice" && choiceval(vals[i]) == "") { detail = "choice"; return "bad-value" }
       if (names[i] == "tools" && !toolok(vals[i])) { detail = "tools"; return "bad-value" }
+      if (names[i] == "apps" && !appok(vals[i])) { detail = "apps"; return "bad-value" }
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
     }
     if (("hide_crossover" in cnt) && !("tools" in cnt)) { detail = "tools"; return "missing-required" }
@@ -483,8 +485,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove", f, " ")

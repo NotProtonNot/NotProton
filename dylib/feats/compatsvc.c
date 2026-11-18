@@ -17,6 +17,7 @@
 #include "defaults.h"
 #include "prefixstate.h"
 #include "webui.h"
+#include "webpatch.h"
 #include "../resolver/anchor.h"
 #include "../util/file.h"
 #include "../util/log.h"
@@ -35,6 +36,7 @@
 #define ROUTE_SET_DEFAULTS         "NotProton.SetDefaults#1"
 #define ROUTE_SET_TOOL_DEFAULTS    "NotProton.SetToolDefaults#1"
 #define ROUTE_APPLY_TOOL_DEFAULTS  "NotProton.ApplyToolDefaults#1"
+#define ROUTE_SET_SHOW_ALL         "NotProton.SetShowAllPlugins#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -518,6 +520,26 @@ static int apply_tool_defaults(uintptr_t request, uintptr_t response) {
     return done > 0 ? RESULT_OK : done < 0 ? NP_COMPATSVC_PARTLY_APPLIED : RESULT_FAIL;
 }
 
+static int set_show_all(uintptr_t request, uintptr_t response) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    uint32_t on       = (has_bits & SPECIFY_HAS_APPID)
+                      ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
+    const char *home  = np_home_dir();
+    char path[PATH_MAX];
+    (void)response;
+    if (!home) return RESULT_FAIL;
+    np_support_path(path, sizeof path, home, NP_SHOW_ALL_PLUGINS_FILE);
+    if (on) {
+        int fd = open(path, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0644);
+        if (fd < 0) return RESULT_FAIL;
+        close(fd);
+    } else if (unlink(path) != 0 && errno != ENOENT) {
+        return RESULT_FAIL;
+    }
+    NP_LOG("compatsvc: plugins made for other games are %s", on ? "shown" : "hidden");
+    return RESULT_OK;
+}
+
 static uintptr_t g_state_changed;
 static int g_routes = NP_COMPATSVC_UNTRIED;
 
@@ -564,7 +586,9 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
         || !np_webui_register_route(ROUTE_SET_TOOL_DEFAULTS, specify_request, specify_response,
                                     set_tool_defaults)
         || !np_webui_register_route(ROUTE_APPLY_TOOL_DEFAULTS, specify_request, specify_response,
-                                    apply_tool_defaults))
+                                    apply_tool_defaults)
+        || !np_webui_register_route(ROUTE_SET_SHOW_ALL, specify_request, specify_response,
+                                    set_show_all))
         NP_WARN("compatsvc: the Settings page cannot save default compatibility settings");
 
     g_routes = NP_COMPATSVC_READY;

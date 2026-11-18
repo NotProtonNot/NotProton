@@ -48,16 +48,17 @@
 // Stands for the runner variants read from the support directory.
 #define NP_VARS "\033"
 #define NP_OUR_TOOLS "\034"
+#define NP_SHOW_ALL "\035"
 
 #define NP_TOOL_NAME_MAX 128
 
 #define NP_UNREAD_DEFAULTS "{rosetta:null,fex:null}"
 
 enum { IN_FALLBACK_TOOL, IN_FEX_TOOLS, IN_DEFAULTS, IN_BUILDS, IN_READY, IN_FEATS, IN_VARS,
-       IN_OUR_TOOLS, IN_COUNT };
+       IN_OUR_TOOLS, IN_SHOW_ALL, IN_COUNT };
 typedef struct { char *text[IN_COUNT]; } np_inputs_t;
 static const char *const g_unset[IN_COUNT] = { "", "[]", NP_UNREAD_DEFAULTS, "[]", "{}", "[]", "[]",
-                                               "[]" };
+                                               "[]", "0" };
 static pthread_key_t g_inputs_key;
 static pthread_once_t g_inputs_once = PTHREAD_ONCE_INIT;
 
@@ -313,9 +314,9 @@ static const char *marker_text(char c) {
     if (c == NP_DEFAULTS[0]) return input_text(IN_DEFAULTS);
     if (c == NP_BUILDS[0]) return input_text(IN_BUILDS);
     if (c == NP_OUR_TOOLS[0]) return input_text(IN_OUR_TOOLS);
-    if (c == NP_READY[0] || c == NP_FEATS[0]) {
+    if (c == NP_READY[0] || c == NP_FEATS[0] || c == NP_SHOW_ALL[0]) {
         if (!g_feat_ready_done) feat_build();
-        return input_text(c == NP_READY[0] ? IN_READY : IN_FEATS);
+        return input_text(c == NP_READY[0] ? IN_READY : c == NP_FEATS[0] ? IN_FEATS : IN_SHOW_ALL);
     }
     if (c == NP_VARS[0]) {
         if (!g_var_done) var_build();
@@ -492,6 +493,12 @@ static void feat_build(void) {
     g_feat_ready_done = 1;
     set_input(IN_READY, NULL);
     set_input(IN_FEATS, NULL);
+    set_input(IN_SHOW_ALL, NULL);
+    if (home) {
+        char flag[1024];
+        np_support_path(flag, sizeof(flag), home, NP_SHOW_ALL_PLUGINS_FILE);
+        if (access(flag, F_OK) == 0) set_input(IN_SHOW_ALL, strdup("1"));
+    }
     // 32 records of 4K each, which is too much for the stack of a thread Steam owns.
     if (!home || !(list = calloc(NP_CONF_RECORDS_MAX, sizeof(*list)))) return;
     n = feat_load(home, list);
@@ -535,6 +542,7 @@ static void feat_build(void) {
         if (!feat_put_list(&rows, ",dn:[", rec, "description_on")) goto done;
         if (!feat_put_env(&rows, rec, home)) goto done;
         if (!feat_put_list(&rows, ",tl:[", rec, "tools")) goto done;
+        if (!feat_put_list(&rows, ",ap:[", rec, "apps")) goto done;
         // What the run script would have done, for a page that has to do it itself: the
         // dylib to insert, and whether anything here only our own runner can deliver.
         if (*resolved && inj && strcmp(inj, "1") == 0) {
@@ -587,6 +595,10 @@ done:
     free(ready.buf);
     free(rows.buf);
     free(list);
+}
+
+void np_webpatch_set_show_all(int on) {
+    set_input(IN_SHOW_ALL, strdup(on ? "1" : "0"));
 }
 
 void np_webpatch_set_features(const char *ready, const char *rows) {
@@ -1248,16 +1260,18 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 #define NP_CX_DEFAULTS "(globalThis.MSCXDefaultsData||(globalThis.MSCXDefaultsData=" NP_DEFAULTS "))"
 #define NP_CX_BUILDS "(globalThis.MSCXBuilds||(globalThis.MSCXBuilds=" NP_BUILDS "))"
+#define NP_CX_SHOW_ALL "(globalThis.MSCXShowAllPlugins?\?(globalThis.MSCXShowAllPlugins=!!" NP_SHOW_ALL "))"
 
 // FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
 #define NP_CX_PANEL(RT, BARREL) \
-    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,dflt,dev,tool,ours=1,target:X})=>{" \
+    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,foot,dflt,dev,tool,app,ours=1,target:X})=>{" \
     "const npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
     /* A plugin may name the tools it is for. Filtered here rather than at render, so the
        dependency chain and the indent depth see what the panel shows and nothing else. */ \
     "npTool=tool||\"\"," \
     "npFor=p=>\"*\"===p.slice(-1)?npTool.startsWith(p.slice(0,-1)):p===npTool," \
-    "MSCXReady=" NP_READY ",MSCXFeat=(" NP_FEATS ").filter(f=>!f.tl||f.tl.some(npFor))," \
+    "MSCXReady=" NP_READY ",MSCXFeat=(" NP_FEATS ").filter(f=>(!f.tl||f.tl.some(npFor))" \
+    "&&(!f.ap||!app||" NP_CX_SHOW_ALL "||f.ap.includes(String(app))))," \
     "npCx=ours&&!MSCXFeat.some(f=>f.hc),MSCXVar=" NP_VARS "," \
     /* A toggle parent is satisfied by its on value; one that holds a value, such as a
        dropdown or a slider, by holding one at all rather than sitting on Default. */ \
@@ -1465,7 +1479,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ":\"choice\"===f.ty?TC(kk,f.l,d,lv,f.ch,pe)" \
     ":\"slider\"===f.ty?(f.ch?TL(kk,f.l,d,lv,f.ch,f.df,pe)" \
     ":TS(kk,f.l,d,lv,f.mn,f.mx,f.st,f.df,f.sf,pe))" \
-    ":TD(f.k,f.l,f.on,f.off,d,lv)}))})},\"dev\"):null" \
+    ":TD(f.k,f.l,f.on,f.off,d,lv)}))})},\"dev\"):null,npCx&&foot" \
     "].filter(Boolean);" \
     /* A tool of someone else's with nothing of ours to offer gets no page at all. */ \
     "if(!npBody.length)return null;" \
@@ -1487,7 +1501,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "G=k=>\"DXMT_CONFIG\"===k?mergedDxmt:has(k)?g(k):DF[k]||\"\";" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
-    "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,tool:tn," \
+    "return MSCXPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,tool:tn,app:t.unAppID," \
     "ours:tn===\"" NP_FALLBACK_TOOL "\"||!!ot," \
     "dflt:lost?null:k=>DF[k],target:(" NP_CX_TARGET ")(o,t.unAppID,t.strInstallFolder||\"\"),head:" \
     "typeof MSCXPrefixRow==\"function\"&&(0," RT ".jsx)(\"div\",{className:\"MSCXRow\",ref:e=>e&&MSCXPrefixRow(e,t.unAppID)},\"npstate\")" \
@@ -1532,7 +1546,10 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "selectedOption:b?b.id:\"\",onChange:v=>{const p=BL.find(x=>x.id===v.data);if(!p)return;" \
     "si(p.id);sr(p.runner===\"fex\"?1:0);clr()}},\"version\"):null," \
     "b?btn(\"apply\",(" NP_WEB_IS_IT "?\"Applica come predefinite a tutti gli strumenti di compatibilit\\u00e0 \"+kind:\"Apply as defaults for all \"+kind+\" Compatibility Tools\")," NP_WEB_TEXT("Apply", "Apply", "Applica") ",apply,ok||void 0):null" \
-    "]},\"defaults\")})};" \
+    "]},\"defaults\"),foot:(0," RT ".jsx)(" BARREL ".XY,{label:" NP_WEB_TEXT("NotProton Plugin System", "NotProton Plugin System", "NotProton Plugin System") "," \
+    "children:(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:" NP_WEB_TEXT("Game-Specific Plugins Are Shown as Available for Every Game", "Game-Specific Plugins Are Shown as Available for Every Game", "Game-Specific Plugins Are Shown as Available for Every Game") "," \
+    "checked:!!" NP_CX_SHOW_ALL ",onChange:v=>q(()=>send(\"NotProton.SetShowAllPlugins#1\",v?1:0,\"\")" \
+    ".then(x=>done(x,()=>{globalThis.MSCXShowAllPlugins=!!v})))},\"showall\")},\"plugins\")})};" \
     "return()=>{const up=typeof globalThis.MSCXUseState==\"function\"&&typeof globalThis.MSCXUseEffect==\"function\"" \
     "&&typeof globalThis.MSCXSpecifyRoute==\"function\";" \
 "const dd=" NP_CX_DEFAULTS ";if(null===dd.rosetta||null===dd.fex){" \

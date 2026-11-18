@@ -111,16 +111,24 @@ uintptr_t np_webui_registry(void) { return 1; }
 
 static const char *routes_seen[16];
 static uintptr_t   route_requests[16];
+static int       (*route_handlers[16])(uintptr_t, uintptr_t);
 static int         route_count;
 
 int np_webui_register_route(const char *name, uintptr_t req, uintptr_t resp,
                             int (*handler)(uintptr_t, uintptr_t)) {
-    (void)resp; (void)handler;
+    (void)resp;
     if (route_count < 16) {
         routes_seen[route_count] = name;
+        route_handlers[route_count] = handler;
         route_requests[route_count++] = req;
     }
     return 1;
+}
+
+static char g_support[256] = "/nonexistent";
+void np_support_path(char *buf, size_t size, const char *home, const char *rel) {
+    (void)home;
+    snprintf(buf, size, "%s%s%s", g_support, rel ? "/" : "", rel ? rel : "");
 }
 
 static uint32_t    saved_runner = 99;
@@ -802,7 +810,7 @@ static void routes_state_cases(void) {
     check(np_compatsvc_routes() == NP_COMPATSVC_READY,
           "a client carrying every message type registers and reads as ready");
     static const char *const defaults_routes[] = { ROUTE_SET_DEFAULTS, ROUTE_SET_TOOL_DEFAULTS,
-                                                   ROUTE_APPLY_TOOL_DEFAULTS };
+                                                   ROUTE_APPLY_TOOL_DEFAULTS, ROUTE_SET_SHOW_ALL };
     int specify = -1, after = 1, same = 1;
     for (int i = 0; i < route_count; i++)
         if (strcmp(routes_seen[i], ROUTE_SPECIFY_COMPAT_TOOL) == 0) specify = i;
@@ -1022,6 +1030,35 @@ static void string_field_cases(void) {
     check(result != NULL && result[0] == '\0', "a null string field returns empty");
 }
 
+static void show_all_cases(void) {
+    char dir[] = "out/compatsvc-showall.XXXXXX";
+    if (!mkdtemp(dir)) { check(0, "a scratch support folder exists"); return; }
+    snprintf(g_support, sizeof g_support, "%s", dir);
+    char flag[512];
+    snprintf(flag, sizeof flag, "%s/%s", dir, NP_SHOW_ALL_PLUGINS_FILE);
+
+    route_count = 0;
+    g_routes = NP_COMPATSVC_UNTRIED;
+    stub_absent_type = NULL;
+    np_compatsvc_register(NULL, 0, 0, 0);
+    int (*h)(uintptr_t, uintptr_t) = NULL;
+    for (int i = 0; i < route_count; i++)
+        if (strcmp(routes_seen[i], ROUTE_SET_SHOW_ALL) == 0) h = route_handlers[i];
+    check(h != NULL, "show all: registered");
+    if (!h) return;
+
+    uint8_t req[64] = {0};
+    *(uint32_t *)(req + REQ_HAS_BITS_OFF) = SPECIFY_HAS_APPID;
+    *(uint32_t *)(req + SPECIFY_APPID_OFF) = 1;
+    check(h((uintptr_t)req, 0) == RESULT_OK && access(flag, F_OK) == 0, "show all: on writes the flag");
+    check(h((uintptr_t)req, 0) == RESULT_OK && access(flag, F_OK) == 0, "show all: on again");
+    *(uint32_t *)(req + SPECIFY_APPID_OFF) = 0;
+    check(h((uintptr_t)req, 0) == RESULT_OK && access(flag, F_OK) != 0, "show all: off removes it");
+    check(h((uintptr_t)req, 0) == RESULT_OK, "show all: off again");
+    rmdir(dir);
+    snprintf(g_support, sizeof g_support, "/nonexistent");
+}
+
 int main(void) {
     offered_cases();
     hidden_cases();
@@ -1038,6 +1075,7 @@ int main(void) {
     routes_state_cases();
     string_field_cases();
     rebuild_route_cases();
+    show_all_cases();
 
     if (failures) {
         printf("==> compatsvc: %d check(s) failed\n", failures);

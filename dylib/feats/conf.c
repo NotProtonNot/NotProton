@@ -21,7 +21,8 @@ static const np_conf_spec_t kPlugin[] = {
     { "tools", 8, 0 },     { "type", 1, 0 },        { "choice", 16, 0 },
     { "min", 1, 0 },
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
-    { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { NULL, 0, 0 }
+    { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
+    { NULL, 0, 0 }
 };
 
 // label and variant fall back to the record's id, so a variant that is the only one in
@@ -153,6 +154,14 @@ static int conf_tool_ok(const char *v) {
     return 1;
 }
 
+static int conf_app_ok(const char *v) {
+    size_t n = strlen(v);
+    if (!n || n > 10 || v[0] == '0') return 0;
+    for (size_t i = 0; i < n; i++)
+        if (v[i] < '0' || v[i] > '9') return 0;
+    return strtoull(v, NULL, 10) <= 4294967295ULL;
+}
+
 static int conf_env_ok(const char *v) {
     const char *eq = strchr(v, '=');
     if (!eq || eq == v) return 0;
@@ -223,6 +232,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "tools") == 0 && !conf_tool_ok(v)) {
             *detail = "tools";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "apps") == 0 && !conf_app_ok(v)) {
+            *detail = "apps";
             return NP_CONF_BAD_VALUE;
         }
         if (strcmp(n, "hide_crossover") == 0 && strcmp(v, "1") != 0) {

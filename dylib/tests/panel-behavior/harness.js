@@ -33,7 +33,7 @@ const FORMS = {
 // `fallback` and `fexTools` stand in for what the hook sets before the transform.
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
                { fallback = 'notproton', fexTools = [], names = ['R0', 'B0'], data = false, drop = [],
-                 ready, feats, vars,
+                 ready, feats, vars, showAll,
                  // What an install would carry. The panel renders for these and no others.
                  tools = ['notproton', 'notproton-26.3', 'notproton-fex', 'notproton-fex-rosetta',
                           'notproton-rosetta'],
@@ -44,6 +44,7 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
   if (ready !== undefined) env.NP_TEST_READY = ready;
   if (feats !== undefined) env.NP_TEST_FEATS = feats;
   if (vars !== undefined) env.NP_TEST_VARS = vars;
+  if (showAll) env.NP_TEST_SHOW_ALL = '1';
   // A build the page was given is a tool the install carries, as it is in a real one,
   // where the settings page lists a subset of what the compatibility folder holds.
   env.NP_TEST_TOOLS = [...new Set([...tools, ...(globals.MSCXBuilds || []).map(b => b && b.id),
