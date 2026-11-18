@@ -190,7 +190,7 @@ enum RunnerPatcher {
 
     private static func entitlements(of loader: URL) -> String? {
         guard let result = try? Shell.run(
-            "/usr/bin/codesign", ["-d", "--entitlements", ":-", loader.path(percentEncoded: false)]
+            "/usr/bin/codesign", ["-d", "--entitlements", "-", "--xml", loader.path(percentEncoded: false)]
         ), result.status == 0 else { return nil }
         return result.stdout
     }

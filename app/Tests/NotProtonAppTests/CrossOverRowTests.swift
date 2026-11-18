@@ -176,5 +176,7 @@ struct ManualCrossOverTests {
         #expect(CrossOverSource.isSearched(URL(filePath: "/Applications/CrossOver.app")))
         #expect(!CrossOverSource.isSearched(URL(filePath: "/Volumes/Spare/CrossOver.app")))
         #expect(!CrossOverSource.isSearched(URL(filePath: "/Applications/Games/CrossOver.app")))
+        #expect(!CrossOverSource.isSearched(URL(filePath: "/Applications/CX 27.app")))
+        #expect(!CrossOverSource.isSearched(URL(filePath: "/Applications/Crossover_MGVF.app")))
     }
 }

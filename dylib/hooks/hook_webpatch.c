@@ -156,7 +156,10 @@ static int try_serve(const char *path, int oflag) {
         return -1;
     if (!np_webpatch_should_patch(path))
         return -1;
-    return open_patched(path);
+    int fd = open_patched(path);
+    if (fd >= 0 && (oflag & O_CLOEXEC))
+        fcntl(fd, F_SETFD, FD_CLOEXEC);
+    return fd;
 }
 
 static mode_t creat_mode(int oflag, va_list ap) {
@@ -234,6 +237,9 @@ static FILE *np_fopen(const char *path, const char *mode) {
         int e = errno;
         close(fd);
         errno = e;
+    } else if (oflag & O_APPEND) {
+        // fopen leaves an append stream at the end, fdopen does not
+        fseeko(fp, 0, SEEK_END);
     }
     return fp;
 }

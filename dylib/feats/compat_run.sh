@@ -536,16 +536,16 @@ NP_CONF_NAMES
 # The normalised table is built once per directory and read with these, so nothing below
 # parses a descriptor itself.
 np_conf_value() {
-  printf '%s\n' "$1" | awk -F'\t' -v i="$2" -v f="$3" '$1 == i && $2 == f { print $3; exit }'
+  printf '%s\n' "$1" | awk -F'\t' -v i="$2" -v f="$3" '$1 "" == i "" && $2 == f { print $3; exit }'
 }
 np_conf_values() {
-  printf '%s\n' "$1" | awk -F'\t' -v i="$2" -v f="$3" '$1 == i && $2 == f { print $3 }'
+  printf '%s\n' "$1" | awk -F'\t' -v i="$2" -v f="$3" '$1 "" == i "" && $2 == f { print $3 }'
 }
 np_conf_ids() {
   printf '%s\n' "$1" | awk -F'\t' '$1 != "!" && $1 !~ /^== / && !seen[$1]++ { print $1 }'
 }
 np_conf_has() {
-  printf '%s\n' "$1" | awk -F'\t' -v i="$2" '$1 == i { found = 1 } END { exit !found }'
+  printf '%s\n' "$1" | awk -F'\t' -v i="$2" '$1 "" == i "" { found = 1 } END { exit !found }'
 }
 # A path a descriptor names: absolute, or under $HOME however it is written, as
 # resolve_home_path in webpatch.c reads it.
@@ -818,7 +818,7 @@ np_variant_sign() {
 # lands nothing is refused, which is what catches a tree meant for the other machine.
 np_variant_overlay() {
   np_v_root="$1"
-  : > "$np_v_root/.np-laid" || return 1
+  true > "$np_v_root/.np-laid" || return 1
   for np_v_name in $2; do
     np_variant_read "$np_v_name" || return 1
     np_v_nd=$(np_variant_norm "$np_v_dst")
@@ -991,10 +991,11 @@ np_variant_build() (
     exit 1
   fi
   np_variant_say "building ${np_v_target##*/} from $np_v_names"
-  if ! { cp -c -R "$np_v_base" "$np_v_new" 2>/dev/null || cp -R "$np_v_base" "$np_v_new"; } \
+  if ! { cp -c -R "$np_v_base" "$np_v_new" 2>/dev/null \
+         || { rm -rf "$np_v_new" && cp -R "$np_v_base" "$np_v_new"; }; } \
      || ! np_variant_overlay "$np_v_new" "$np_v_names" \
      || ! printf '%s\n' "$np_v_want" > "$np_v_new/CrossOver/.notproton-variant" \
-     || ! : > "$np_v_new/.notproton-used"; then
+     || ! true > "$np_v_new/.notproton-used"; then
     rm -rf "$np_v_new"
     np_variant_say "could not build ${np_v_target##*/}"
     exit 1
@@ -1022,7 +1023,7 @@ np_variant_last_good() {
     np_v_lg=${np_v_lg%/.notproton-used}
     [ -d "$np_v_lg/CrossOver/lib/wine" ] || continue
     [ "$(grep '^base ' "$np_v_lg/CrossOver/.notproton-variant" 2>/dev/null || true)" = "$np_v_base_now" ] || continue
-    : > "$np_v_lg/.notproton-used" 2>/dev/null || continue
+    true > "$np_v_lg/.notproton-used" 2>/dev/null || continue
     printf '%s' "$np_v_lg"
     break
   done
@@ -1099,7 +1100,7 @@ np_variant_resolve() {
       np_variant_layout=$(np_variant_layout_of < "$np_variant_root/CrossOver/.notproton-variant")
     fi
   fi
-  : > "$np_variant_root/.notproton-used" 2>/dev/null || true
+  true > "$np_variant_root/.notproton-used" 2>/dev/null || true
   np_variant_gc "$np_v_stem" "$np_variant_root"
   np_variant_root="$np_variant_root/CrossOver"
   return 0
@@ -2060,10 +2061,12 @@ import_prefix_settings() {
     echo "=== could not track the hidden controllers, leaving them as they are ===" >> "$log" 2>&1 || true
   fi
   hidraw_planned=0
-  if plan_disable_hidraw 2>/dev/null; then
+  if [ "$verb" = run ]; then
+    hidraw_value=""
+  elif plan_disable_hidraw 2>/dev/null; then
     hidraw_planned=1
     if [ "$NOTPROTON_DISABLE_HIDRAW" = "1" ] && [ -n "$hidraw_value" ]; then
-      : > "$hidraw_file" 2>/dev/null || hidraw_value=""
+      true > "$hidraw_file" 2>/dev/null || hidraw_value=""
     fi
   else
     hidraw_value=""
@@ -2441,6 +2444,23 @@ prepare_prefix_directory() {
   fi
   for interrupted in "$STEAM_COMPAT_DATA_PATH"/pfx.replaced.*; do
     [ -e "$interrupted" ] || [ -L "$interrupted" ] || continue
+    if [ -d "$interrupted" ] && [ ! -L "$interrupted" ] && [ ! -L "$WINEPREFIX" ]; then
+      rmdir "$WINEPREFIX" 2>/dev/null || true
+      if [ ! -e "$WINEPREFIX" ] && mv "$interrupted" "$WINEPREFIX"; then
+        echo "=== restored the prefix an interrupted rebuild left at $interrupted ===" >> "$log" 2>&1 || true
+        continue
+      fi
+      if [ -f "$WINEPREFIX/user.reg" ]; then
+        kept_base="$STEAM_COMPAT_DATA_PATH/pfx.previous-$(date +%Y%m%d-%H%M%S)"
+        kept=$kept_base
+        n=2
+        while [ -e "$kept" ] || [ -L "$kept" ]; do kept="$kept_base-$n"; n=$((n + 1)); done
+        if mv "$interrupted" "$kept"; then
+          echo "=== kept the prefix an interrupted rebuild left at $interrupted as $kept ===" >> "$log" 2>&1 || true
+          continue
+        fi
+      fi
+    fi
     echo "=== interrupted prefix replacement needs recovery: $interrupted ===" >> "$log" 2>&1 || true
     show_alert "Prefix recovery required" "An interrupted prefix replacement may hold saved games. Do not delete this prefix. Check its notproton-run.log for the recovery folder."
     exit 1
@@ -2584,7 +2604,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   stage_step="prefix arch check"
   refuse_foreign_prefix
   claim_prefix
-  note_variant_switch
+  [ "$verb" = run ] || note_variant_switch
   stage_step="prefix switch check"
   offer_switch_rebuild
   echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
@@ -2806,7 +2826,6 @@ fi
 
 export WINEDEBUG="${WINEDEBUG:-err+all,fixme-all}"
 exec 8>&-
-trap - EXIT
 printf 'launch_args=%s\n' "$launch_args" >> "$log" 2>&1 || true
 printf '=== launching (%s): %s %s ===\n' "$verb" "$WINELOADER" "$*" >> "$log" 2>&1 || true
 
@@ -2820,6 +2839,7 @@ esac
 shim_exe="C:\\Program Files (x86)\\Steam\\steam.exe"
 
 if [ "$foreground" = 0 ]; then
+  trap - EXIT
   status=0  # set -e would exit before the status is read
   case "$verb" in
     # runinprefix is the one verb the Linux client keeps on the raw loader.
@@ -2837,6 +2857,7 @@ if [ "$foreground" = 0 ]; then
   exit $status
 fi
 
+stage_step="launcher bundle"
 # Fixes CrossOver window focus issues
 steam_root="$(dirname "$(dirname "$(dirname "$STEAM_COMPAT_DATA_PATH")")")"
 manifest="$steam_root/steamapps/appmanifest_$app_id.acf"
@@ -3133,6 +3154,7 @@ np_env_reserved() {
   return 1
 }
 
+stage_step="plugins"
 np_feat_dir="$np_support/plugins"
 np_feat_log() {
   echo "=== $* ===" >> "$log" 2>&1 || true
@@ -3363,6 +3385,7 @@ elif [ -s "$game_mode_off" ]; then
     rm -f "$game_mode_off"
   fi
 fi
+trap - EXIT
 if [ -n "$game_runner" ]; then
   shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
   inserts="$STEAM_DYLD_INSERT_LIBRARIES"
@@ -3371,8 +3394,12 @@ if [ -n "$game_runner" ]; then
     inserts="$shim:$inserts"
   fi
   # FEX's wine ignores DYLD_INSERT_LIBRARIES, lsteamclient loads the overlay there
-  [ "${wine_unix##*/}" = x86_64-unix ] || inserts=""
-  [ -z "$np_feat_dylibs" ] || inserts="${inserts:+$inserts:}$np_feat_dylibs"
+  if [ "${wine_unix##*/}" = x86_64-unix ]; then
+    [ -z "$np_feat_dylibs" ] || inserts="${inserts:+$inserts:}$np_feat_dylibs"
+  else
+    inserts=""
+    [ -z "$np_feat_dylibs" ] || np_feat_log "plugin dylibs are not loaded, FEX's wine drops DYLD_INSERT_LIBRARIES: $np_feat_dylibs"
+  fi
   np_started=$(date +%s)
   np_terminated=0
   (unset WINEDLLPATH WINELOADER; [ -z "$inserts" ] || export DYLD_INSERT_LIBRARIES="$inserts"
@@ -3398,13 +3425,13 @@ else
   done <<NP_FEAT_ENVS
 $np_feat_envs
 NP_FEAT_ENVS
+  for name in $np_env_names; do
+    eval "value=\$NOTPROTON_ENV_$name"
+    set -- --env "$name=$value" "$@"
+  done
   for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
     eval "value=\$$name"
     # shellcheck disable=SC2154 # eval assigns value on the line above
-    set -- --env "$name=$value" "$@"
-  done
-  for name in $np_env_names; do
-    eval "value=\$NOTPROTON_ENV_$name"
     set -- --env "$name=$value" "$@"
   done
   set -- \

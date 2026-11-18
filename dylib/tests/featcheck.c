@@ -139,6 +139,17 @@ int main(void) {
        "is always offerable, having nothing that can be missing");
     ok(strstr(feats_json(), "on:\"1\"") != NULL, "defaults its on value to 1");
 
+    puts("== env paths are filled in as the run script fills them");
+    clear_descs();
+    write_desc("10-e.conf", "[NOTPROTON_E]\nlabel = E\nsection = dev\n"
+               "env = HUD_CONFIG=~/hud.conf\nenv = HUD_DIR=$HOME/hud:$HOME/x\nenv = PLAIN=1\n");
+    {
+        char want[1024];
+        snprintf(want, sizeof(want), "ev:[\"HUD_CONFIG=%s/hud.conf\",\"HUD_DIR=%s/hud:%s/x\",\"PLAIN=1\"]",
+                 g_home, g_home, g_home);
+        ok(strstr(feats_json(), want) != NULL, "~/ and $HOME expand");
+    }
+
     puts("== file order decides row order");
     clear_descs();
     write_desc("30-z.conf", "[NOTPROTON_Z]\nlabel = Zed\nsection = dev\n");

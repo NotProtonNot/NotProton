@@ -255,6 +255,12 @@ int main(void) {
 
     reset(); four_functions();
     needle_ref_at(0x910);
+    branch(0x88C, 0x900);
+    branch(0x908, 0x910);
+    check_string("a branch inside the function to the string load is not its tail caller", 1, 1, 0x880);
+
+    reset(); four_functions();
+    needle_ref_at(0x910);
     call(0x88C, 0x900);
     call(0x40C, 0x900);
     check_string("two callers", 1, 0, 0);

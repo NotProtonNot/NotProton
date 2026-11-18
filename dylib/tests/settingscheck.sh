@@ -230,6 +230,11 @@ again "" 0
 { cat "$work/retina-off"; winebus '"DisableHidraw"=dword:00000001'; } > "$work/expected"
 same_file "on" "$work/expected" "$case_dir/imported"
 printf '%s\n' '[System\\ControlSet001\\Services\\winebus] 1791230000' '"DisableHidraw"=dword:00000001' '' >> "$case_dir/pfx/system.reg"
+HIDRAW='' VERB=run
+again "" 0
+is "a helper leaves Disable hidraw alone" "" "$(grep -c DisableHidraw "$case_dir/imported" | grep -v '^0$' || true)"
+is "a helper keeps the marker" "yes" "$(test -f "$case_dir/notproton-disable-hidraw" && echo yes)"
+unset VERB
 HIDRAW=''
 again "" 0
 { cat "$work/retina-off"; winebus '"DisableHidraw"=-'; } > "$work/expected"

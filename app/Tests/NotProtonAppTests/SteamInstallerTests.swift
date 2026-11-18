@@ -491,6 +491,28 @@ struct SteamInstallerTests {
         )
     }
 
+    @Test("A Steam whose seal was broken after the insert landed is patched again")
+    func brokenSealIsPatched() async throws {
+        let work = try scratchDirectory("install")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let fixture = try await self.fixture(into: work)
+
+        _ = try install(fixture)
+        let resource = fixture.app.appending(path: "Contents/Resources/notproton-seal-test")
+        try FileManager.default.createDirectory(
+            at: resource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("unsealed".utf8).write(to: resource)
+
+        #expect(
+            try SteamInstaller.needsPatching(
+                plist: fixture.plist,
+                dylib: fixture.deployedDylib,
+                shipping: fixture.payload.dylib,
+                app: fixture.app
+            )
+        )
+    }
+
     @Test("A payload with nothing in it stops the install before anything is touched")
     func refusesEmptyPayload() async throws {
         let work = try scratchDirectory("install")

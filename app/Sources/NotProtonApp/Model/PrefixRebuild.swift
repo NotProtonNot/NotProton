@@ -82,6 +82,8 @@ extension PrefixTools {
         environment["WINEPREFIX"] = fresh.path(percentEncoded: false)
         layOutProfile(in: fresh)
         _ = try Shell.check(loader.path(percentEncoded: false), ["wineboot", "--init"], environment: environment)
+        // Its wineserver writes the fresh registry on exit, which would land on the carried user.reg
+        _ = try? Shell.run(layout(runner: runner, flavor: flavor).server.path(percentEncoded: false), ["-w"], environment: environment)
 
         progress(.copying)
         let carry = Carry(from: prefix.pfx, to: fresh)
@@ -99,14 +101,19 @@ extension PrefixTools {
         progress(.finishing)
         let parked = fm.fileExists(atPath: prefix.pfx.path(percentEncoded: false))
         let previous = backupSlot(in: prefix.root, at: now)
+        // compat_run.sh restores a pfx.replaced left by a crash between these renames
+        let replaced = prefix.root.appending(path: "pfx.replaced.\(getpid())")
         if parked {
-            try fm.moveItem(at: prefix.pfx, to: previous)
+            try fm.moveItem(at: prefix.pfx, to: replaced)
         }
         do {
             try fm.moveItem(at: fresh, to: prefix.pfx)
         } catch {
-            if parked { try? fm.moveItem(at: previous, to: prefix.pfx) }
+            if parked { try? fm.moveItem(at: replaced, to: prefix.pfx) }
             throw error
+        }
+        if parked {
+            try fm.moveItem(at: replaced, to: previous)
         }
         if let record { try writeBuildRecord(record, for: prefix) }
         guard parked else { return nil }

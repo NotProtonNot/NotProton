@@ -75,6 +75,7 @@ int np_conf_count(const np_conf_rec_t *rec, const char *name) {
 }
 
 static int conf_id_ok(np_conf_kind kind, const char *id) {
+    if (strlen(id) >= NP_CONF_ID_MAX) return 0;
     if (kind == NP_CONF_PLUGIN) {
         if (strncmp(id, "NOTPROTON_", 10) != 0 || !id[10]) return 0;
         for (const char *p = id + 10; *p; p++)

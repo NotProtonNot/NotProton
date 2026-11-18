@@ -222,7 +222,7 @@ struct UninstallTests {
             libraries: [],
             modifications: layout.modifications, lockFolder: layout.root,
             repair: { _, _ in throw Offline() },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         #expect(outcome.restoredValveSignature == false)
@@ -238,6 +238,31 @@ struct UninstallTests {
         #expect(!files.fileExists(atPath: layout.secondTool.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: layout.foreignTool.path(percentEncoded: false)))
         #expect(unpinnedWithoutLosingTheRest(layout.updateBlock))
+    }
+
+    @Test("A running game or Wine tool stops the removal before anything goes")
+    func refusesWhileWineRuns() async throws {
+        let layout = try layout()
+        defer { try? FileManager.default.removeItem(at: layout.root) }
+
+        await #expect(throws: StepFailure.self) {
+            _ = try await Uninstall.run(
+                app: layout.app,
+                innerPlist: layout.innerPlist,
+                updateBlocks: [layout.updateBlock],
+                legacyCompat: layout.legacyCompat,
+                compatTools: layout.compatTools,
+                directories: [layout.support, layout.caches],
+                libraries: [],
+                modifications: layout.modifications, lockFolder: layout.root,
+                repair: { _, _ in },
+                stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in true }
+            )
+        }
+        let files = FileManager.default
+        #expect(files.fileExists(atPath: layout.support.path(percentEncoded: false)))
+        #expect(files.fileExists(atPath: layout.compatTool.path(percentEncoded: false)))
+        #expect(SteamBundle.currentInsert(at: layout.outerPlist) != nil)
     }
 
     @Test("A removal does not install Steam when there is none")
@@ -257,7 +282,7 @@ struct UninstallTests {
             libraries: [],
             modifications: layout.modifications, lockFolder: layout.root,
             repair: { _, _ in repaired.set() },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         #expect(!repaired.value)
@@ -285,7 +310,7 @@ struct UninstallTests {
             libraries: [],
             modifications: layout.modifications, lockFolder: layout.root,
             repair: { _, _ in },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         #expect(outcome.unreachableSteam == [unplugged])
@@ -308,7 +333,7 @@ struct UninstallTests {
             libraries: [],
             modifications: layout.modifications, lockFolder: layout.root,
             repair: { _, _ in },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         #expect(outcome.partialRemoval == nil)
@@ -348,7 +373,7 @@ struct UninstallTests {
             libraries: [],
             modifications: layout.modifications, lockFolder: layout.root,
             repair: { _, _ in throw Offline() },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         #expect(outcome.steamNeedsRedownload)
@@ -384,7 +409,7 @@ struct UninstallTests {
                 try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
                 try Data("2.6G of Steam".utf8).write(to: staged.appending(path: "Steam.app"))
             },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         #expect(outcome.restoredValveSignature)
@@ -413,7 +438,7 @@ struct UninstallTests {
                 report(.checking)
                 report(.replacing)
             },
-            stop: { _, _ in false }
+            stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false }
         )
 
         let restoring = log.all.compactMap { phase -> RepairPhase? in
@@ -451,7 +476,7 @@ struct UninstallTests {
             legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
             directories: [layout.support, layout.caches], libraries: [library],
             modifications: layout.modifications, lockFolder: layout.root,
-            repair: { _, _ in }, stop: { _, _ in false })
+            repair: { _, _ in }, stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false })
 
         for template in templates { #expect(!FileManager.default.fileExists(atPath: template.path)) }
         #expect(try String(contentsOf: unrelated, encoding: .utf8) == "keep")
@@ -487,7 +512,7 @@ struct UninstallTests {
             legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
             directories: [layout.support, layout.caches], libraries: [ours, foreign, real, empty],
             modifications: layout.modifications, lockFolder: layout.root,
-            repair: { _, _ in }, stop: { _, _ in false })
+            repair: { _, _ in }, stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false })
 
         #expect((try? files.destinationOfSymbolicLink(atPath: dll(ours).path(percentEncoded: false))) == nil)
         #expect(outcome.removed.filter { $0 == "Steam.dll" }.count == 1)
@@ -506,7 +531,8 @@ struct UninstallTests {
             legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
             directories: [layout.support, layout.caches], libraries: [],
             modifications: layout.modifications, lockFolder: layout.root,
-            repair: repair, stop: stop)
+            repair: repair, stop: stop,
+            runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false })
     }
 
     @Test("Removal cleans both tracked copies when the first drive returns")
@@ -703,7 +729,7 @@ struct UninstallTests {
                 legacyCompat: layout.legacyCompat, compatTools: layout.compatTools,
                 directories: [layout.support, layout.caches], libraries: [library],
                 modifications: layout.modifications, lockFolder: layout.root,
-                repair: { _, _ in }, stop: { _, _ in false })
+                repair: { _, _ in }, stop: { _, _ in false }, runners: layout.root.appending(path: "runners"), runnerIsRunning: { _ in false })
         }
         #expect(try String(contentsOf: sentinel, encoding: .utf8) == "keep")
     }

@@ -29,11 +29,13 @@ int np_await_image(const char *name, int timeout_ms,
         if (g_await_stop) return -1;
 
         int idx = image_index_by_name(name);
-        if (idx >= 0) {
-            *out_mh    = (const struct mach_header_64 *)_dyld_get_image_header((uint32_t)idx);
+        const struct mach_header_64 *mh = idx >= 0
+            ? (const struct mach_header_64 *)_dyld_get_image_header((uint32_t)idx) : NULL;
+        const char *p = mh ? _dyld_get_image_name((uint32_t)idx) : NULL;
+        if (mh && p && strstr(p, name)) {
+            *out_mh    = mh;
             *out_slide = _dyld_get_image_vmaddr_slide((uint32_t)idx);
             if (out_path && path_size) {
-                const char *p = _dyld_get_image_name((uint32_t)idx);
                 size_t len = strlen(p);
                 if (len >= path_size) len = path_size - 1;
                 memcpy(out_path, p, len);

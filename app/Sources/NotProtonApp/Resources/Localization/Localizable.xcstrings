@@ -1552,6 +1552,34 @@
         }
       }
     },
+    "A game or Wine tool is running. Quit it before removing NotProton." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A game or Wine tool is running. Quit it before removing NotProton."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A game or Wine tool is running. Quit it before removing NotProton."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A game or Wine tool is running. Quit it before removing NotProton."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A game or Wine tool is running. Quit it before removing NotProton."
+          }
+        }
+      }
+    },
     "A game or Wine tool is running. Quit it before updating NotProton." : {
       "localizations" : {
         "de" : {

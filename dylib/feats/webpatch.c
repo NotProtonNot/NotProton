@@ -460,6 +460,29 @@ static int feat_put_list(np_out_t *o, const char *key, const np_conf_rec_t *rec,
     return out_put(o, "]", 1);
 }
 
+static int feat_put_env(np_out_t *o, const np_conf_rec_t *rec, const char *home) {
+    const char *n, *v;
+    int it = 0, wrote = 0, ok = 1;
+    if (!np_conf_get(rec, "env")) return 1;
+    if (!out_put(o, ",ev:[", 5)) return 0;
+    while (ok && np_conf_next(rec, &it, &n, &v)) {
+        const char *eq = strchr(v, '=');
+        if (strcmp(n, "env") != 0 || !eq) continue;
+        np_out_t t = { 0 };
+        const char *at = eq + 1, *hit;
+        ok = out_put(&t, v, (size_t)(at - v));
+        if (ok && home && strncmp(at, "~/", 2) == 0) { ok = out_put(&t, home, strlen(home)); at++; }
+        while (ok && home && (hit = strstr(at, "$HOME"))) {
+            ok = out_put(&t, at, (size_t)(hit - at)) && out_put(&t, home, strlen(home));
+            at = hit + 5;
+        }
+        ok = ok && out_put(&t, at, strlen(at) + 1)
+             && (!wrote++ || out_put(o, ",", 1)) && out_jsstr(o, t.buf);
+        free(t.buf);
+    }
+    return ok && out_put(o, "]", 1);
+}
+
 static void feat_build(void) {
     const char *home = getenv("HOME");
     np_conf_rec_t *list = NULL;
@@ -510,7 +533,7 @@ static void feat_build(void) {
         if (!out_put(&rows, ",dep:", 5) || !out_jsstr(&rows, dep ? dep : "")) goto done;
         if (!out_put(&rows, ",d:", 3) || !out_jsstr(&rows, desc ? desc : "")) goto done;
         if (!feat_put_list(&rows, ",dn:[", rec, "description_on")) goto done;
-        if (!feat_put_list(&rows, ",ev:[", rec, "env")) goto done;
+        if (!feat_put_env(&rows, rec, home)) goto done;
         if (!feat_put_list(&rows, ",tl:[", rec, "tools")) goto done;
         // What the run script would have done, for a page that has to do it itself: the
         // dylib to insert, and whether anything here only our own runner can deliver.
@@ -1454,7 +1477,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const t=np.details,o=t.strLaunchOptions||\"\",tn=t.strCompatToolName||\"" NP_FALLBACK_TOOL "\"," \
     "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0,ot=" NP_OUR_TOOLS ".find(x=>x[0]===tn)," \
     "L=MSCXLaunch(o,t.unAppID),g=L.g,has=k=>L.k.includes(k)," \
-    "lost=globalThis.MSCXDefaultsLost,DF=lost?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)" \
+    "lost=globalThis.MSCXDefaultsLost,DF=lost||!(tn===\"" NP_FALLBACK_TOOL "\"||ot)?{}:(" NP_CX_BUILDS ".find(x=>x.id===tn)" \
     "||ot&&" NP_CX_BUILDS ".find(x=>x.build===ot[1]&&x.runner===(fex?\"fex\":\"rosetta\"))" \
     "||{}).override||" NP_CX_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
     "fk=" NP_CX_FACTOR_ENTRY ",fpk=" NP_CX_FPS_ENTRY "," \

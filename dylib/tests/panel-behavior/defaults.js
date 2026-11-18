@@ -313,6 +313,15 @@ for (const form of Object.keys(FORMS)) {
   const dropdowns = ns => ns.filter(x => x.type === 'Dropdown');
   const last = () => (written.length ? written[written.length - 1].opts : null);
 
+  {
+    const HUD = JSON.stringify([{ k: 'NOTPROTON_HUD', l: 'Hud', on: '1', off: '', dep: '', d: '',
+                                  ev: ['MTL_HUD_ENABLED=1'] }]).replace(/"(\w+)":/g, '$1:');
+    const { render: PF } = panel(emit, form, globalsWith(SAVED), { fexTools: FEX_TOOLS, feats: HUD });
+    const hud = walk(PF({ details: details('', { strCompatToolName: 'fexmac' }) }))
+      .find(x => x.props && x.props.label === 'Hud');
+    t.ok(hud && !hud.props.checked, 'a tool we did not install does not read our defaults');
+  }
+
   let r = nodes('%command%');
   t.ok(dropdowns(r)[0].props.selectedOption === 'dxmt', 'an unset backend shows the default');
   t.ok(row(r, 'Metal HUD').props.checked === true, 'an unset row shows the default');

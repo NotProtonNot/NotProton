@@ -262,7 +262,7 @@ anchorcheck:
 CALLSCHECK := $(OUT_DIR)/callscheck
 CALLSCHECK_SRCS := dylib/tests/callscheck.c $(filter-out dylib/tests/anchorcheck.c,$(ANCHORCHECK_SRCS))
 
-$(CALLSCHECK): $(CALLSCHECK_SRCS)
+$(CALLSCHECK): $(CALLSCHECK_SRCS) FORCE
 	@mkdir -p $(dir $@)
 	$(CC) -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) -std=c17 -g -O1 \
 	  -Wall -Wextra -Wno-unused-parameter -Idylib -Ivendor \
@@ -359,18 +359,18 @@ GATECHECK         := $(OUT_DIR)/gatecheck
 FEATCHECK         := $(OUT_DIR)/featcheck
 WEBPATCH_FIXTURES := dylib/tests/webpatch-fixtures
 
-$(GATECHECK): dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h \
+$(GATECHECK): FORCE dylib/tests/gatecheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h \
               dylib/feats/conf.c dylib/feats/conf.h dylib/util/file.c
 	@mkdir -p $(dir $@)
 	$(TEST_CC) -O1 -o $@ dylib/tests/gatecheck.c dylib/feats/conf.c dylib/util/file.c
 
 NATIVEPLATFORMCHECK := $(OUT_DIR)/nativeplatformcheck
 
-$(NATIVEPLATFORMCHECK): dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/feats/nativeplatform.h dylib/util/file.c
+$(NATIVEPLATFORMCHECK): FORCE dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/feats/nativeplatform.h dylib/util/file.c
 	@mkdir -p $(dir $@)
 	$(TEST_CC) -O1 -DHELPER_TIMEOUT_MS=1000 -o $@ dylib/tests/nativeplatformcheck.c dylib/feats/nativeplatform.c dylib/util/file.c
 
-$(FEATCHECK): dylib/tests/featcheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h \
+$(FEATCHECK): FORCE dylib/tests/featcheck.c dylib/feats/webpatch.c dylib/feats/webpatch.h \
               dylib/feats/conf.c dylib/feats/conf.h \
               dylib/util/file.c
 	@mkdir -p $(dir $@)
@@ -409,6 +409,7 @@ webpatch-fixtures:
 	if [ $$fail -eq 0 ]; then \
 		if command -v node >/dev/null 2>&1; then \
 			node dylib/tests/library-filter/behavior.js $$tmp/library.*.out.js || fail=1; \
+		elif [ -n "$$CI" ]; then echo "FAIL: library filter needs node in CI"; fail=1; \
 		else echo "==> library filter: node not found, skipped"; fi; \
 	fi; \
 	rm -rf $$tmp; \
@@ -486,13 +487,14 @@ APP_TESTS := app/Tests
 
 app-tests:
 	@if [ ! -d $(APP_TESTS) ]; then $(call SKIP,app-tests,$(APP_TESTS)); exit 0; fi; \
-	touch app/Package.swift; cd app && swift test --no-parallel
+	cd app && swift test --manifest-cache none --no-parallel
 
 PANEL_TESTS := dylib/tests/panel-behavior
 
 panel-behavior:
 	@if [ ! -d $(PANEL_TESTS) ]; then $(call SKIP,panel-behavior,$(PANEL_TESTS)); exit 0; fi; \
 	if ! command -v node >/dev/null 2>&1; then \
+		[ -z "$$CI" ] || { echo "FAIL: panel-behavior needs node in CI"; exit 1; }; \
 		echo "==> panel-behavior: node not found, skipped"; exit 0; fi; \
 	mkdir -p $(OUT_DIR) && \
 	$(TEST_CC) -O1 -o $(OUT_DIR)/panel-emit \
