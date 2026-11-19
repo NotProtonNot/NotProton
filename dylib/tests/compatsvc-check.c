@@ -206,6 +206,11 @@ int np_log_first_hit(const void *anchor, unsigned long tag) {
     return 1;
 }
 
+static const char *stub_live_json;
+char *np_webpatch_live_json(void) {
+    return stub_live_json ? strdup(stub_live_json) : NULL;
+}
+
 // The prefix state has its own check, so here it is whatever the test sets.
 #include "../feats/prefixstate.h"
 #include <spawn.h>
@@ -1059,6 +1064,31 @@ static void show_all_cases(void) {
     snprintf(g_support, sizeof g_support, "/nonexistent");
 }
 
+static void get_plugins_cases(void) {
+    route_count = 0;
+    g_routes = NP_COMPATSVC_UNTRIED;
+    stub_absent_type = NULL;
+    np_compatsvc_register(NULL, 0, 0, 0);
+    int (*h)(uintptr_t, uintptr_t) = NULL;
+    uintptr_t req = 0, state_req = 0;
+    for (int i = 0; i < route_count; i++) {
+        if (strcmp(routes_seen[i], ROUTE_GET_PLUGINS) == 0) { h = route_handlers[i]; req = route_requests[i]; }
+        if (strcmp(routes_seen[i], ROUTE_PREFIX_STATE) == 0) state_req = route_requests[i];
+    }
+    check(h != NULL, "plugins: registered");
+    check(h && req == state_req, "plugins: takes the GetCompatTools request like PrefixState");
+    if (!h) return;
+
+    uint8_t response_buf[64] = {0};
+    stub_live_json = "{\"s\":0,\"r\":{\"NOTPROTON_A\":1},\"f\":[{\"k\":\"NOTPROTON_A\"}],\"v\":[]}";
+    check(h(build_request(REQ_HAS_APPID, 0), (uintptr_t)response_buf) == RESULT_OK
+          && strcmp(answer(), stub_live_json) == 0, "plugins: the list is the answer");
+    stub_live_json = NULL;
+    check(h(build_request(REQ_HAS_APPID, 0), (uintptr_t)response_buf) == RESULT_FAIL,
+          "plugins: a list that cannot be read fails the call");
+    g_routes = NP_COMPATSVC_UNTRIED;
+}
+
 int main(void) {
     offered_cases();
     hidden_cases();
@@ -1076,6 +1106,7 @@ int main(void) {
     string_field_cases();
     rebuild_route_cases();
     show_all_cases();
+    get_plugins_cases();
 
     if (failures) {
         printf("==> compatsvc: %d check(s) failed\n", failures);

@@ -612,6 +612,41 @@ int main(void) {
     ok(strstr(vars_json(), "l:\"He said \\\"go\\\" \\\\ onwards\"") != NULL,
        "quotes and backslashes are escaped");
 
+    puts("== the list the page refetches");
+    make_dir("mkdir -p '%s'%s", g_featdir, "");
+    clear_descs();
+    write_desc("50-live.conf",
+               "[NOTPROTON_LIVE]\nlabel = Live \"one\", two: three\nsection = dev\n"
+               "type = choice\nchoice = a = A\nchoice = b\napps = 2483190\n");
+    {
+        char *j = np_webpatch_live_json();
+        ok(j && strncmp(j, "{\"s\":0,\"r\":{\"NOTPROTON_LIVE\":1},\"f\":[{\"k\":\"NOTPROTON_LIVE\","
+                         "\"l\":\"Live \\\"one\\\", two: three\"", 87) == 0,
+           "starts with the show-all flag, the readiness and the plugin row, keys quoted");
+        ok(j && strstr(j, "\"ap\":[\"2483190\"]") && strstr(j, "\"ch\":[{\"v\":\"a\",\"l\":\"A\"},"),
+           "lists and nested rows have their keys quoted too");
+        ok(j && strstr(j, ",\"v\":[{\"k\":\"quoted\",\"l\":\"He said \\\"go\\\" \\\\ onwards\"") != NULL,
+           "carries the variant rows");
+        ok(j && !strstr(j, "{k:") && !strstr(j, ",l:"), "leaves no bare key");
+        free(j);
+    }
+    {
+        char flag[1100];
+        FILE *f;
+        np_support_path(flag, sizeof(flag), g_home, NP_SHOW_ALL_PLUGINS_FILE);
+        if ((f = fopen(flag, "w"))) fclose(f);
+        char *j = np_webpatch_live_json();
+        ok(j && strncmp(j, "{\"s\":1,", 7) == 0, "reports the show-all flag as it is now");
+        free(j);
+        unlink(flag);
+    }
+    write_desc("51-late.conf", "[NOTPROTON_LATE]\nlabel = Late\n");
+    {
+        char *j = np_webpatch_live_json();
+        ok(j && strstr(j, "\"k\":\"NOTPROTON_LATE\"") != NULL, "a plugin added since is in the next answer");
+        free(j);
+    }
+
     puts("== a missing variant directory");
     clear_vars();
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_vardir);

@@ -484,23 +484,19 @@ static int feat_put_env(np_out_t *o, const np_conf_rec_t *rec, const char *home)
     return ok && out_put(o, "]", 1);
 }
 
-static void feat_build(void) {
-    const char *home = getenv("HOME");
+static int show_all_on(const char *home) {
+    char flag[1024];
+    np_support_path(flag, sizeof(flag), home, NP_SHOW_ALL_PLUGINS_FILE);
+    return access(flag, F_OK) == 0;
+}
+
+static int feat_rows(const char *home, char **ready_out, char **rows_out) {
     np_conf_rec_t *list = NULL;
     np_out_t ready = { 0 }, rows = { 0 };
-    int n = 0, wrote = 0;
+    int n = 0, wrote = 0, ok_all = 0;
 
-    g_feat_ready_done = 1;
-    set_input(IN_READY, NULL);
-    set_input(IN_FEATS, NULL);
-    set_input(IN_SHOW_ALL, NULL);
-    if (home) {
-        char flag[1024];
-        np_support_path(flag, sizeof(flag), home, NP_SHOW_ALL_PLUGINS_FILE);
-        if (access(flag, F_OK) == 0) set_input(IN_SHOW_ALL, strdup("1"));
-    }
     // 32 records of 4K each, which is too much for the stack of a thread Steam owns.
-    if (!home || !(list = calloc(NP_CONF_RECORDS_MAX, sizeof(*list)))) return;
+    if (!(list = calloc(NP_CONF_RECORDS_MAX, sizeof(*list)))) return 0;
     n = feat_load(home, list);
     if (!out_put(&ready, "{", 1) || !out_put(&rows, "[", 1)) goto done;
     for (int i = 0; i < n; i++) {
@@ -589,12 +585,29 @@ static void feat_build(void) {
         if (!out_put(&rows, "}", 1)) goto done;
     }
     if (!out_put(&ready, "}", 1) || !out_put(&rows, "]", 1)) goto done;
-    set_input(IN_READY, out_take(&ready));
-    set_input(IN_FEATS, out_take(&rows));
+    *ready_out = out_take(&ready);
+    *rows_out = out_take(&rows);
+    ok_all = 1;
 done:
     free(ready.buf);
     free(rows.buf);
     free(list);
+    return ok_all;
+}
+
+static void feat_build(void) {
+    const char *home = getenv("HOME");
+    char *ready, *rows;
+
+    g_feat_ready_done = 1;
+    set_input(IN_READY, NULL);
+    set_input(IN_FEATS, NULL);
+    set_input(IN_SHOW_ALL, NULL);
+    if (!home) return;
+    if (show_all_on(home)) set_input(IN_SHOW_ALL, strdup("1"));
+    if (!feat_rows(home, &ready, &rows)) return;
+    set_input(IN_READY, ready);
+    set_input(IN_FEATS, rows);
 }
 
 void np_webpatch_set_show_all(int on) {
@@ -628,6 +641,16 @@ static _Thread_local char g_var_build[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
 static _Thread_local char g_var_arch[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
 static _Thread_local size_t g_var_tools;
 
+typedef struct {
+    char tool[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
+    char build[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
+    char arch[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
+    size_t count;
+} var_tools_t;
+
+static pthread_mutex_t g_live_tools_lock = PTHREAD_MUTEX_INITIALIZER;
+static var_tools_t g_live_tools;
+
 void np_webpatch_set_tool_builds(const char *const *names, const char *const *builds,
                                  const char *const *archs, size_t count) {
     g_var_tools = 0;
@@ -641,6 +664,14 @@ void np_webpatch_set_tool_builds(const char *const *names, const char *const *bu
                  archs && archs[i] ? archs[i] : "");
         g_var_tools++;
     }
+    pthread_mutex_lock(&g_live_tools_lock);
+    for (size_t t = 0; t < g_var_tools; t++) {
+        memcpy(g_live_tools.tool[t], g_var_tool[t], NP_TOOL_NAME_MAX);
+        memcpy(g_live_tools.build[t], g_var_build[t], NP_TOOL_NAME_MAX);
+        memcpy(g_live_tools.arch[t], g_var_arch[t], NP_TOOL_NAME_MAX);
+    }
+    g_live_tools.count = g_var_tools;
+    pthread_mutex_unlock(&g_live_tools_lock);
     // They passed is_tool_name, so they need no escaping.
     np_js_t j = js_alloc(g_var_tools * (2 * NP_TOOL_NAME_MAX + 8) + 3);
     js_put(&j, "[", 1);
@@ -950,16 +981,14 @@ static int var_load(const char *home, np_var_t *list) {
     return vc.count;
 }
 
-static void var_build(void) {
-    const char *home = getenv("HOME");
+static char *var_rows(const char *home, const var_tools_t *vt, int quiet) {
     np_var_t *list = NULL;
     np_out_t rows = { 0 };
     char runners[2048];
+    char *ret = NULL;
     int n, wrote = 0;
 
-    g_var_done = 1;
-    set_input(IN_VARS, NULL);
-    if (!home || !(list = calloc(NP_CONF_RECORDS_MAX, sizeof(*list)))) return;
+    if (!home || !(list = calloc(NP_CONF_RECORDS_MAX, sizeof(*list)))) return NULL;
     n = var_load(home, list);
     np_support_path(runners, sizeof(runners), home, "runners");
     if (!out_put(&rows, "[", 1)) goto done;
@@ -969,33 +998,33 @@ static void var_build(void) {
         char hit[2048];
 
         if (!*list[i].removes && !var_holds_file(list[i].src, 0)) {
-            NP_WARN("variants: %s holds no files at %s, not offered", list[i].name, list[i].src);
+            if (!quiet) NP_WARN("variants: %s holds no files at %s, not offered", list[i].name, list[i].src);
             continue;
         }
         if (var_bridge_hit(&list[i], hit, sizeof(hit))) {
-            NP_WARN("variants: %s would change %s, which carries NotProton's Steam bridge, not offered",
+            if (!quiet) NP_WARN("variants: %s would change %s, which carries NotProton's Steam bridge, not offered",
                     list[i].name, hit);
             continue;
         }
-        for (size_t t = 0; t < g_var_tools; t++) {
+        for (size_t t = 0; t < vt->count; t++) {
             char runner[2048];
-            if (*list[i].builds && !var_has(list[i].builds, g_var_build[t])) continue;
-            if (snprintf(runner, sizeof(runner), "%s/crossover-%s", runners, g_var_build[t])
+            if (*list[i].builds && !var_has(list[i].builds, vt->build[t])) continue;
+            if (snprintf(runner, sizeof(runner), "%s/crossover-%s", runners, vt->build[t])
                 >= (int)sizeof(runner)) continue;
-            if (!var_fits(&list[i], runner, g_var_arch[t])) continue;
+            if (!var_fits(&list[i], runner, vt->arch[t])) continue;
             if (!*list[i].builds && var_wine_hit(&list[i], runner, "", 0, hit, sizeof(hit))) {
-                if (!unpinned++)
+                if (!unpinned++ && !quiet)
                     NP_WARN("variants: %s replaces %s, which is Wine's own, and names no build, not offered there",
                             list[i].name, hit);
                 continue;
             }
             if (var_apple_hit(&list[i], runner, "", 0, hit, sizeof(hit))) {
-                NP_WARN("variants: %s replaces %s, which holds an entitlement only Apple can sign for, not offered there",
+                if (!quiet) NP_WARN("variants: %s replaces %s, which holds an entitlement only Apple can sign for, not offered there",
                         list[i].name, hit);
                 continue;
             }
             snprintf(tools + strlen(tools), sizeof(tools) - strlen(tools), "%s\"%s\"",
-                     fits++ ? "," : "", g_var_tool[t]);
+                     fits++ ? "," : "", vt->tool[t]);
         }
         if (wrote && !out_put(&rows, ",", 1)) goto done;
         if (!out_put(&rows, "{k:", 3) || !out_jsstr(&rows, list[i].name)) goto done;
@@ -1005,15 +1034,32 @@ static void var_build(void) {
         if (!out_put(&rows, ",t:[", 4) || !out_put(&rows, tools, strlen(tools))) goto done;
         if (!out_put(&rows, "]}", 2)) goto done;
         wrote++;
-        if (!fits)
+        if (!fits && !quiet)
             NP_LOG("variants: %s fits no installed runner, so it is offered nowhere",
                    list[i].name);
     }
     if (!out_put(&rows, "]", 1)) goto done;
-    set_input(IN_VARS, out_take(&rows));
+    ret = out_take(&rows);
 done:
     free(rows.buf);
     free(list);
+    return ret;
+}
+
+static void var_build(void) {
+    var_tools_t *vt = calloc(1, sizeof(*vt));
+
+    g_var_done = 1;
+    set_input(IN_VARS, NULL);
+    if (!vt) return;
+    for (size_t t = 0; t < g_var_tools; t++) {
+        memcpy(vt->tool[t], g_var_tool[t], NP_TOOL_NAME_MAX);
+        memcpy(vt->build[t], g_var_build[t], NP_TOOL_NAME_MAX);
+        memcpy(vt->arch[t], g_var_arch[t], NP_TOOL_NAME_MAX);
+    }
+    vt->count = g_var_tools;
+    set_input(IN_VARS, var_rows(getenv("HOME"), vt, 0));
+    free(vt);
 }
 
 // A check supplies the list rather than reading whatever an install happens to carry
@@ -1021,6 +1067,57 @@ void np_webpatch_set_variants(const char *rows) {
     set_input(IN_VARS, strdup(rows ? rows : "[]"));
     g_var_done = 1;
     g_var_pinned = 1;
+}
+
+static int out_json_keys(np_out_t *o, const char *js) {
+    int in_str = 0;
+    for (const char *p = js; *p; p++) {
+        if (in_str) {
+            if (!out_put(o, p, 1)) return 0;
+            if (*p == '\\' && p[1]) {
+                if (!out_put(o, ++p, 1)) return 0;
+            } else if (*p == '"') {
+                in_str = 0;
+            }
+            continue;
+        }
+        if (*p == '"') in_str = 1;
+        if (!out_put(o, p, 1)) return 0;
+        if (*p != '{' && *p != ',') continue;
+        const char *k = p + 1, *e = k;
+        while ((*e >= 'a' && *e <= 'z') || (*e >= 'A' && *e <= 'Z') || *e == '_') e++;
+        if (e == k || *e != ':') continue;
+        if (!out_put(o, "\"", 1) || !out_put(o, k, (size_t)(e - k)) || !out_put(o, "\"", 1))
+            return 0;
+        p = e - 1;
+    }
+    return 1;
+}
+
+char *np_webpatch_live_json(void) {
+    const char *home = getenv("HOME");
+    var_tools_t *vt = calloc(1, sizeof(*vt));
+    char *ready = NULL, *rows = NULL, *vars = NULL, *ret = NULL;
+    np_out_t o = { 0 };
+
+    if (!home || !vt) goto done;
+    pthread_mutex_lock(&g_live_tools_lock);
+    *vt = g_live_tools;
+    pthread_mutex_unlock(&g_live_tools_lock);
+    if (!feat_rows(home, &ready, &rows) || !(vars = var_rows(home, vt, 1))) goto done;
+    if (!out_put(&o, "{\"s\":", 5) || !out_put(&o, show_all_on(home) ? "1" : "0", 1)
+        || !out_put(&o, ",\"r\":", 5) || !out_put(&o, ready, strlen(ready))
+        || !out_put(&o, ",\"f\":", 5) || !out_json_keys(&o, rows)
+        || !out_put(&o, ",\"v\":", 5) || !out_json_keys(&o, vars)
+        || !out_put(&o, "}", 1)) goto done;
+    ret = out_take(&o);
+done:
+    free(o.buf);
+    free(ready);
+    free(rows);
+    free(vars);
+    free(vt);
+    return ret;
 }
 
 static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
@@ -1270,9 +1367,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
        dependency chain and the indent depth see what the panel shows and nothing else. */ \
     "npTool=tool||\"\"," \
     "npFor=p=>\"*\"===p.slice(-1)?npTool.startsWith(p.slice(0,-1)):p===npTool," \
-    "MSCXReady=" NP_READY ",MSCXFeat=(" NP_FEATS ").filter(f=>(!f.tl||f.tl.some(npFor))" \
+    "npLv=globalThis.MSCXLive,MSCXReady=npLv?npLv.r:" NP_READY ",MSCXFeat=(npLv?npLv.f:" NP_FEATS ").filter(f=>(!f.tl||f.tl.some(npFor))" \
     "&&(!f.ap||!app||" NP_CX_SHOW_ALL "||f.ap.includes(String(app))))," \
-    "npCx=ours&&!MSCXFeat.some(f=>f.hc),MSCXVar=" NP_VARS "," \
+    "npCx=ours&&!MSCXFeat.some(f=>f.hc),MSCXVar=npLv?npLv.v:" NP_VARS "," \
     /* A toggle parent is satisfied by its on value; one that holds a value, such as a
        dropdown or a slider, by holding one at all rather than sitting on Default. */ \
     "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
@@ -1561,10 +1658,23 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_CX_CAPTURE(BODY, RT, BARREL) \
     "((npReact,npUI)=>" BODY("npReact()", "npUI()") ")(()=>" RT ",()=>" BARREL ")"
 
+#define NP_CX_LIVE_FETCH \
+    "(()=>{const g=globalThis;if(g.MSCXLiveBusy||typeof g.MSCXRoute!==\"function\")return;g.MSCXLiveBusy=1;" \
+    "g.MSCXRoute(\"NotProton.GetPlugins#1\",0).then(j=>{if(!j||j===g.MSCXLiveRaw)return;const d=JSON.parse(j);" \
+    "g.MSCXLiveRaw=j;g.MSCXLive=d;g.MSCXShowAllPlugins=!!d.s;g.dispatchEvent?.(new CustomEvent(\"mscxplugins\"))})" \
+    ".catch(e=>console.error(\"NotProton: the plugin list was not refreshed\",e)).finally(()=>{g.MSCXLiveBusy=0})})"
+
+#define NP_CX_LIVE_WRAP(RT, C) \
+    "((npR,C)=>{const W=p=>{const[,b]=globalThis.MSCXUseState(0);" \
+    "globalThis.MSCXUseEffect(()=>{const on=()=>b(x=>x+1);globalThis.addEventListener?.(\"mscxplugins\",on);" \
+    NP_CX_LIVE_FETCH "();return()=>globalThis.removeEventListener?.(\"mscxplugins\",on)},[]);return C(p)};" \
+    "return p=>typeof globalThis.MSCXUseState===\"function\"&&typeof globalThis.MSCXUseEffect===\"function\"" \
+    "?(0,npR().jsx)(W,p):C(p)})(()=>" RT "," C ")"
+
 #define NP_CX_OPTIONS_COMPONENT \
     "MSCXLaunch=" NP_CX_LAUNCH ",MSCXPick=" NP_CX_PICK "," \
     "MSCXPanel=" NP_CX_CAPTURE(NP_CX_PANEL, NP_C4, NP_C5) "," \
-    "MSCXOpts=" NP_CX_CAPTURE(NP_CX_OPTIONS_BODY, NP_C4, NP_C5) ","
+    "MSCXOpts=" NP_CX_LIVE_WRAP(NP_C4, NP_CX_CAPTURE(NP_CX_OPTIONS_BODY, NP_C4, NP_C5)) ","
 
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
 #define NP_CX_OPTIONS_STATEMENT \
@@ -1572,8 +1682,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "var MSCXPick=" NP_CX_PICK ";" \
     "var MSCXToolQuery=" NP_CX_TOOL_QUERY ";" \
     "var MSCXPanel=" NP_CX_CAPTURE(NP_CX_PANEL, NP_C3, NP_C4) ";" \
-    "var MSCXOpts=" NP_CX_CAPTURE(NP_CX_OPTIONS_BODY, NP_C3, NP_C4) ";" \
-    "var MSCXDefaultsPage=" NP_CX_CAPTURE(NP_CX_DEFAULTS_PAGE_BODY, NP_C3, NP_C4) ";"
+    "var MSCXOpts=" NP_CX_LIVE_WRAP(NP_C3, NP_CX_CAPTURE(NP_CX_OPTIONS_BODY, NP_C3, NP_C4)) ";" \
+    "var MSCXDefaultsPage=" NP_CX_LIVE_WRAP(NP_C3, NP_CX_CAPTURE(NP_CX_DEFAULTS_PAGE_BODY, NP_C3, NP_C4)) ";"
 
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \

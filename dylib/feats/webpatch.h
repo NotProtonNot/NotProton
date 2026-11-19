@@ -42,6 +42,7 @@ void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count);
 void np_webpatch_set_features(const char *ready, const char *rows);
 void np_webpatch_set_show_all(int on);
 void np_webpatch_set_variants(const char *rows);
+char *np_webpatch_live_json(void);
 
 // The compat UIs, named so a caller can compare against the table rather than a literal
 // of its own that a rename would leave behind. forcetool calls SpecifyCompatTool straight

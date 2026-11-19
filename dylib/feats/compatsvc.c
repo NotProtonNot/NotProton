@@ -37,6 +37,7 @@
 #define ROUTE_SET_TOOL_DEFAULTS    "NotProton.SetToolDefaults#1"
 #define ROUTE_APPLY_TOOL_DEFAULTS  "NotProton.ApplyToolDefaults#1"
 #define ROUTE_SET_SHOW_ALL         "NotProton.SetShowAllPlugins#1"
+#define ROUTE_GET_PLUGINS          "NotProton.GetPlugins#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -368,6 +369,27 @@ static int prefix_state(uintptr_t request, uintptr_t response) {
     return answer_json(response, appid, json);
 }
 
+static int get_plugins(uintptr_t request, uintptr_t response) {
+    (void)request;
+    char *json = np_webpatch_live_json();
+    if (!json) {
+        NP_ERR("compatsvc: the plugin list could not be read");
+        return RESULT_FAIL;
+    }
+    size_t len = strlen(json);
+    uint8_t *body = malloc(len + 16);
+    int result = RESULT_FAIL;
+    if (body) {
+        np_pb_t w = { body, len + 16, 0, 1 };
+        pb_string(&w, RESP_DEFAULT, json);
+        if (w.ok && np_webui_parse_into(response, body, (uint32_t)w.len)) result = RESULT_OK;
+        else NP_ERR("compatsvc: the client rejected the %zu byte plugin list", len);
+    }
+    free(body);
+    free(json);
+    return result;
+}
+
 // Runs argv with nothing of Steam's environment, so neither the insert nor Steam's own
 // variables reach the child. Waits for it, which is short for everything started here.
 static int run_detached(char *const argv[]) {
@@ -599,6 +621,8 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
                                     backup_and_rebuild_prefix)
         || !np_webui_register_route(ROUTE_OPEN_LOG, request, response, open_prefix_log))
         NP_WARN("compatsvc: the Compatibility page cannot rebuild prefixes");
+    if (!np_webui_register_route(ROUTE_GET_PLUGINS, request, response, get_plugins))
+        NP_WARN("compatsvc: the Compatibility page shows the plugins Steam started with");
 
     uintptr_t notification = np_rtti_vptr(mh, slide, text_base, text_size,
                                           TYPE_STATE_CHANGED);
