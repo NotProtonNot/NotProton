@@ -17,6 +17,7 @@
 
 #define NP_APP_KIND_OFF 0x3c
 #define NP_APP_KIND_DLC 0x20
+#define NP_GAME_ID_SHORTCUT 0x2000000ull
 
 typedef uint64_t (*np_create_fn)(void *app, uint64_t desktop, uint64_t unused);
 typedef uint32_t (*np_app_id_fn)(void *app);
@@ -30,9 +31,10 @@ static void update_icons(void *ctx) {
     const char *tool = np_compat_tool_dir();
     if (!tool) return;
 
-    char run[PATH_MAX], id[16];
+    char run[PATH_MAX], id[16], game[24];
     snprintf(run, sizeof(run), "%s/run", tool);
     snprintf(id, sizeof(id), "%u", app_id);
+    snprintf(game, sizeof(game), "%llu", (unsigned long long)app_id << 32 | NP_GAME_ID_SHORTCUT);
 
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attr;
@@ -50,7 +52,9 @@ static void update_icons(void *ctx) {
     posix_spawnattr_setsigmask(&attr, &none);
     posix_spawnattr_setsigdefault(&attr, &all);
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_CLOEXEC_DEFAULT);
-    char *argv[] = { "/bin/sh", run, "shortcut-icons", id, g_client, NULL };
+    char *icons[] = { "/bin/sh", run, "shortcut-icons", id, g_client, NULL };
+    char *fix[] = { "/bin/sh", run, "shortcut-fix", id, game, g_client, NULL };
+    char **argv = app_id > INT32_MAX ? fix : icons;
     pid_t pid;
     int rc = posix_spawn(&pid, argv[0], &actions, &attr, argv, *_NSGetEnviron());
     posix_spawnattr_destroy(&attr);
@@ -85,10 +89,10 @@ static uint64_t np_shortcut_create(void *app, uint64_t desktop, uint64_t unused)
     if (!ret || !app || *(const uint32_t *)((const char *)app + NP_APP_KIND_OFF) == NP_APP_KIND_DLC)
         return ret;
 
-    // Vtable slot 0 returns the app ID. Steam writes run.sh with %d, so an ID past
-    // INT32_MAX never matches.
+    // Vtable slot 0 returns the app ID. Steam writes run.sh with %d, so a non-Steam game's
+    // ID, which is past INT32_MAX, comes out negative and opens the wrong app.
     uint32_t app_id = (**(np_app_id_fn **)app)(app);
-    if (!g_queue || !app_id || app_id > INT32_MAX || !np_compat_app_runs_tool(app_id)) return ret;
+    if (!g_queue || !app_id || !np_compat_app_runs_tool(app_id)) return ret;
     dispatch_async_f(g_queue, (void *)(uintptr_t)app_id, update_icons);
     return ret;
 }

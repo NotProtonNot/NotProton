@@ -124,6 +124,32 @@ function defaultToolCases(form) {
   return t.failed;
 }
 
+async function showAllCases(form) {
+  const t = runner(form + ' show all');
+  if (form === 'component') return t.failed;
+  const label = 'Game-Specific Plugins Are Shown as Available for Every Game';
+  let { g, sent, r } = openPage(form, BUILDS);
+  t.ok(row(r(), label) && row(r(), label).props.checked === false, 'off by default');
+  const sec = r().find(x => x.type === 'Section' && x.props.label === 'NotProton Plugin System');
+  const secs = r().filter(x => x.type === 'Section').map(x => x.props.label);
+  t.ok(sec && secs[secs.length - 1] === 'NotProton Plugin System',
+       `in its own section at the bottom (${secs.join(', ')})`);
+  row(r(), label).props.onChange(true);
+  await settle(); await settle();
+  t.ok(sent.length === 1 && sent[0].route === 'NotProton.SetShowAllPlugins#1' && sent[0].appid === 1,
+       `on sends 1 (${JSON.stringify(sent)})`);
+  t.ok(g.MSCXShowAllPlugins === true && row(r(), label).props.checked === true, 'and shows as on');
+  row(r(), label).props.onChange(false);
+  await settle(); await settle();
+  t.ok(sent[1] && sent[1].appid === 0 && g.MSCXShowAllPlugins === false, 'off sends 0');
+
+  ({ g, sent, r } = openPage(form, BUILDS, { reply: () => REFUSED }));
+  row(r(), label).props.onChange(true);
+  await settle(); await settle();
+  t.ok(g.MSCXShowAllPlugins === false && row(r(), label).props.checked === false, 'refused stays off');
+  return t.failed;
+}
+
 async function italianCases(form) {
   const t = runner(form + ' italian');
   if (form === 'component') return t.failed;
@@ -313,6 +339,15 @@ for (const form of Object.keys(FORMS)) {
   const dropdowns = ns => ns.filter(x => x.type === 'Dropdown');
   const last = () => (written.length ? written[written.length - 1].opts : null);
 
+  {
+    const HUD = JSON.stringify([{ k: 'NOTPROTON_HUD', l: 'Hud', on: '1', off: '', dep: '', d: '',
+                                  ev: ['MTL_HUD_ENABLED=1'] }]).replace(/"(\w+)":/g, '$1:');
+    const { render: PF } = panel(emit, form, globalsWith(SAVED), { fexTools: FEX_TOOLS, feats: HUD });
+    const hud = walk(PF({ details: details('', { strCompatToolName: 'fexmac' }) }))
+      .find(x => x.props && x.props.label === 'Hud');
+    t.ok(hud && !hud.props.checked, 'a tool we did not install does not read our defaults');
+  }
+
   let r = nodes('%command%');
   t.ok(dropdowns(r)[0].props.selectedOption === 'dxmt', 'an unset backend shows the default');
   t.ok(row(r, 'Metal HUD').props.checked === true, 'an unset row shows the default');
@@ -320,6 +355,18 @@ for (const form of Object.keys(FORMS)) {
   t.ok(dropdowns(r)[1].props.selectedOption === '1.5', 'an unset upscaler shows the default factor');
   t.ok(!r.some(x => (x.type === 'Button' || x.type === 'button') && x.props.children === 'Reset to defaults'),
        'a game has no Reset to defaults');
+
+  {
+    const off = { rosetta: { ...SAVED.rosetta, NOTPROTON_GAME_MODE: '0' }, fex: SAVED.fex };
+    const { render: PG, written: gw } = panel(emit, form, globalsWith(off), { fexTools: FEX_TOOLS });
+    const gm = o => row(walk(PG({ details: details(o, { strCompatToolName: 'notproton' }) })), 'Disable macOS Game Mode');
+    const gwLast = () => (gw.length ? gw[gw.length - 1].opts : '');
+    t.ok(gm('%command%').props.checked === true, 'a default of 0 shows Game Mode disabled');
+    gw.length = 0;
+    gm('%command%').props.onChange(false);
+    t.ok(/(^|\s)NOTPROTON_GAME_MODE=1(\s|$)/.test(gwLast()), `a game turns Game Mode back on over the default (${gwLast()})`);
+    t.ok(gm('NOTPROTON_GAME_MODE=1 %command%').props.checked === false, "the game's 1 wins over the default");
+  }
 
   r = nodes('MTL_HUD_ENABLED=0 CX_GRAPHICS_BACKEND=auto %command%');
   t.ok(row(r, 'Metal HUD').props.checked === false, "the game's 0 wins over the default");
@@ -489,6 +536,7 @@ for (const form of Object.keys(FORMS)) {
   failed += defaultToolCases(form);
   failed += splicedCases(form);
   failed += await italianCases(form);
+  failed += await showAllCases(form);
 }
 return failed;
 }

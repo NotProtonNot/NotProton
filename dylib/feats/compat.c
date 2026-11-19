@@ -183,6 +183,11 @@ int np_compat_probe_tool_layout(uintptr_t appid_gate, uintptr_t oslist_gate) {
 
     int32_t by_appid   = (int32_t)appid_off   - COMPAT_TOOL_APPID_OFF;
     int32_t by_install = (int32_t)install_off - COMPAT_TOOL_INSTALL_OFF;
+    if (by_appid < 0) {
+        NP_ERR("np_compat_probe_tool_layout: the tool fields moved %+d, which no inserted "
+               "field explains", by_appid);
+        return 0;
+    }
     if (by_appid != by_install) {
         NP_ERR("np_compat_probe_tool_layout: appid moved %+d but install moved %+d; "
                "the tool layout no longer shifts as one block",
@@ -706,17 +711,28 @@ const char *np_compat_tool_dir(void) {
     return g_tool_dir[0] ? g_tool_dir : NULL;
 }
 
+static int adopted(const char *name, size_t n) {
+    for (int i = 0; i < g_adopted_count; i++)
+        if (strlen(g_adopted[i].name) == n && memcmp(g_adopted[i].name, name, n) == 0) return 1;
+    return 0;
+}
+
 int np_compat_runs_tool(const char *cmd) {
-    static const char lead[]    = "/compatibilitytools.d/" TOOL_DIR_NAME;
+    static const char lead[]    = "/compatibilitytools.d/";
     static const char run[]     = "'" TOOL_RUN " ";
     static const char run_dot[] = "/.'" TOOL_RUN " ";
     if (!cmd) return 0;
 
     for (const char *at = strstr(cmd, lead); at; at = strstr(at + 1, lead)) {
-        const char *p = at + sizeof(lead) - 1;
+        const char *name = at + sizeof(lead) - 1;
+        const char *p = name;
         while (is_name_char(*p, "._-"))
             p++;
-        if (strncmp(p, run, sizeof(run) - 1) == 0 || strncmp(p, run_dot, sizeof(run_dot) - 1) == 0)
+        if (strncmp(p, run, sizeof(run) - 1) != 0 && strncmp(p, run_dot, sizeof(run_dot) - 1) != 0)
+            continue;
+        size_t n = (size_t)(p - name);
+        if ((n >= strlen(TOOL_DIR_NAME) && strncmp(name, TOOL_DIR_NAME, strlen(TOOL_DIR_NAME)) == 0)
+            || adopted(name, n))
             return 1;
     }
     return 0;
@@ -934,7 +950,8 @@ void np_compat_register_crossover(void *compat_mgr) {
     // the registration gate, from_oslist=windows intersects the app mask so the
     // dropdown keeps it, and appid 0 marks a manager-local tool the resolver routes
     // to the local run script.
-    uint8_t (*buffers)[COMPAT_TOOL_STRIDE + 64] = calloc((size_t)g_tool_count, sizeof(*buffers));
+    size_t entry = np_compat_tool_stride() + 64;
+    uint8_t *buffers = calloc((size_t)g_tool_count, entry);
     if (g_tool_count && !buffers) {
         NP_WARN("np_compat_register_crossover: out of memory, no tool registered");
         return;
@@ -951,8 +968,8 @@ void np_compat_register_crossover(void *compat_mgr) {
             continue;
         }
 
-        uint8_t *tool = buffers[i];
-        memset(tool, 0, sizeof(buffers[i]));
+        uint8_t *tool = buffers + (size_t)i * entry;
+        memset(tool, 0, entry);
         *(uint32_t *)(tool + COMPAT_TOOL_FLAGS_OFF)      = COMPAT_TOOL_FLAG_NO_APP;
         *(const char **)(tool + COMPAT_TOOL_NAME_OFF)    = t->name;
         *(const char **)(tool + COMPAT_TOOL_DISPLAY_OFF) = t->display;

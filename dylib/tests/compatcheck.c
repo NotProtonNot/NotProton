@@ -176,6 +176,10 @@ static void probe_cases(void) {
     check(np_compat_tool_stride() == COMPAT_TOOL_STRIDE, "an unshifted entry keeps its stride");
 
     g_tool_shift = 0;
+    check(np_compat_probe_tool_layout(build_gate(0x58, 0x50), 0) == 0 && g_tool_shift == 0,
+          "fields that moved down are refused");
+
+    g_tool_shift = 0;
     check(np_compat_probe_tool_layout(build_gate(0x68, 0x60), 0) == 1,
           "a client that grew the entry by 8 probes clean");
     check(np_compat_tool_off(COMPAT_TOOL_APPID_OFF) == 0x68, "appid follows the shift");
@@ -252,7 +256,7 @@ static void enabled_cases(void) {
 
 // A manager holding `count` entries, the one at `named_slot` carrying the tool name.
 static uint8_t manager[0x400];
-static uint8_t entries[(COMPAT_MANAGER_TOOLS_HEADROOM + 64) * (COMPAT_TOOL_STRIDE + 64)];
+static uint8_t entries[(COMPAT_MANAGER_TOOLS_HEADROOM + 64) * (COMPAT_TOOL_STRIDE + 256)];
 
 static void *build_manager(uint32_t count, int named_slot) {
     memset(manager, 0, sizeof manager);
@@ -375,7 +379,7 @@ static void registration_case(int shift, int mode) {
 }
 
 static void registration_cases(void) {
-    const int shifts[] = {0, 8, 64};
+    const int shifts[] = {0, 8, 64, 128};
     for (size_t i = 0; i < sizeof(shifts) / sizeof(*shifts); i++) {
         for (int mode = 0; mode < 7; mode++) {
             fflush(NULL);
@@ -514,6 +518,12 @@ static void adopted_tool_cases(void) {
     check(np_compat_load_tool_list(list, root) == 2, "the adopted tool list loads");
     check(np_compat_adopt_tools(root) == 4,
           "only a tool with a compatibilitytool.vdf and a build file naming a listed build is adopted");
+    check(np_compat_runs_tool("'/t/compatibilitytools.d/arc/.'/run waitforexitandrun  '/g/game.exe'"),
+          "an adopted tool's launch gets the shell, so its launch options apply");
+    check(!np_compat_runs_tool("'/t/compatibilitytools.d/arcx/.'/run waitforexitandrun  '/g/game.exe'"),
+          "a folder that only starts with an adopted tool's name is not that tool");
+    check(!np_compat_runs_tool("'/t/compatibilitytools.d/stray/.'/run waitforexitandrun  '/g/game.exe'"),
+          "a folder that was not adopted is not a tool launch");
 
     const char *names[8], *builds[8], *archs[8];
     size_t n = np_compat_tool_builds(names, builds, archs, 8);

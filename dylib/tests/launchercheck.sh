@@ -673,5 +673,59 @@ for args in "abc /x" "700 relative" "700 $T/untile/missing"; do
   if (set -- $args; game_untile 27.1 "$@") 2>/dev/null; then bad "untile bad arguments [$args]" "exit 1" "exit 0"; else ok "untile bad arguments [$args]"; fi
 done
 
+echo "== game mode =="
+game_mode_lines=$(sed -n '/^game_mode_app=\${game_runner:+\$game_app}$/,/^fi$/p' "$SRC")
+[ -n "$game_mode_lines" ] || { echo "FAIL: game mode code not found"; exit 1; }
+game_mode() (
+  game_runner=$1 loader_root="$T/gm" game_app="$T/gm/wine.app" loader_app="$T/gm/Game.app" log="$T/gm/log"
+  # shellcheck disable=SC2329
+  np_game_mode() { [ ! -f "$T/gm/broken" ] || return 1; echo "$2 ${1##*/}" >> "$T/gm/set"; }
+  eval "$game_mode_lines"
+)
+gm() {
+  [ ! -f "$T/gm/set" ] || tr '\n' ',' < "$T/gm/set"
+  [ ! -f "$T/gm/.game-mode-off" ] || sed 's|.*/||' "$T/gm/.game-mode-off" | tr '\n' ' '
+}
+mkdir -p "$T/gm/wine.app" "$T/gm/Game.app"
+game_mode runner
+is "game mode left alone" "" "$(gm)"
+(export NOTPROTON_GAME_MODE=1; game_mode runner)
+is "game mode 1 leaves it alone" "" "$(gm)"
+(export NOTPROTON_GAME_MODE=0; game_mode runner)
+is "game mode off on the runner" "off wine.app,wine.app " "$(gm)"
+is "game mode off is logged" "1" "$(grep -c 'game mode turned off by NOTPROTON_GAME_MODE' "$T/gm/log")"
+(export NOTPROTON_GAME_MODE=0; game_mode runner)
+is "game mode off again is noted once" "off wine.app,off wine.app,wine.app " "$(gm)"
+rm -f "$T/gm/set"
+game_mode runner
+is "game mode back on" "on wine.app," "$(gm)"
+game_mode runner
+is "game mode not set twice" "on wine.app," "$(gm)"
+rm -f "$T/gm/set"
+(export NOTPROTON_GAME_MODE=0; game_mode runner)
+(export NOTPROTON_GAME_MODE=0; game_mode "")
+is "own WINEDLLPATH game mode off" "off wine.app,off Game.app,wine.app Game.app " "$(gm)"
+rm -f "$T/gm/set"
+game_mode ""
+is "both bundles back on" "on wine.app,on Game.app," "$(gm)"
+rm -f "$T/gm/set"
+(export NOTPROTON_GAME_MODE=0; game_mode runner)
+rm -f "$T/gm/set"
+rmdir "$T/gm/wine.app"
+game_mode ""
+is "missing bundle waits" "wine.app " "$(gm)"
+mkdir "$T/gm/wine.app"
+: > "$T/gm/broken"
+game_mode runner
+is "failed switch back is kept" "wine.app " "$(gm)"
+rm -f "$T/gm/broken"
+game_mode runner
+is "switch back retried" "on wine.app," "$(gm)"
+rm -f "$T/gm/set"
+: > "$T/gm/broken"
+(export NOTPROTON_GAME_MODE=0; game_mode runner)
+is "failed switch off is not noted" "" "$(gm)"
+rm -f "$T/gm/broken"
+
 [ "$fails" -eq 0 ] || { echo "launchercheck: $fails failed"; exit 1; }
 echo "launchercheck: all passed"

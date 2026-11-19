@@ -61,8 +61,13 @@ enum CrossOverSource {
     }
 
     static func isSearched(_ bundle: URL) -> Bool {
-        let parent = bundle.standardizedFileURL.deletingLastPathComponent()
-        return searchRoots.contains { same($0, parent) }
+        let standard = bundle.standardizedFileURL
+        let parent = standard.deletingLastPathComponent()
+        return searchRoots.contains { same($0, parent) } && scanFinds(standard)
+    }
+
+    static func scanFinds(_ entry: URL) -> Bool {
+        entry.pathExtension == "app" && entry.deletingPathExtension().lastPathComponent.hasPrefix("CrossOver")
     }
 
     static func same(_ a: URL, _ b: URL) -> Bool {
@@ -94,7 +99,7 @@ enum CrossOverSource {
         for root in searchRoots {
             let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
             for entry in entries where entry.pathExtension == "app" {
-                guard entry.deletingPathExtension().lastPathComponent.hasPrefix("CrossOver") else { continue }
+                guard scanFinds(entry) else { continue }
                 consider(entry, isManual: false)
             }
         }

@@ -21,6 +21,14 @@ trap 'rm -rf "$work"' EXIT
 } > "$work/got"
 grep -v '^#' "$FIX/EXPECTED" | grep -v '^$' > "$work/want"
 
+lookups=$(awk '/^np_conf_value\(\) \{/ { on = 1 } on { print } on && /^np_conf_has\(\) \{/ { last = 1 } last && /^\}/ { exit }' "$SRC")
+eval "$lookups"
+table=$(printf '2.1\tsrc\told\n2.10\tsrc\tnew\n10\tsrc\tten\n')
+if [ "$(np_conf_value "$table" 2.10 src)" != new ] || [ -n "$(np_conf_values "$table" 010 src)" ] \
+  || np_conf_has "$table" 1e1; then
+  echo "FAIL: numeric-looking ids match each other"; exit 1
+fi
+
 if diff -u "$work/want" "$work/got" > "$work/diff"; then
   echo "==> confcheck: $(grep -c . "$work/got") normalised lines match EXPECTED"
 else

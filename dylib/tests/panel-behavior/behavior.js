@@ -61,6 +61,24 @@ for (const form of Object.keys(FORMS)) {
          'its rows still write the key our run script reads');
   }
 
+  {
+    const APPS = JSON.stringify([
+      { k: 'NOTPROTON_FH', l: 'Forza only', on: '1', off: '', dep: '', d: '', ap: ['2483190'] },
+      { k: 'NOTPROTON_ANY', l: 'Any game', on: '1', off: '', dep: '', d: '' },
+    ]).replace(/"(\w+)":/g, '$1:');
+    const labels = (render, app) => walk(render({ details: details('', { unAppID: app }) }))
+      .filter(x => x.props && x.props.label).map(x => x.props.label);
+    const { render: PA } = panel(emit, form, undefined, { feats: APPS });
+    t.ok(labels(PA, 2483190).includes('Forza only'), 'apps: shown for its game');
+    t.ok(!labels(PA, 287700).includes('Forza only') && labels(PA, 287700).includes('Any game'),
+         'apps: hidden for any other game');
+    const { render: PS } = panel(emit, form, undefined, { feats: APPS, showAll: 1 });
+    t.ok(labels(PS, 287700).includes('Forza only'), 'apps: show all');
+    const live = { document: { documentElement: { lang: 'en' } }, MSCXShowAllPlugins: true };
+    const { render: PL } = panel(emit, form, live, { feats: APPS });
+    t.ok(labels(PL, 287700).includes('Forza only'), 'apps: show all, switched on this session');
+  }
+
   // For a tool we did not install there is no run script of ours in the launch, so the
   // panel writes what that script would have exported: the dylib on the insert list and
   // the plugin's own env, in the form that carries a variable without our launch hook.
@@ -158,7 +176,7 @@ for (const form of Object.keys(FORMS)) {
   }
 
   let r = nodes('');
-  t.ok(toggles(r).length === 8 && sections(r).length === 5, 'automatic shows eight toggles in five sections');
+  t.ok(toggles(r).length === 9 && sections(r).length === 6, 'automatic shows nine toggles in six sections');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 3, 'three dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the backend dropdown carries no label column');
 
@@ -246,7 +264,7 @@ for (const form of Object.keys(FORMS)) {
   const root = P({ details: details('') });
   t.ok(root.props.className === 'MSCXPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
-  t.ok(classes.length === 8 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
+  t.ok(classes.length === 9 && classes.every(c => c === 'MSCXRow'), 'every checkbox carries the row class');
   const raw = o => nodes(o).find(x => x.props.label === 'Let Games Read Controllers Directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
@@ -261,6 +279,23 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   dpi('NOTPROTON_RETINA_DPI=0 WINEMSYNC=1').props.onChange(false);
   t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning the DPI row off removes it (${last()})`);
+  const gm = o => nodes(o).find(x => x.props.label === 'Disable macOS Game Mode');
+  const order = sections(nodes(''));
+  t.ok(order.indexOf('Miscellaneous') > order.indexOf('Controllers') && order.indexOf('Miscellaneous') === order.indexOf('Launch') - 1,
+       `Miscellaneous is the last section before Launch (${order})`);
+  {
+    const { render: PF } = panel(emit, form, undefined, { fexTools: ['notproton-fex'] });
+    const fo = sections(walk(PF({ details: details('', { strCompatToolName: 'notproton-fex' }) })));
+    t.ok(fo.indexOf('FEX') > fo.indexOf('Controllers') && fo.indexOf('Miscellaneous') === fo.indexOf('FEX') + 1 &&
+         fo.indexOf('Miscellaneous') === fo.indexOf('Launch') - 1, `under FEX it comes after the FEX section (${fo})`);
+  }
+  t.ok(gm('').props.checked === false && gm('NOTPROTON_GAME_MODE=0').props.checked === true, 'the Game Mode row reads the opt-out');
+  written.length = 0;
+  gm('').props.onChange(true);
+  t.ok(last().trim() === 'NOTPROTON_GAME_MODE=0 %command%', `the Game Mode row writes the opt-out (${last()})`);
+  written.length = 0;
+  gm('NOTPROTON_GAME_MODE=0 WINEMSYNC=1').props.onChange(false);
+  t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning the Game Mode row off removes it (${last()})`);
   written.length = 0;
   raw('').props.onChange(true);
   t.ok(last().trim() === 'NOTPROTON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);

@@ -65,6 +65,14 @@ NOTPROTON_FEXMAC	hide_crossover	1
 !	NOTPROTON_HIDE_EVERYWHERE	missing-required:tools
 !	NOTPROTON_HIDE_YES	bad-value:hide_crossover
 
+== plugins/38-apps.conf
+NOTPROTON_FH6	label	For two games
+NOTPROTON_FH6	apps	2483190
+NOTPROTON_FH6	apps	4294967295
+!	NOTPROTON_APP_ZERO	bad-value:apps
+!	NOTPROTON_APP_BIG	bad-value:apps
+!	NOTPROTON_APP_WORD	bad-value:apps
+
 # A "*" anywhere but the end would mean one thing to the panel's startsWith and another
 # to the run script's case pattern, so it is refused rather than left to disagree.
 == plugins/40-no-header.conf

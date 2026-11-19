@@ -15,6 +15,7 @@ enum AppLog {
     static func start() {
         queue.async {
             isOn = true
+            try? FileManager.default.createDirectory(at: SupportPaths.support, withIntermediateDirectories: true)
             append("--- NotProton \(AppVersion.bundled) started ---\n")
         }
     }
@@ -93,7 +94,7 @@ enum AppLog {
     private static func append(_ line: String) {
         guard isOn else { return }
         let fm = FileManager.default
-        try? fm.createDirectory(at: SupportPaths.support, withIntermediateDirectories: true)
+        guard fm.fileExists(atPath: SupportPaths.support.path(percentEncoded: false)) else { return }
 
         let path = file.path(percentEncoded: false)
         if let size = (try? fm.attributesOfItem(atPath: path))?[.size] as? Int, size > sizeLimit {

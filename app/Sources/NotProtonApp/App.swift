@@ -11,6 +11,9 @@ struct NotProtonApp: App {
 
     init() {
         AppLog.start()
+        if let executable = Bundle.main.executableURL {
+            RebuildPrefixCommand.refreshExecutableRecord(executable, in: SupportPaths.support)
+        }
     }
 
     var body: some Scene {

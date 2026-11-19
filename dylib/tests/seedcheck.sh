@@ -261,16 +261,40 @@ exec 8>&-
 check test "$(probe_lock)" = unlocked
 kill "$(cat "$case_root/held.pid")" 2>/dev/null || true
 
+recover() {
+  recovery_status=0
+  env functions="$functions" /bin/sh -ec "
+    eval \"\$functions\"
+    show_alert() { :; }
+    prepare_prefix_directory
+    : > \"\$STEAM_COMPAT_DATA_PATH/continued\"
+  " || recovery_status=$?
+}
+
 fixture
 mkdir -p "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123"
 printf save > "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123/save"
-recovery_status=0
-env functions="$functions" /bin/sh -ec "
-  eval \"\$functions\"
-  show_alert() { :; }
-  prepare_prefix_directory
-  : > \"\$STEAM_COMPAT_DATA_PATH/continued\"
-" || recovery_status=$?
+recover
+check test "$recovery_status" -eq 0
+check test -f "$STEAM_COMPAT_DATA_PATH/continued"
+check test -f "$WINEPREFIX/save"
+check test ! -e "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123"
+
+fixture
+mkdir -p "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123"
+printf save > "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123/save"
+printf reg > "$WINEPREFIX/user.reg"
+recover
+check test "$recovery_status" -eq 0
+check test -f "$WINEPREFIX/user.reg"
+check test -f "$(echo "$STEAM_COMPAT_DATA_PATH"/pfx.previous-*/save)"
+check test ! -e "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123"
+
+fixture
+mkdir -p "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123"
+printf save > "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123/save"
+printf half > "$WINEPREFIX/half"
+recover
 check test "$recovery_status" -eq 1
 check test ! -e "$STEAM_COMPAT_DATA_PATH/continued"
 check test -f "$STEAM_COMPAT_DATA_PATH/pfx.replaced.123/save"

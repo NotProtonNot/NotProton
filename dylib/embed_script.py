@@ -10,7 +10,7 @@ def literal(text: str) -> str:
         lines.pop()
     out = []
     for line in lines:
-        body = line.replace("\\", "\\\\").replace('"', '\\"')
+        body = line.replace("\\", "\\\\").replace('"', '\\"').replace("?", "\\?")
         out.append(f'    "{body}\\n"')
     return "\n".join(out)
 

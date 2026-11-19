@@ -202,6 +202,8 @@ dxmt_version() {
 write_descriptor() {
     src=$1
     name=${2:-}
+    [ -d "$src" ] || die "nothing at $src"
+    src=$(cd -- "$src" && pwd) || die "cannot enter $src"
 
     if [ -f "$src/build.ninja" ]; then
         say "$src is a meson build directory, not an install tree."
@@ -224,6 +226,7 @@ write_descriptor() {
         [A-Za-z0-9]*) ;;
         *) die "$name is not a variant name: it has to start with a letter or a digit" ;;
     esac
+    [ "${#name}" -le 64 ] || die "$name is longer than the 64 characters a variant id may have; pass a shorter name"
 
     verify_src "$src" || die "$src is not usable yet; nothing was written"
 
@@ -238,6 +241,9 @@ write_descriptor() {
 
     mkdir -p "$conf_dir"
     conf="$conf_dir/$name.conf"
+    if [ -f "$conf" ] && ! written_here "$conf"; then
+        die "$conf was not written by this script; pass another name or move it aside"
+    fi
     cat > "$conf" <<CONF
 # Written by install-dxmt.sh. The runner is assembled from src at launch, whenever src has
 # changed, so rebuilding DXMT is all that is needed between launches. The header is the id,

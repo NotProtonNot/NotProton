@@ -468,6 +468,8 @@ void np_ceg_stop(void) {
     if (g_call_pgid > 0)
         kill(-g_call_pgid, SIGKILL);
     pthread_mutex_unlock(&g_pgid_lock);
+    pthread_mutex_lock(&g_call_lock);
+    pthread_mutex_unlock(&g_call_lock);
     pthread_mutex_lock(&g_active_lock);
     if (g_active_in[0]) unlink(g_active_in);
     if (g_active_out[0]) unlink(g_active_out);

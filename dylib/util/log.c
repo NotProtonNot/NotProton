@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 int np_log_level = NP_LVL_INFO;
@@ -79,7 +80,8 @@ static void log_open(int may_rotate) {
     struct stat info;
     int oversize = (may_rotate && stat(logpath, &info) == 0
                     && info.st_size > NP_LOG_MAX_BYTES);
-    np_log_file = fopen(logpath, oversize ? "w" : "a");
+    if (oversize) truncate(logpath, 0);
+    np_log_file = fopen(logpath, "a");
     if (np_log_file)
         setlinebuf(np_log_file);
 }

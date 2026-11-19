@@ -68,10 +68,15 @@ enum Uninstall {
         lockFolder: URL = SupportPaths.applicationSupport,
         report: @escaping @Sendable (UninstallPhase) -> Void = { _ in },
         repair: Repair? = nil,
-        stop: Stop = { app, onStopping in try SteamBundle.stopClient(app: app, step: step, onStopping: onStopping) }
+        stop: Stop = { app, onStopping in try SteamBundle.stopClient(app: app, step: step, onStopping: onStopping) },
+        runners: URL = SupportPaths.runners,
+        runnerIsRunning: @Sendable (URL) -> Bool = { RunnerInstaller.isRunning(from: $0) }
     ) async throws -> UninstallOutcome {
         let lock = try DeploymentContent.acquireInstallationLock(in: lockFolder, steamFolder: nil)
         defer { lock.release() }
+        guard !runnerIsRunning(runners) else {
+            throw StepFailure(step: step, detail: String(localized: "A game or Wine tool is running. Quit it before removing NotProton."))
+        }
         try modifications.prepare()
         let tracked = try modifications.paths()
         let targets = Set((tracked + [app]).map { $0.standardizedFileURL.path }).sorted()

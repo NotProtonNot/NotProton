@@ -103,6 +103,7 @@ static uintptr_t cstring_va(const struct mach_header_64 *mh, intptr_t slide,
             if (region[off] != needle[0]) continue;
             if (memcmp(region + off, needle, needle_len) != 0) continue;
             if (region[off + needle_len] != '\0') continue;
+            if (off && region[off - 1] != '\0') continue;
             if (result) return 0;       // more than one hit, give up
             result = seg_base + off;
             off += needle_len;          // skip past this match
@@ -192,13 +193,16 @@ static uintptr_t sole_caller(const struct mach_header_64 *mh, intptr_t slide,
     size_t words = text_sz / 4;
     const uint32_t *code = (const uint32_t *)text;
     uintptr_t found = 0;
+    // The first hop starts from the string load, which can sit mid-function
+    uintptr_t home = tail ? containing_fn(mh, slide, text, text_sz, callee) : 0;
+    if (!home) home = callee;
     for (size_t i = 0; i < words; i++) {
         uintptr_t pc = text + i * 4;
         uintptr_t t = tail ? b_target(pc, code[i]) : bl_target(pc, code[i]);
         if (t != callee) continue;
         // B also encodes intra-function jumps, so a loop back to a function's own
         // entry would otherwise make that function its own tail caller.
-        if (tail && containing_fn(mh, slide, text, text_sz, pc) == callee) continue;
+        if (tail && containing_fn(mh, slide, text, text_sz, pc) == home) continue;
         if (found) return 0;            // more than one caller
         found = pc;
     }
@@ -554,7 +558,10 @@ uintptr_t np_locate_anchor(const struct mach_header_64 *mh, intptr_t slide,
         uint32_t opcode = anchor->insn      ? anchor->insn      : DEFAULT_INSN;
         uint32_t opmask = anchor->insn_mask ? anchor->insn_mask : DEFAULT_INSN_MASK;
         int n = anchor->nth > 0 ? anchor->nth : 1;
-        return scan_for_insn(text_base, text_size, ref, opcode, opmask, n);
+        uintptr_t fn = containing_fn(mh, slide, text_base, text_size, ref);
+        if (!fn) return 0;
+        uintptr_t end = body_end(mh, slide, fn, text_base, text_size);
+        return end > ref ? scan_for_insn(ref, end - ref, ref, opcode, opmask, n) : 0;
     }
 
     if (anchor->kind != NP_MATCH_STRING &&

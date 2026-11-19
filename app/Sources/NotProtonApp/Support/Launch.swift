@@ -130,6 +130,18 @@ enum RebuildPrefixCommand {
         return root.appending(path: statusName)
     }
 
+    static func refreshExecutableRecord(_ executable: URL, in support: URL) {
+        let fm = FileManager.default
+        let record = support.appending(path: executableRecord)
+        if let recorded = try? String(contentsOf: record, encoding: .utf8) {
+            guard !fm.isExecutableFile(atPath: recorded) else { return }
+        } else {
+            guard fm.fileExists(atPath: support.appending(path: "dylib.version").path(percentEncoded: false)) else { return }
+        }
+        AppLog.note("app-executable is stale, recording \(executable.path(percentEncoded: false))")
+        try? recordExecutable(executable, in: support)
+    }
+
     static func recordExecutable(_ executable: URL, in support: URL) throws {
         // A translocated copy or a mounted disk image is gone by the next launch, so nothing
         // recorded from there would still run.
