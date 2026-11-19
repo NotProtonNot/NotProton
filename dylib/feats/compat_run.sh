@@ -2980,7 +2980,7 @@ if [ -n "\$NOTPROTON_FEATURE_DYLIBS" ]; then
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$NOTPROTON_FEATURE_DYLIBS"
 fi
 if [ -n "\$NOTPROTON_GAME_CHANNEL" ]; then
-  client="\$(dirname "\$WINELOADER")/game-client.dylib"
+  client="\${WINELOADER%/*}/game-client.dylib"
   export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$client"
 fi
 [ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"

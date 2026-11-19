@@ -371,7 +371,7 @@ is "FEX runner" "$T/game/runner" "$game_runner"
 is "Dock tile hidden" "  <key>LSUIElement</key><true/>" "$uielement_arg"
 np_single_icon=1
 pick /cx/lib/wine/aarch64-unix ""
-is "single-icon host uses its launcher" "|launcher" "$game_runner|$bundle_exec"
+is "single-icon host uses its launcher" "" "$game_runner"
 np_single_icon=0
 pick /cx/lib/wine/aarch64-unix /extra
 is "own WINEDLLPATH" "" "$game_runner"
