@@ -1026,6 +1026,17 @@ __attribute__((visibility("default"))) void np_overlay_shim_set_active(int activ
 	__atomic_store_n(&overlay_active, active != 0, __ATOMIC_RELAXED);
 	shim_log("overlay_shim np_overlay_shim_set_active: %s game input\n",
 	        active ? "blocking" : "passing");
+
+	if (!active) {
+		dispatch_async(dispatch_get_main_queue(), ^{
+			Class app_cls = objc_getClass("NSApplication");
+			if (app_cls) {
+				id app = ((id (*)(id, SEL))objc_msgSend)(app_cls, sel_registerName("sharedApplication"));
+				if (app)
+					((void (*)(id, SEL, BOOL))objc_msgSend)(app, sel_registerName("activateIgnoringOtherApps:"), YES);
+			}
+		});
+	}
 }
 
 // FEX specific stuff
