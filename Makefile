@@ -653,13 +653,13 @@ $(GAME_HOST): helpers/game-host.m
 
 $(GAME_CLIENT): helpers/game-client.m
 	@mkdir -p $(OUT_DIR)
-	$(CC) $(GAME_FLAGS) -dynamiclib -install_name @rpath/game-client.dylib -o $@ $<
+	$(CC) $(GAME_FLAGS) -framework ApplicationServices -dynamiclib -install_name @rpath/game-client.dylib -o $@ $<
 	codesign --force --sign - $@
 
 $(OUT_DIR)/game-session-fixture: dylib/tests/game-session-fixture.m
 	@mkdir -p $(OUT_DIR)
 	$(CC) -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) -fobjc-arc -O2 -Wall -Wextra \
-		-framework AppKit -o $@ $<
+		-framework AppKit -framework ApplicationServices -o $@ $<
 
 game-session-check: game-session $(OUT_DIR)/game-session-fixture
 	python3 dylib/tests/game-session-check.py dylib/feats/compat_run.sh

@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include <ApplicationServices/ApplicationServices.h>
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -42,8 +43,15 @@ int main(int argc, const char **argv) {
             return 0;
         }
         dispatch_async(dispatch_get_main_queue(), ^{
-            // Repeated promotion must still leave the Wine client off the Dock.
+            // Repeated promotion must still leave the Wine client off the Dock,
+            // including a direct transform as native game Spaces used to do.
             [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            ProcessSerialNumber process;
+            if (GetProcessForPID(getpid(), &process) == noErr)
+                TransformProcessType(&process, kProcessTransformToForegroundApplication);
+#pragma clang diagnostic pop
             if (getenv("NP_GAME_TEST_WINDOW")) {
                 NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 240, 100)
                     styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
