@@ -20,7 +20,7 @@
 #define COMPAT_PLATFORM_WINDOWS  0x1
 #define COMPAT_PLATFORM_MACOS    0x2
 
-// Tool entry fields ahead of the insertion point. These never move.
+#define COMPAT_TOOL_HEAD_OFF        0x24
 #define COMPAT_TOOL_GATE_FLAGS_OFF  0x24
 #define COMPAT_TOOL_GATE_HIDDEN     0x1
 #define COMPAT_TOOL_PRIORITY_OFF    0x38
@@ -36,6 +36,8 @@
 // the two disagree about how far the struct shifted. The oslist gate is optional
 // and corroborates the result at the far end.
 int np_compat_probe_tool_layout(uintptr_t appid_gate, uintptr_t oslist_gate);
+
+int np_compat_probe_head_shift(uintptr_t yld_register_tool);
 
 // Reads the enabled-flag offset from BIsCompatibilityToolEnabled. Returns 0
 // when the flag cannot be located, leaving the baseline in place.
@@ -53,6 +55,7 @@ void *np_compat_user(const void *compat_mgr);
 // insertion point come back unchanged.
 uint32_t np_compat_tool_off(uint32_t reference_off);
 
+const char *np_compat_tool_name(const void *tool);
 // Live stride of the manager's tool array.
 size_t np_compat_tool_stride(void);
 

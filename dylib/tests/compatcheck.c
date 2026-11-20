@@ -228,6 +228,71 @@ static void oslist_cases(void) {
           "the oslist pair is read by offset rather than by load order");
 }
 
+static const uint32_t yld_release[] = {
+    0xd10243ff, 0xa9036ffc, 0xa90467fa, 0xa9055ff8, 0xa90657f6, 0xa9074ff4, 0xa9087bfd, 0x910203fd,
+    0xaa0103f4, 0xaa0003f3, 0xf0007fe8, 0xf9401508, 0xb9400108, 0x340000e8, 0x900077c0, 0x91140c00,
+    0x9100a3e2, 0x52800081, 0x9430d72a, 0x14000002, 0xd2800000, 0xaa1403f5, 0xf8440ea8, 0xf90017e0,
+};
+static const uint32_t yld_beta[] = {
+    0xd10243ff, 0xa9036ffc, 0xa90467fa, 0xa9055ff8, 0xa90657f6, 0xa9074ff4, 0xa9087bfd, 0x910203fd,
+    0xaa0103f4, 0xaa0003f3, 0xb0008208, 0xf9429d08, 0xb9400108, 0x340000e8, 0xd00079a0, 0x913b3400,
+    0x9100a3e2, 0x52800081, 0x9431a16b, 0x14000002, 0xd2800000, 0xaa1403f5, 0xf8448ea8, 0xf90017e0,
+};
+static uint32_t yld_code[64];
+
+static uintptr_t yld_from(const uint32_t *words, size_t n) {
+    for (int i = 0; i < 64; i++) yld_code[i] = NOP;
+    memcpy(yld_code, words, n * sizeof(*words));
+    return (uintptr_t)yld_code;
+}
+
+static void head_shift_cases(void) {
+    g_tool_shift = 8;
+    g_head_shift = 0;
+    check(np_compat_probe_head_shift(yld_from(yld_release, 24)) == 1 && g_head_shift == 0,
+          "a client with the name at +0x40 keeps the head in place");
+    check(np_compat_tool_off(COMPAT_TOOL_NAME_OFF) == 0x40, "the name stays at +0x40");
+
+    g_tool_shift = 16;
+    check(np_compat_probe_head_shift(yld_from(yld_beta, 24)) == 1 && g_head_shift == 8,
+          "a client that loads the name from +0x48 moves the head by 8");
+    check(np_compat_tool_off(COMPAT_TOOL_NAME_OFF) == 0x48, "the name follows the head");
+    check(np_compat_tool_off(COMPAT_TOOL_GATE_FLAGS_OFF) == 0x2c, "the gate flags follow the head");
+    check(np_compat_tool_off(COMPAT_TOOL_FLAGS_OFF) == 0x30, "the no-app flag follows the head");
+    check(np_compat_tool_off(COMPAT_TOOL_PRIORITY_OFF) == 0x40, "the priority follows the head");
+    check(np_compat_tool_off(COMPAT_TOOL_DISPLAY_OFF) == 0x58, "the display name follows the head");
+    check(np_compat_tool_off(COMPAT_TOOL_INSTALL_OFF) == 0x68, "install keeps the tail shift");
+    check(np_compat_tool_off(0x20) == 0x20, "a field ahead of the head stays");
+
+    g_tool_shift = 0;
+    g_head_shift = 0;
+    check(np_compat_probe_head_shift(yld_from(yld_beta, 24)) == 0 && g_head_shift == 0,
+          "a head that moved further than the tail is refused");
+
+    g_tool_shift = 16;
+    check(np_compat_probe_head_shift(yld_from(yld_beta, 21)) == 0 && g_head_shift == 0,
+          "no name load is refused");
+    check(np_compat_probe_head_shift(0) == 0, "no function is refused");
+    g_tool_shift = 0;
+}
+
+static void unreadable_name_cases(void) {
+    static uint8_t mgr[0x400];
+    uint8_t *entries = calloc(2, np_compat_tool_stride());
+    *(uint8_t **)(mgr + COMPAT_MANAGER_TOOL_ARRAY_OFF) = entries;
+    *(uint32_t *)(mgr + COMPAT_MANAGER_TOOL_COUNT_OFF) = 2;
+    *(const char **)(entries + np_compat_tool_off(COMPAT_TOOL_NAME_OFF)) = "notproton";
+    *(uint64_t *)(entries + np_compat_tool_stride() + np_compat_tool_off(COMPAT_TOOL_NAME_OFF)) =
+        0x7600000000ULL;
+    g_layout_bad = 0;
+    g_checked_array = NULL;
+    check(find_tool(mgr, "notproton") == NULL, "a list with an unreadable name is not walked");
+    check(np_compat_tool_name(entries) == NULL, "and no name is read from it afterwards");
+    g_layout_bad = 0;
+    g_checked_array = NULL;
+    free(entries);
+}
+
 static void enabled_cases(void) {
     g_enabled_off = COMPAT_MANAGER_ENABLED_OFF;
 
@@ -921,6 +986,8 @@ int main(void) {
     concurrent_fallback_cases();
     probe_cases();
     oslist_cases();
+    head_shift_cases();
+    unreadable_name_cases();
     enabled_cases();
     manager_cases();
     registration_cases();

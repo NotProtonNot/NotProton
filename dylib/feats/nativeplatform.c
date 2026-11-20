@@ -64,6 +64,8 @@ static char *run_helper(void) {
     char tool[PATH_MAX], vdf[PATH_MAX];
     np_support_path(tool, sizeof(tool), home, "appinfo");
     snprintf(vdf, sizeof(vdf), "%s/Library/Application Support/Steam/appcache/appinfo.vdf", home);
+    if (access(vdf, F_OK) != 0)
+        snprintf(vdf, sizeof(vdf), "%s/Library/Application Support/Steam/appcache/appinfo", home);
 
     int fds[2];
     if (pipe(fds) != 0) return NULL;

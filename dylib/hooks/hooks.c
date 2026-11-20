@@ -170,6 +170,7 @@ int np_hooks_install_all(const struct mach_header_64 *mh, intptr_t slide,
     np_compat_probe_tool_layout(
         np_lookup_address(resolved, "CCompatManager::ResolveCompatToolForApp.local_redirect"),
         np_lookup_address(resolved, "CCompatManager::GetOSListOverrideForApp.oslist_gate"));
+    np_compat_probe_head_shift(np_lookup_address(resolved, "CCompatManager::YldRegisterTool"));
     np_compat_probe_enabled_off(
         np_lookup_address(resolved, "CCompatManager::BIsCompatibilityToolEnabled"));
     np_compat_probe_windows_only_off(

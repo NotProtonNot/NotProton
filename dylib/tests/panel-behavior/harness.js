@@ -28,6 +28,7 @@ const barrelFor = emit => Object.fromEntries(
 const FORMS = {
   component: { react: '\u0004', barrel: '\u0005' },
   statement: { react: '\u0003', barrel: '\u0004' },
+  'statement-ui': { react: '\u0003', ui: true },
 };
 
 // `fallback` and `fexTools` stand in for what the hook sets before the transform.
@@ -54,7 +55,8 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
   const barrel = barrelFor(emit);
   for (const n of drop) delete barrel[n];
   const f = FORMS[form];
-  const body = expand(raw, { [f.react]: names[0], [f.barrel]: names[1] });
+  const body = expand(raw, f.ui ? { [f.react]: names[0] } : { [f.react]: names[0], [f.barrel]: names[1] });
+  if (f.ui && !('MSCXUI' in globals)) globals.MSCXUI = barrel;
   const src = form === 'component' ? 'var ' + body.replace(/,$/, '') : body.replace(/;$/, '');
   const written = [];
   // A file dialog answers synchronously with the next entry in `files`, and rejects like Steam's when there is none.

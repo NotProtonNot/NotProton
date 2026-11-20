@@ -99,6 +99,12 @@ struct AppInfoToolTests {
     private static func platformEntry(
         _ appID: UInt32, _ oslist: String?, common: Bool = true, table: [String]? = nil
     ) -> [UInt8] {
+        entry(appID: appID, keyData: platformKeys(appID, oslist, common: common, table: table))
+    }
+
+    private static func platformKeys(
+        _ appID: UInt32, _ oslist: String?, common: Bool = true, table: [String]? = nil
+    ) -> [UInt8] {
         var kv = Cache()
         func key(_ name: String) {
             if let table { kv.u32(UInt32(table.firstIndex(of: name)!)) }
@@ -120,7 +126,55 @@ struct AppInfoToolTests {
             kv.bytes.append(0x08)
         }
         kv.bytes.append(contentsOf: [0x08, 0x08])
-        return entry(appID: appID, keyData: kv.bytes)
+        return kv.bytes
+    }
+
+    private static let shardTable = ["appinfo", "common", "name", "oslist"] + fields.map(\.0)
+
+    private static func shardIndex(_ key: String) -> [UInt8] {
+        var c = Cache()
+        c.u32(UInt32(shardTable.firstIndex(of: key)!))
+        return c.bytes
+    }
+
+    private static func shard(_ apps: [(UInt32, [UInt8])], recordSize: UInt32? = nil) -> Data {
+        var index = Cache()
+        var data = Cache()
+        for (appID, keys) in apps {
+            index.u32(appID)
+            index.u32(UInt32(data.bytes.count))
+            index.u32(recordSize ?? UInt32(20 + keys.count))
+            index.u32(64)
+            index.bytes.append(contentsOf: [UInt8](repeating: 0, count: 64))
+            data.bytes.append(contentsOf: [UInt8](repeating: 0, count: 20))
+            data.bytes.append(contentsOf: keys)
+        }
+        var strings = Cache()
+        for key in shardTable { strings.cstring(key) }
+        var file = Cache()
+        file.u32(0x0756_442A)
+        file.u32(1)
+        file.u32(0)
+        file.u32(256)
+        file.u32(UInt32(apps.count))
+        file.u32(UInt32(index.bytes.count))
+        file.u32(UInt32(shardTable.count))
+        file.u32(UInt32(strings.bytes.count))
+        file.u32(UInt32(data.bytes.count))
+        file.u64(0)
+        file.bytes += index.bytes + strings.bytes + data.bytes
+        return Data(file.bytes)
+    }
+
+    private static func platformShards() -> [Data] {
+        [
+            shard([10, 20, 30].map { ($0, platformKeys($0, [10: "windows,macos", 20: "windows"][$0], table: shardTable)) }),
+            shard([
+                (40, platformKeys(40, "linux", table: shardTable)),
+                (50, platformKeys(50, "macos", table: shardTable)),
+                (60, platformKeys(60, nil, common: false, table: shardTable)),
+            ]),
+        ]
     }
 
     private static func platforms(
@@ -165,6 +219,20 @@ struct AppInfoToolTests {
         #expect(
             !result.outputLost,
             "appinfo ran but its output was never collected, so every field below reads as absent")
+        return result
+    }
+
+    private func read(shards: [Data], _ appID: String) throws -> CommandResult {
+        let tool = try InstallPayload.locate().appinfo
+        let dir = URL.temporaryDirectory.appending(path: "np-appinfo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for (i, shard) in shards.enumerated() {
+            try shard.write(to: dir.appending(path: String(format: "appinfo_%02x.vdf", i)))
+        }
+        let result = try Shell.run(
+            tool.path(percentEncoded: false), [dir.path(percentEncoded: false), appID])
+        #expect(!result.outputLost)
         return result
     }
 
@@ -271,6 +339,52 @@ struct AppInfoToolTests {
         #expect(result.status == 1)
         #expect(result.stdout.isEmpty)
         #expect(result.stderr.contains("cannot parse"))
+    }
+
+    @Test("An appinfo folder resolves an app from whichever shard holds it")
+    func readsShardFolder() throws {
+        let other = Self.shard([(10, Self.platformKeys(10, "windows", table: Self.shardTable))])
+        let result = try read(shards: [other, Self.shard([(2100, Self.keyData(Self.shardIndex))])], "2100")
+        let fields = values(result)
+
+        #expect(result.status == 0)
+        #expect(fields["clienticon"] == "0d652160dff1ab3d1352aa83c9cf14a20146519e")
+        #expect(fields["name"] == "Dark Messiah of Might & Magic")
+    }
+
+    @Test("--platforms on an appinfo folder lists the apps of every shard")
+    func listsShardPlatforms() throws {
+        let result = try read(shards: Self.platformShards(), "--platforms")
+
+        #expect(result.status == 0)
+        #expect(result.stdout == "mac=10,50\nwindows=10,20,30\n")
+    }
+
+    @Test("--platforms fails when any shard is cut short")
+    func refusesTruncatedShard() throws {
+        var shards = Self.platformShards()
+        shards[1].removeLast()
+        let result = try read(shards: shards, "--platforms")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test("A shard record cannot point past its shard's data", arguments: [UInt32(19), 4096, UInt32.max])
+    func refusesInvalidShardRecord(_ size: UInt32) throws {
+        let shard = Self.shard([(2100, Self.keyData(Self.shardIndex))], recordSize: size)
+        let result = try read(shards: [shard], "2100")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test("An empty appinfo folder fails")
+    func refusesEmptyShardFolder() throws {
+        let result = try read(shards: [], "--platforms")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty)
     }
 
     @Test("A cache that is not a cache fails instead of printing garbage")

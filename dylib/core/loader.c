@@ -9,6 +9,7 @@
 #include "../feats/ceg.h"
 #include "../feats/compat.h"
 #include "../feats/input_access.h"
+#include "dobby.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -148,22 +149,10 @@ static void install_module(np_sigdb_t *sigdb, const char *module,
     np_free_resolution(&resolved);
 }
 
-static void *install_thread(void *unused) {
-    (void)unused;
+static pthread_mutex_t g_client_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_client_done;
 
-    NP_LOG("install_thread: waiting for %s", STEAMCLIENT_DYLIB);
-
-    const struct mach_header_64 *mh = NULL;
-    intptr_t slide = 0;
-
-    if (np_await_image(STEAMCLIENT_DYLIB, WAIT_TIMEOUT_MS, &mh, &slide,
-                             NULL, 0) != 0) {
-        // The Steam bootstraper does this
-        NP_LOG("install_thread: %s absent after %d ms, hooks will install in the "
-               "relaunched client", STEAMCLIENT_DYLIB, WAIT_TIMEOUT_MS);
-        return NULL;
-    }
-
+static void install_steamclient_locked(const struct mach_header_64 *mh, intptr_t slide) {
     np_input_access_check();
 
     uintptr_t text_base = 0;
@@ -171,7 +160,7 @@ static void *install_thread(void *unused) {
 
     if (np_find_segment(mh, slide, "__TEXT", &text_base, &text_size) != 0) {
         NP_ERR("install_thread: no __TEXT segment in %s", STEAMCLIENT_DYLIB);
-        return NULL;
+        return;
     }
 
     NP_LOG("install_thread: %s __TEXT @ 0x%lx (%zu bytes) slide=0x%lx",
@@ -185,7 +174,7 @@ static void *install_thread(void *unused) {
 
     if (np_load_profile(sig_path, &sigdb) != 0) {
         NP_ERR("install_thread: cannot load signature database from %s", sig_path);
-        return NULL;
+        return;
     }
 
     np_resolve_result_t resolved = {0};
@@ -202,7 +191,7 @@ static void *install_thread(void *unused) {
                resolved_count, required);
         np_free_resolution(&resolved);
         np_free_profile(&sigdb);
-        return NULL;
+        return;
     }
 
     np_hooks_launch_install(mh, slide);
@@ -219,6 +208,63 @@ static void *install_thread(void *unused) {
                 "incomplete for this client build", installed, total);
 
     np_free_resolution(&resolved);
+    np_free_profile(&sigdb);
+}
+
+static void install_steamclient(const struct mach_header_64 *mh, intptr_t slide, const char *from) {
+    pthread_mutex_lock(&g_client_lock);
+    if (!g_client_done) {
+        g_client_done = 1;
+        NP_LOG("install_thread: installing the %s hooks from %s", STEAMCLIENT_DYLIB, from);
+        install_steamclient_locked(mh, slide);
+    }
+    pthread_mutex_unlock(&g_client_lock);
+}
+
+static void *(*orig_dlopen)(const char *path, int mode);
+
+static void *hook_dlopen(const char *path, int mode) {
+    void *handle = orig_dlopen(path, mode);
+    if (handle && path && strstr(path, STEAMCLIENT_DYLIB)) {
+        const struct mach_header_64 *mh = NULL;
+        intptr_t slide = 0;
+        if (np_await_image(STEAMCLIENT_DYLIB, 1, &mh, &slide, NULL, 0) == 0)
+            install_steamclient(mh, slide, "dlopen");
+    }
+    return handle;
+}
+
+static void install_dlopen_hook(void) {
+    void *addr = DobbySymbolResolver("libdyld.dylib", "dlopen");
+    if (!addr)
+        addr = DobbySymbolResolver(NULL, "dlopen");
+    if (!addr || DobbyHook(addr, (void *)hook_dlopen, (void **)&orig_dlopen) != 0)
+        NP_WARN("np_init: dlopen not hooked, steamclient hooks install from the loader thread");
+}
+
+static void *install_thread(void *unused) {
+    (void)unused;
+
+    NP_LOG("install_thread: waiting for %s", STEAMCLIENT_DYLIB);
+
+    const struct mach_header_64 *mh = NULL;
+    intptr_t slide = 0;
+
+    if (np_await_image(STEAMCLIENT_DYLIB, WAIT_TIMEOUT_MS, &mh, &slide,
+                             NULL, 0) != 0) {
+        // The Steam bootstraper does this
+        NP_LOG("install_thread: %s absent after %d ms, hooks will install in the "
+               "relaunched client", STEAMCLIENT_DYLIB, WAIT_TIMEOUT_MS);
+        return NULL;
+    }
+
+    install_steamclient(mh, slide, "the loader thread");
+
+    np_sigdb_t sigdb = {0};
+    char sig_path[512];
+    sigdb_path_for(sig_path, sizeof(sig_path));
+    if (np_load_profile(sig_path, &sigdb) != 0)
+        return NULL;
 
     install_module(&sigdb, STEAMUI_DYLIB, np_hooks_install_steamui);
     install_module(&sigdb, STEAMSERVICE_DYLIB, np_hooks_install_steamservice);
@@ -318,6 +364,7 @@ static void np_init(void) {
     np_hooks_activate_install();
     np_ceg_snapshot_env();
 
+    install_dlopen_hook();
     if (pthread_create(&g_install, NULL, install_thread, NULL) == 0)
         g_install_started = 1;
     else

@@ -64,6 +64,25 @@ int main(void) {
            "printf 'mac=1\\nwindows=2\\n'; exec 1>&-; exec /bin/sleep 3", NULL);
     expect("a helper that stalls without output", "exec /bin/sleep 3", NULL);
 
+    expect("the appinfo folder without appinfo.vdf",
+           "case \"$1\" in */Steam/appcache/appinfo) printf 'mac=\\nwindows=\\n' ;; *) exit 1 ;; esac",
+           "window.__NOTPROTON_NATIVE_PLATFORM__={mac:new Set([]),windows:new Set([])};\n");
+    char vdf[PATH_MAX];
+    snprintf(vdf, sizeof(vdf), "%s/Library/Application Support/Steam", home);
+    mkdir(vdf, 0755);
+    snprintf(vdf, sizeof(vdf), "%s/Library/Application Support/Steam/appcache", home);
+    mkdir(vdf, 0755);
+    snprintf(vdf, sizeof(vdf), "%s/Library/Application Support/Steam/appcache/appinfo.vdf", home);
+    fclose(fopen(vdf, "w"));
+    expect("appinfo.vdf when it exists",
+           "case \"$1\" in */Steam/appcache/appinfo.vdf) printf 'mac=\\nwindows=\\n' ;; *) exit 1 ;; esac",
+           "window.__NOTPROTON_NATIVE_PLATFORM__={mac:new Set([]),windows:new Set([])};\n");
+    unlink(vdf);
+    *strrchr(vdf, '/') = '\0';
+    rmdir(vdf);
+    *strrchr(vdf, '/') = '\0';
+    rmdir(vdf);
+
     helper(NULL);
     rmdir(dir);
     snprintf(dir, sizeof(dir), "%s/Library/Application Support", home);

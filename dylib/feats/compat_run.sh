@@ -30,10 +30,11 @@ find_client_root() {
 read_app_meta() {
   appinfo_tool="$np_support/appinfo"
   appinfo_vdf="$client_root/appcache/appinfo.vdf"
+  [ -f "$appinfo_vdf" ] || appinfo_vdf="$client_root/appcache/appinfo"
   meta_name=""
   meta_icon=""
   meta_clienticon=""
-  if [ -x "$appinfo_tool" ] && [ -f "$appinfo_vdf" ]; then
+  if [ -x "$appinfo_tool" ] && [ -e "$appinfo_vdf" ]; then
     meta=$("$appinfo_tool" "$appinfo_vdf" "$app_id" 2>> "$log") || meta=""
     meta_name=$(printf '%s\n' "$meta" | sed -n 's/^name=//p')
     meta_icon=$(printf '%s\n' "$meta" | sed -n 's/^icon=//p')

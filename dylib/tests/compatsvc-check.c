@@ -88,6 +88,9 @@ void np_compat_map_tool(void *mgr, uint32_t appid, const char *name) {
 }
 
 void np_compat_force_enable(void *mgr) { (void)mgr; }
+const char *np_compat_tool_name(const void *tool) {
+    return tool ? *(const char *const *)((const uint8_t *)tool + COMPAT_TOOL_NAME_OFF) : NULL;
+}
 
 const char *np_compat_tool_dir(void) { return "/fake/tool"; }
 const char *np_compat_tool_commandline(void) { return "/fake/run %verb%"; }

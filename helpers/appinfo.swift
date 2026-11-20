@@ -49,15 +49,25 @@ if args.count == 4, args[1] == "--same-bundle" {
 
 let platforms = args.count == 3 && args[2] == "--platforms"
 guard args.count == 3, platforms || UInt32(args[2]) != nil else {
-    fputs("usage: appinfo <appinfo.vdf> <appid>|--platforms\n", stderr)
+    fputs("usage: appinfo <appinfo.vdf|appinfo folder> <appid>|--platforms\n", stderr)
     exit(2)
 }
 
-guard let file = FileManager.default.contents(atPath: args[1]) else {
+func cacheFiles(_ path: String) -> [String]? {
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { return nil }
+    guard isDir.boolValue else { return [path] }
+    guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else { return nil }
+    let shards = names.filter { $0.hasPrefix("appinfo_") && $0.hasSuffix(".vdf") }.sorted()
+    return shards.isEmpty ? nil : shards.map { (path as NSString).appendingPathComponent($0) }
+}
+
+let files = cacheFiles(args[1]) ?? []
+let caches = files.compactMap { FileManager.default.contents(atPath: $0).map { [UInt8]($0) } }
+guard !files.isEmpty, caches.count == files.count else {
     fputs("appinfo: cannot read \(args[1])\n", stderr)
     exit(1)
 }
-let bytes = [UInt8](file)
 
 enum VDFError: Error {
     case truncated
@@ -181,10 +191,50 @@ func readSection(_ c: inout Cursor, _ table: [String]?, depth: Int = 0) throws -
     }
 }
 
+func forEachShardApp(_ b: [UInt8], _ visit: (UInt32, () throws -> [String: Value]) throws -> Bool) throws -> Bool {
+    var head = Cursor(b: b, p: 4)
+    _ = try head.u32()
+    _ = try head.u32()
+    _ = try head.u32()
+    let count = Int(try head.u32())
+    let indexSize = Int(try head.u32())
+    let stringCount = Int(try head.u32())
+    let stringsSize = Int(try head.u32())
+    let dataSize = Int(try head.u32())
+    let indexStart = 0x2c
+    guard indexStart + indexSize + stringsSize + dataSize == b.count else { throw VDFError.truncated }
+    var strings = Cursor(b: b, p: indexStart + indexSize, end: indexStart + indexSize + stringsSize)
+    var table: [String] = []
+    table.reserveCapacity(stringCount)
+    for _ in 0..<stringCount { table.append(try strings.cstring()) }
+    let dataStart = indexStart + indexSize + stringsSize
+
+    var record = Cursor(b: b, p: indexStart, end: indexStart + indexSize)
+    for _ in 0..<count {
+        let id = try record.u32()
+        let offset = Int(try record.u32())
+        let size = Int(try record.u32())
+        try record.skip(Int(try record.u32()))
+        guard size >= 20, offset <= dataSize, size <= dataSize - offset else { throw VDFError.truncated }
+        let start = dataStart + offset + 20
+        let end = dataStart + offset + size
+        let keys = { () throws -> [String: Value] in
+            var kv = Cursor(b: b, p: start, end: end)
+            let root = try readSection(&kv, table)
+            if case .section(let inner)? = root["appinfo"] { return inner }
+            return root
+        }
+        if try !visit(id, keys) { return true }
+    }
+    guard record.p == indexStart + indexSize else { throw VDFError.truncated }
+    return true
+}
+
 // Returns false when the list runs out before the zero appid that ends it.
 func forEachApp(_ b: [UInt8], _ visit: (UInt32, () throws -> [String: Value]) throws -> Bool) throws -> Bool {
     var head = Cursor(b: b, p: 0)
     let magic = try head.u32()
+    if magic == 0x0756_442A { return try forEachShardApp(b, visit) }
     _ = try head.u32()
 
     var table: [String]? = nil
@@ -230,44 +280,48 @@ func forEachApp(_ b: [UInt8], _ visit: (UInt32, () throws -> [String: Value]) th
     return false
 }
 
-func findApp(_ b: [UInt8], _ appID: UInt32) throws -> [String: Value]? {
+func findApp(_ caches: [[UInt8]], _ appID: UInt32) throws -> [String: Value]? {
     var found: [String: Value]?
-    _ = try forEachApp(b) { id, keys in
-        guard id == appID else { return true }
-        found = try keys()
-        return false
+    for b in caches where found == nil {
+        _ = try forEachApp(b) { id, keys in
+            guard id == appID else { return true }
+            found = try keys()
+            return false
+        }
     }
     return found
 }
 
 // Steam treats an app without an oslist as Windows only.
 // oslist can still say macos for a 32-bit build that no longer runs.
-func printPlatforms(_ b: [UInt8]) throws {
+func printPlatforms(_ caches: [[UInt8]]) throws {
     var mac: [UInt32] = []
     var windows: [UInt32] = []
-    let complete = try forEachApp(b) { id, keys in
-        guard case .section(let common)? = try keys()["common"] else { return true }
-        guard case .string(let oslist)? = common["oslist"] else {
-            windows.append(id)
+    for b in caches {
+        let complete = try forEachApp(b) { id, keys in
+            guard case .section(let common)? = try keys()["common"] else { return true }
+            guard case .string(let oslist)? = common["oslist"] else {
+                windows.append(id)
+                return true
+            }
+            let systems = oslist.split(separator: ",")
+            if systems.contains("macos") { mac.append(id) }
+            if systems.contains("windows") { windows.append(id) }
             return true
         }
-        let systems = oslist.split(separator: ",")
-        if systems.contains("macos") { mac.append(id) }
-        if systems.contains("windows") { windows.append(id) }
-        return true
+        guard complete else { throw VDFError.truncated }
     }
-    guard complete else { throw VDFError.truncated }
     print("mac=" + mac.map(String.init).joined(separator: ","))
     print("windows=" + windows.map(String.init).joined(separator: ","))
 }
 
 do {
     if platforms {
-        try printPlatforms(bytes)
+        try printPlatforms(caches)
         exit(0)
     }
     let wantAppID = UInt32(args[2])!
-    guard let app = try findApp(bytes, wantAppID) else {
+    guard let app = try findApp(caches, wantAppID) else {
         fputs("appinfo: no entry for appid \(wantAppID)\n", stderr)
         exit(1)
     }

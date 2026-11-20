@@ -298,6 +298,13 @@ is "icon key set" "  <key>CFBundleIconFile</key><string>game</string>" "$icon_ar
 is "bundle gets the artwork" "game art" "$(cat "$loader_res/game.icns")"
 is "artwork cached with the launcher" "game art" "$(cat "$loader_root/game.icns")"
 is "artwork built" "icon built from $T/steam/appcache/librarycache/100/abc123.jpg" "$(cat "$log")"
+rm "$T/steam/appcache/appinfo.vdf"
+mkdir "$T/steam/appcache/appinfo"
+printf '#!/bin/sh\nprintf "name=%%s\\n" "$1"\n' > "$np_support/appinfo"
+read_app_meta
+is "shard folder without appinfo.vdf" "$T/steam/appcache/appinfo" "$meta_name"
+printf '#!/bin/sh\nprintf "icon=abc123\\n"\n' > "$np_support/appinfo"
+read_app_meta
 rm -f "$iconmaker" "$loader_res/game.icns"
 : > "$log"
 eval "$icon_lines"
