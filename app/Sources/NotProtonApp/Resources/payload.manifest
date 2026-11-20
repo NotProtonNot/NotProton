@@ -1,3 +1,5 @@
+built    game-host
+built    game-client.dylib
 built    lsteamclient.dll
 built    lsteamclient.so
 built    steam.exe

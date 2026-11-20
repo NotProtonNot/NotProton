@@ -18,7 +18,7 @@ struct BridgePayloadTests {
         return root
     }
 
-    @Test("Locate finds all four resources when present")
+    @Test("Locate finds all resources when present")
     func locateFindsAll() throws {
         let work = try scratchDirectory("bridge")
         defer { try? FileManager.default.removeItem(at: work) }
@@ -39,7 +39,7 @@ struct BridgePayloadTests {
         #expect(throws: StepFailure.self) { try BridgePayload.locate(root: root) }
     }
 
-    @Test("Stage writes all six bridge paths from four resources")
+    @Test("Stage writes all bridge paths")
     func stageWritesAll() throws {
         let work = try scratchDirectory("bridge")
         defer { try? FileManager.default.removeItem(at: work) }
