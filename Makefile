@@ -11,7 +11,7 @@ CFLAGS   := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) $(AVAIL) \
 LDFLAGS  := -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) \
             -dynamiclib -install_name @rpath/notproton.dylib
 
-FRAMEWORKS := -framework CoreFoundation -framework CoreGraphics
+FRAMEWORKS := -framework AppKit -framework CoreFoundation -framework CoreGraphics -framework QuartzCore
 
 DOBBY_DIR  := build/dobby
 DOBBY_LIBS := $(DOBBY_DIR)/libdobby.a \
@@ -69,7 +69,7 @@ ARM64_DYLIB := $(OUT_DIR)/notproton.arm64.dylib
 X86_STUB    := $(OUT_DIR)/notproton.x86_64.dylib
 TARGET      := $(OUT_DIR)/notproton.dylib
 
-OBJS := $(patsubst %.c,$(OUT_DIR)/%.o,$(SRCS))
+OBJS := $(patsubst %.c,$(OUT_DIR)/%.o,$(SRCS)) $(OUT_DIR)/dylib/feats/rounded_windows.o
 DEPS := $(OBJS:.o=.d)
 
 .PHONY: all clean rebuild dobby deploy dylib dylib-install sigcheck fonts fonts-install app-payload app app-zip \
@@ -544,6 +544,10 @@ $(TARGET): $(ARM64_DYLIB) $(X86_STUB)
 $(OUT_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUT_DIR)/%.o: %.m
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -fobjc-arc -c $< -o $@
 
 $(RUN_SCRIPT_H): dylib/feats/compat_run.sh dylib/embed_script.py
 	@mkdir -p $(GENERATED_DIR)

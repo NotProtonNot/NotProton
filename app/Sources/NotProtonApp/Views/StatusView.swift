@@ -160,6 +160,7 @@ struct StatusRow: View {
 
 struct StatusView: View {
     @Environment(SystemStatus.self) private var status
+    @AppStorage("roundSteamWindows") private var roundSteamWindows = false
 
     private static let updateBlockPrompt =
         String(localized: "Steam client updates may break NotProton. If you don't want to wait for NotProton to be updated to be compatible with future Steam versions at the cost of not getting updates to the Steam client, you can stop the Steam client from updating itself.")
@@ -331,6 +332,11 @@ struct StatusView: View {
                     )
                 }
                 updateBlockRow(snapshot.updateBlocked)
+                StatusRow(
+                    title: String(localized: "Round Steam windows"),
+                    value: String(localized: "Restart Steam to apply this setting."),
+                    toggle: $roundSteamWindows
+                )
                 StatusRow(
                     title: String(localized: "Controller permission"),
                     value: String(localized: "Clear Steam's controller permission so macOS asks for it again."),
