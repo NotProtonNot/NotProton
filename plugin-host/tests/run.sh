@@ -25,7 +25,18 @@ for a in arm64 x86_64; do
   echo 'int np_fixture_trigger;' | "$plugin_cc" -arch "$a" -x c -dynamiclib -o "$d/npfixture.so" -
   "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -dynamiclib -o "$d/npfixture.dylib" plugin-host/tests/npfixture.c
   "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -o "$d/hostcheck" plugin-host/tests/hostcheck.c
+  "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -o "$d/apicheck" plugin-host/tests/apicheck.c
+  "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -dynamiclib -o "$d/sample.dylib" plugin-host/tests/sample.c
+  for v in xml:1.2.3 bin:4.5.6; do
+    f="$d/${v%%:*}/Versions/A"
+    mkdir -p "$f/Resources"
+    cp "$d/npfixture.dylib" "$f/npfixture.dylib"
+    plutil -create xml1 "$f/Resources/Info.plist"
+    plutil -insert CFBundleShortVersionString -string "${v#*:}" "$f/Resources/Info.plist"
+  done
+  plutil -convert binary1 "$d/bin/Versions/A/Resources/Info.plist"
   step "$d/hostcheck" "$host" "$d" "$d"
+  step "$d/apicheck" "$host" "$d/sample.dylib" "$d" "$d"
 done
 
 if [ "$ran" -eq 0 ] && [ "$failed" -eq 0 ]; then

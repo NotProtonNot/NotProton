@@ -582,6 +582,7 @@ overlay-shim-install: $(OVERLAY_SHIM)
 	@echo "==> Installed: $(SUPPORT_DIR)/overlay-shim.dylib"
 
 PLUGIN_HOST_SRC   := plugin-host/plugin_host.c
+PLUGIN_HOST_HDR   := plugin-host/notproton_plugin.h
 PLUGIN_HOST_ARM   := $(OUT_DIR)/plugin-host.arm64.dylib
 PLUGIN_HOST_X86   := $(OUT_DIR)/plugin-host.x86_64.dylib
 PLUGIN_HOST       := $(OUT_DIR)/plugin-host.dylib
@@ -591,7 +592,7 @@ PLUGIN_HOST_TESTS := $(OUT_DIR)/plugin-host-tests
 
 plugin-host: $(PLUGIN_HOST)
 
-$(PLUGIN_HOST): $(PLUGIN_HOST_SRC)
+$(PLUGIN_HOST): $(PLUGIN_HOST_SRC) $(PLUGIN_HOST_HDR)
 	@mkdir -p $(OUT_DIR)
 	$(CC) -arch arm64 $(PLUGIN_HOST_FLAGS) -o $(PLUGIN_HOST_ARM) $<
 	$(CC) -arch x86_64 $(PLUGIN_HOST_FLAGS) -o $(PLUGIN_HOST_X86) $<

@@ -1,4 +1,6 @@
 // Plugin host
+#include "notproton_plugin.h"
+
 #include <dlfcn.h>
 #include <libkern/OSCacheControl.h>
 #include <libproc.h>
@@ -6,6 +8,8 @@
 #include <mach/mach_vm.h>
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
+#include <mach-o/nlist.h>
+#include <os/lock.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -22,6 +26,8 @@
 #define APPLIED_MAX 64
 #define IMAGES_MAX  8
 #define SECTIONS_MAX 16
+#define WATCHES_MAX 16
+#define PATH_CONTAINS_LEN 128
 
 #define IMAGE_SCN_MEM_EXECUTE 0x20000000u
 
@@ -282,7 +288,6 @@ static int pe_image(uintptr_t base, const char *name, struct image *img) {
     return 1;
 }
 
-#if !defined(__arm64__)
 static const struct load_command *next_command(const struct mach_header_64 *mh, const struct load_command *c) {
     const unsigned char *lc = c ? (const unsigned char *)c + c->cmdsize : (const unsigned char *)(mh + 1);
     const unsigned char *end = (const unsigned char *)(mh + 1) + mh->sizeofcmds;
@@ -294,6 +299,7 @@ static const struct load_command *next_command(const struct mach_header_64 *mh, 
 #define EACH_COMMAND(mh, c) \
     for (uint32_t c##_i = 0; c##_i < (mh)->ncmds && ((c = next_command((mh), c##_i ? c : NULL))); c##_i++)
 
+#if !defined(__arm64__)
 static int macho_image(const struct mach_header *mh, intptr_t slide, struct image *img) {
     if (mh->magic != MH_MAGIC_64) return 0;
     const struct mach_header_64 *h = (const struct mach_header_64 *)mh;
@@ -555,6 +561,254 @@ static void on_remove_image(const struct mach_header *mh, intptr_t slide) {
         if (!gone) g_applied[kept++] = g_applied[i];
     }
     g_napplied = kept;
+}
+
+static struct {
+    char name[NAME_LEN];
+    char path_contains[PATH_CONTAINS_LEN];
+    np_image_fn fn;
+    int fired;
+} g_watches[WATCHES_MAX];
+static int g_nwatches;
+static int g_watching;
+static os_unfair_lock g_watch_lock = OS_UNFAIR_LOCK_INIT;
+
+static void watch_image(const struct mach_header *mh, intptr_t slide) {
+    Dl_info info;
+    int n = __atomic_load_n(&g_nwatches, __ATOMIC_ACQUIRE);
+    if (!n || mh->magic != MH_MAGIC_64 || !dladdr(mh, &info) || !info.dli_fname) return;
+    const char *path = info.dli_fname;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(base_name(path), g_watches[i].name) != 0) continue;
+        if (g_watches[i].path_contains[0] && !strstr(path, g_watches[i].path_contains)) continue;
+        if (__atomic_exchange_n(&g_watches[i].fired, 1, __ATOMIC_ACQ_REL)) continue;
+        g_watches[i].fn((const struct mach_header_64 *)mh, slide, path);
+    }
+}
+
+static void replay_loaded_images(void) {
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const struct mach_header *mh = _dyld_get_image_header(i);
+        if (mh) watch_image(mh, _dyld_get_image_vmaddr_slide(i));
+    }
+}
+
+static int api_on_first_image(const char *name, const char *path_contains, np_image_fn fn) {
+    if (!name || !fn || strlen(name) >= NAME_LEN || (path_contains && strlen(path_contains) >= PATH_CONTAINS_LEN))
+        return 0;
+    os_unfair_lock_lock(&g_watch_lock);
+    int n = g_nwatches;
+    if (n >= WATCHES_MAX) {
+        os_unfair_lock_unlock(&g_watch_lock);
+        return 0;
+    }
+    snprintf(g_watches[n].name, NAME_LEN, "%s", name);
+    snprintf(g_watches[n].path_contains, PATH_CONTAINS_LEN, "%s", path_contains ? path_contains : "");
+    g_watches[n].fn = fn;
+    __atomic_store_n(&g_nwatches, n + 1, __ATOMIC_RELEASE);
+    int first = !g_watching;
+    g_watching = 1;
+    os_unfair_lock_unlock(&g_watch_lock);
+    if (first) _dyld_register_func_for_add_image(watch_image);
+    else replay_loaded_images();
+    return 1;
+}
+
+static int symtab_of(const struct mach_header_64 *mh, intptr_t slide, const struct nlist_64 **syms,
+                     uint32_t *nsyms, const char **strs, uint32_t *strsize) {
+    const struct segment_command_64 *le = NULL;
+    const struct symtab_command *st = NULL;
+    const struct load_command *c = NULL;
+    if (mh->magic != MH_MAGIC_64) return 0;
+    EACH_COMMAND(mh, c) {
+        if (c->cmd == LC_SEGMENT_64 && strncmp(((const struct segment_command_64 *)c)->segname, SEG_LINKEDIT, 16) == 0)
+            le = (const struct segment_command_64 *)c;
+        else if (c->cmd == LC_SYMTAB)
+            st = (const struct symtab_command *)c;
+    }
+    if (!le || !st) return 0;
+    uint64_t lo = le->fileoff, hi = le->fileoff + le->filesize;
+    if (st->symoff < lo || st->symoff + (uint64_t)st->nsyms * sizeof(struct nlist_64) > hi
+        || st->stroff < lo || st->stroff + (uint64_t)st->strsize > hi)
+        return 0;
+    uintptr_t base = (uintptr_t)(le->vmaddr + (uint64_t)slide - le->fileoff);
+    *syms = (const struct nlist_64 *)(base + st->symoff);
+    *strs = (const char *)(base + st->stroff);
+    *nsyms = st->nsyms;
+    *strsize = st->strsize;
+    return 1;
+}
+
+static const char *defined_name(const struct nlist_64 *s, const char *strs, uint32_t strsize) {
+    if ((s->n_type & N_STAB) || (s->n_type & N_TYPE) != N_SECT) return NULL;
+    return s->n_un.n_strx && s->n_un.n_strx < strsize ? strs + s->n_un.n_strx : NULL;
+}
+
+static uintptr_t api_symbol(const struct mach_header_64 *mh, intptr_t slide, const char *name) {
+    const struct nlist_64 *syms;
+    const char *strs;
+    uint32_t nsyms, strsize;
+    if (!name || !symtab_of(mh, slide, &syms, &nsyms, &strs, &strsize)) return 0;
+    for (uint32_t i = 0; i < nsyms; i++) {
+        const char *n = defined_name(&syms[i], strs, strsize);
+        if (n && strcmp(n, name) == 0) return (uintptr_t)(syms[i].n_value + (uint64_t)slide);
+    }
+    return 0;
+}
+
+static const char *api_symbol_name(const struct mach_header_64 *mh, intptr_t slide, uintptr_t addr) {
+    const struct nlist_64 *syms;
+    const char *strs;
+    uint32_t nsyms, strsize;
+    if (!symtab_of(mh, slide, &syms, &nsyms, &strs, &strsize)) return NULL;
+    for (uint32_t i = 0; i < nsyms; i++) {
+        const char *n = defined_name(&syms[i], strs, strsize);
+        if (n && (uintptr_t)(syms[i].n_value + (uint64_t)slide) == addr) return n;
+    }
+    return NULL;
+}
+
+static int api_count_pointers(const struct mach_header_64 *mh, intptr_t slide, uintptr_t value, uintptr_t **first) {
+    const struct load_command *c = NULL;
+    int found = 0;
+    if (mh->magic != MH_MAGIC_64) return 0;
+    EACH_COMMAND(mh, c) {
+        if (c->cmd != LC_SEGMENT_64) continue;
+        const struct segment_command_64 *seg = (const struct segment_command_64 *)c;
+        const struct section_64 *s = (const struct section_64 *)(seg + 1);
+        if (strncmp(seg->segname, "__DATA", 6) != 0 || sizeof(*seg) + (size_t)seg->nsects * sizeof(*s) > c->cmdsize)
+            continue;
+        for (uint32_t k = 0; k < seg->nsects; k++) {
+            uint8_t type = s[k].flags & SECTION_TYPE;
+            if (type == S_ZEROFILL || type == S_GB_ZEROFILL || type == S_THREAD_LOCAL_ZEROFILL) continue;
+            uintptr_t *w = (uintptr_t *)(uintptr_t)(s[k].addr + (uint64_t)slide);
+            size_t words = (size_t)s[k].size / sizeof(uintptr_t);
+            for (size_t i = 0; i < words; i++)
+                if (w[i] == value && ++found == 1 && first) *first = &w[i];
+        }
+    }
+    return found;
+}
+
+static int api_swap_pointer(uintptr_t *slot, uintptr_t expect, uintptr_t value) {
+    uintptr_t page_size = (uintptr_t)getpagesize(), page = (uintptr_t)slot & ~(page_size - 1), start;
+    size_t size;
+    vm_prot_t prot = VM_PROT_READ;
+    if (!region_at(page, &start, &size, &prot) || start > page) return 0;
+    int opened = !(prot & VM_PROT_WRITE);
+    if (opened && mach_vm_protect(mach_task_self(), page, page_size, FALSE,
+                                  VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) != KERN_SUCCESS)
+        return 0;
+    int ok = __atomic_compare_exchange_n(slot, &expect, value, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+    if (opened) mach_vm_protect(mach_task_self(), page, page_size, FALSE, prot);
+    return ok;
+}
+
+static uint64_t be_int(const unsigned char *p, int n) {
+    uint64_t v = 0;
+    while (n--) v = v << 8 | *p++;
+    return v;
+}
+
+static int bplist_obj(const unsigned char *b, uint64_t area, uint64_t off, int *type, uint64_t *count,
+                      uint64_t *data) {
+    if (off >= area) return 0;
+    *type = b[off] >> 4;
+    *count = b[off] & 0xf;
+    *data = off + 1;
+    if (*count == 0xf) {
+        if (*data >= area || (b[*data] >> 4) != 1 || (b[*data] & 0xf) > 3) return 0;
+        int n = 1 << (b[*data] & 0xf);
+        if (*data + 1 + (uint64_t)n > area) return 0;
+        *count = be_int(b + *data + 1, n);
+        *data += 1 + (uint64_t)n;
+    }
+    return *count <= area && *data + *count <= area;
+}
+
+static int bplist_string(const unsigned char *b, size_t len, const char *key, char *out, size_t outsz) {
+    if (len < 40 || memcmp(b, "bplist00", 8) != 0) return 0;
+    const unsigned char *t = b + len - 32;
+    int osz = t[6], rsz = t[7];
+    uint64_t nobj = be_int(t + 8, 8), top = be_int(t + 16, 8), table = be_int(t + 24, 8), area = len - 32;
+    if (osz < 1 || osz > 8 || rsz < 1 || rsz > 8 || top >= nobj || table > area || nobj > (area - table) / (uint64_t)osz)
+        return 0;
+    int type;
+    uint64_t count, data, klen = strlen(key);
+    if (!bplist_obj(b, table, be_int(b + table + top * (uint64_t)osz, osz), &type, &count, &data) || type != 0xd
+        || data + 2 * count * (uint64_t)rsz > table)
+        return 0;
+    for (uint64_t i = 0; i < count; i++) {
+        uint64_t kref = be_int(b + data + i * (uint64_t)rsz, rsz), vref = be_int(b + data + (count + i) * (uint64_t)rsz, rsz);
+        int kt, vt;
+        uint64_t kn, kd, vn, vd;
+        if (kref >= nobj || vref >= nobj) return 0;
+        if (!bplist_obj(b, table, be_int(b + table + kref * (uint64_t)osz, osz), &kt, &kn, &kd)) return 0;
+        if (kt != 5 || kn != klen || memcmp(b + kd, key, klen) != 0) continue;
+        if (!bplist_obj(b, table, be_int(b + table + vref * (uint64_t)osz, osz), &vt, &vn, &vd) || vt != 5
+            || vn >= outsz)
+            return 0;
+        memcpy(out, b + vd, vn);
+        out[vn] = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static int xml_string(const char *text, const char *key, char *out, size_t outsz) {
+    char want[128];
+    snprintf(want, sizeof(want), "<key>%s</key>", key);
+    const char *k = strstr(text, want);
+    if (!k) return 0;
+    k += strlen(want);
+    while (*k == ' ' || *k == '\t' || *k == '\r' || *k == '\n') k++;
+    if (strncmp(k, "<string>", 8) != 0) return 0;
+    k += 8;
+    const char *e = strstr(k, "</string>");
+    if (!e || (size_t)(e - k) >= outsz) return 0;
+    memcpy(out, k, (size_t)(e - k));
+    out[e - k] = 0;
+    return 1;
+}
+
+static int api_bundle_short_version(const char *image_path, char *out, size_t len) {
+    static unsigned char buf[64 * 1024 + 1];
+    char plist[1024];
+    const char *slash = image_path ? strrchr(image_path, '/') : NULL;
+    if (!slash || !out || !len) return 0;
+    snprintf(plist, sizeof(plist), "%.*s/Resources/Info.plist", (int)(slash - image_path), image_path);
+    FILE *f = fopen(plist, "rb");
+    if (!f) return 0;
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (!n || n == sizeof(buf) - 1) return 0;
+    buf[n] = 0;
+    return bplist_string(buf, n, "CFBundleShortVersionString", out, len)
+           || xml_string((const char *)buf, "CFBundleShortVersionString", out, len);
+}
+
+__attribute__((format(printf, 2, 3)))
+static void api_log(const char *tag, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vlog(tag && *tag ? tag : "plugin", fmt, ap);
+    va_end(ap);
+}
+
+static const struct np_plugin_api g_api = {
+    .version = NP_PLUGIN_API_VERSION,
+    .log = api_log,
+    .on_first_image = api_on_first_image,
+    .symbol = api_symbol,
+    .symbol_name = api_symbol_name,
+    .count_pointers = api_count_pointers,
+    .swap_pointer = api_swap_pointer,
+    .bundle_short_version = api_bundle_short_version,
+};
+
+__attribute__((visibility("default")))
+const struct np_plugin_api *np_plugin_api_get(unsigned version) {
+    return version >= 1 && version <= NP_PLUGIN_API_VERSION ? &g_api : NULL;
 }
 
 __attribute__((constructor))
