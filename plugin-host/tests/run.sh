@@ -2,6 +2,7 @@
 set -e
 out="$1"
 host="$2"
+tool="$3"
 plugin_cc="${CC:-clang}"
 min="${MIN_VER:-15.0}"
 ran=0
@@ -37,6 +38,7 @@ for a in arm64 x86_64; do
   plutil -convert binary1 "$d/bin/Versions/A/Resources/Info.plist"
   step "$d/hostcheck" "$host" "$d" "$d"
   step "$d/apicheck" "$host" "$d/sample.dylib" "$d" "$d"
+  step sh plugin-host/tests/patchcheck.sh "$tool" "$d"
 done
 
 if [ "$ran" -eq 0 ] && [ "$failed" -eq 0 ]; then

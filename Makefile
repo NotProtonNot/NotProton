@@ -76,7 +76,7 @@ DEPS := $(OBJS:.o=.d)
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures ceg-check panel-behavior app-tests \
         featcheck featstagecheck runnervariantcheck conf-fixtures confcheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
-        plugin-host plugin-host-install plugin-host-tests \
+        plugin-host plugin-host-install plugin-host-tests patchcheck \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
         compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
@@ -604,8 +604,19 @@ plugin-host-install: $(PLUGIN_HOST)
 	$(call install_atomically,$(PLUGIN_HOST),$(SUPPORT_DIR)/plugin-host.dylib)
 	@echo "==> Installed: $(SUPPORT_DIR)/plugin-host.dylib"
 
-plugin-host-tests: $(PLUGIN_HOST)
-	@CC="$(CC)" MIN_VER=$(MIN_VER) sh plugin-host/tests/run.sh "$(PLUGIN_HOST_TESTS)" "$(CURDIR)/$(PLUGIN_HOST)"
+PATCHCHECK := $(OUT_DIR)/patchcheck
+
+patchcheck: $(PATCHCHECK)
+
+$(PATCHCHECK): plugin-host/patchcheck.c $(PLUGIN_HOST_SRC) $(PLUGIN_HOST_HDR) dylib/feats/conf.c dylib/feats/conf.h
+	@mkdir -p $(OUT_DIR)
+	$(CC) -arch $(ARCH) -mmacosx-version-min=$(MIN_VER) $(AVAIL) -std=c17 -O2 -Wall -Wextra \
+		-o $@ plugin-host/patchcheck.c dylib/feats/conf.c
+	@echo "==> Built $@"
+
+plugin-host-tests: $(PLUGIN_HOST) $(PATCHCHECK)
+	@CC="$(CC)" MIN_VER=$(MIN_VER) sh plugin-host/tests/run.sh "$(PLUGIN_HOST_TESTS)" "$(CURDIR)/$(PLUGIN_HOST)" \
+		"$(CURDIR)/$(PATCHCHECK)"
 
 overlay-shim-tests: $(OVERLAY_SHIM)
 	@if [ ! -d $(OVERLAY_SHIM_TESTS) ]; then \

@@ -811,7 +811,11 @@ const struct np_plugin_api *np_plugin_api_get(unsigned version) {
     return version >= 1 && version <= NP_PLUGIN_API_VERSION ? &g_api : NULL;
 }
 
+#ifdef NP_PATCHCHECK
+__attribute__((unused))
+#else
 __attribute__((constructor))
+#endif
 static void plugin_host_init(void) {
     const char *spec = getenv("NOTPROTON_PLUGIN_PATCHES");
     if (!spec || !*spec) return;

@@ -14,8 +14,10 @@ static const unsigned char kSiteA[] = { 0x31, 0xd2, 0xe8, 0x11, 0x22, 0x33, 0x44
 static const unsigned char kSiteB[] = { 0x48, 0x8b, 0x0b, 0x41, 0xb8, 0x01, 0x00, 0x00, 0x00 };
 static const unsigned char kSiteC[] = { 0x0f, 0x1f, 0x44, 0x00, 0x00, 0xb0, 0x07, 0xc3 };
 
-static int write_fixture_dll(const char *path) {
+static int write_fixture_dll(const char *path, uint32_t raw) {
     static unsigned char f[0x3000];
+    size_t len = (size_t)raw + 0x2000;
+    if (raw < 0x400 || len > sizeof(f)) return 0;
     memset(f, 0, sizeof(f));
     f[0] = 'M'; f[1] = 'Z';
     wr32(f + 0x3c, 0x80);
@@ -28,27 +30,27 @@ static int write_fixture_dll(const char *path) {
     wr16(pe + 22, 0x2022);
     wr16(opt, 0x20b);
     wr32(opt + 32, 0x1000);
-    wr32(opt + 36, 0x1000);
+    wr32(opt + 36, raw < 0x1000 ? 0x200 : 0x1000);
     wr32(opt + 56, 0x3000);
-    wr32(opt + 60, 0x1000);
+    wr32(opt + 60, raw);
     wr32(opt + 108, 16);
     wr32(opt + 112, 0x2000);
     wr32(opt + 116, 0x40);
     memcpy(sec, ".text", 5);
-    wr32(sec + 8, 0x1000); wr32(sec + 12, 0x1000); wr32(sec + 16, 0x1000); wr32(sec + 20, 0x1000);
+    wr32(sec + 8, 0x1000); wr32(sec + 12, 0x1000); wr32(sec + 16, 0x1000); wr32(sec + 20, raw);
     wr32(sec + 36, 0x60000020);
     memcpy(sec + 40, ".rdata", 6);
-    wr32(sec + 48, 0x1000); wr32(sec + 52, 0x2000); wr32(sec + 56, 0x1000); wr32(sec + 60, 0x2000);
+    wr32(sec + 48, 0x1000); wr32(sec + 52, 0x2000); wr32(sec + 56, 0x1000); wr32(sec + 60, raw + 0x1000);
     wr32(sec + 76, 0x40000040);
-    memset(f + 0x1000, 0xcc, 0x1000);
-    memcpy(f + 0x1100, kSiteA, sizeof(kSiteA));
-    memcpy(f + 0x1200, kSiteB, sizeof(kSiteB));
-    memcpy(f + 0x1300, kSiteC, sizeof(kSiteC));
-    wr32(f + 0x2000 + 12, 0x2040);
-    memcpy(f + 0x2040, "npfixture.dll", 14);
+    memset(f + raw, 0xcc, 0x1000);
+    memcpy(f + raw + 0x100, kSiteA, sizeof(kSiteA));
+    memcpy(f + raw + 0x200, kSiteB, sizeof(kSiteB));
+    memcpy(f + raw + 0x300, kSiteC, sizeof(kSiteC));
+    wr32(f + raw + 0x1000 + 12, 0x2040);
+    memcpy(f + raw + 0x1040, "npfixture.dll", 14);
     FILE *out = fopen(path, "wb");
     if (!out) return 0;
-    int ok = fwrite(f, 1, sizeof(f), out) == sizeof(f);
+    int ok = fwrite(f, 1, len, out) == len;
     return fclose(out) == 0 && ok;
 }
 
@@ -199,7 +201,7 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
     snprintf(dll, sizeof(dll), "%s/npfixture.dll", scratch);
     snprintf(trigger, sizeof(trigger), "%s/npfixture.so", dir);
     snprintf(dylib, sizeof(dylib), "%s/npfixture.dylib", dir);
-    if (!write_fixture_dll(dll)) {
+    if (!write_fixture_dll(dll, 0x1000)) {
         printf("  FAIL  fixture DLL could not be written to %s\n", dll);
         failures++;
         return;
@@ -213,6 +215,7 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
         int times, reload;
     } cases[] = {
         { "fixture: a plugin's patches land together", NULL, "01>00*1,75>eb*1", "NP_A: patched npfixture.dll", 1, 0 },
+        { "fixture: the log says where it wrote", NULL, "01>00*1,75>eb*1", "(+0x1107 +0x1205)", 1, 0 },
         { "fixture: two plugins patch the same module", "+c", "01>00*1,07>08*1,75>eb*1", "patched npfixture.dll", 2, 0 },
         { "fixture: a module mapped again after its unix half unloads is patched again", NULL, "01>00*1,75>eb*1",
           "NP_A: patched npfixture.dll", 2, 1 },
@@ -257,6 +260,8 @@ int main(int argc, char **argv) {
         return child_pe(argv[2], argv[3], argv[4], argv[5], atoi(argv[6]), argv[7], atoi(argv[8]));
     if (argc == 4 && strcmp(argv[1], "--dylib") == 0) return child_fixture_dylib(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--macho") == 0) return child_macho(argv[2], argv[3]);
+    if (argc == 4 && strcmp(argv[1], "--fixture") == 0)
+        return write_fixture_dll(argv[2], (uint32_t)strtoul(argv[3], NULL, 0)) ? 0 : 2;
     if (argc != 4) {
         fprintf(stderr, "usage: hostcheck <plugin-host.dylib> <fixture dir> <scratch dir>\n");
         return 2;
