@@ -22,7 +22,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "min", 1, 0 },
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
-    { "patch", 16, 0 },
+    { "patch", 16, 0 },    { "variants", 8, 0 },
     { NULL, 0, 0 }
 };
 
@@ -288,6 +288,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "patch") == 0 && !conf_patch_ok(v)) {
             *detail = "patch";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "variants") == 0 && !conf_id_ok(NP_CONF_VARIANT, v)) {
+            *detail = "variants";
             return NP_CONF_BAD_VALUE;
         }
     }

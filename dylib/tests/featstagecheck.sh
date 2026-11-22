@@ -9,8 +9,8 @@ conf=$(awk '/^np_conf_normalise\(\) \(/ { f = 1 }
             f { print }
             /^np_conf_log\(\) \{/ { g = 1 }
             g && /^}$/ { exit }' "$SRC")
-block=$(sed -n '/^np_env_reserved() {/,/^}$/p; /^np_feat_dir=/,/^NP_FEAT_LIST$/p
-                /^np_plugin_host=/,/^fi$/p' "$SRC")
+block=$(sed -n '/^np_feat_dir=/,/^np_feat_list=/p; /^np_env_reserved() {/,/^}$/p
+                /^stage_step="plugins"$/,/^NP_FEAT_LIST$/p; /^np_plugin_host=/,/^fi$/p' "$SRC")
 case "$conf$block" in
   *np_conf_normalise*np_env_reserved*np_feat_stage*np_feat_over*np_plugin_host*) ;;
   *) echo "FAIL: the plugin loop was not found in $SRC"; exit 1 ;;
@@ -24,7 +24,9 @@ mkdir -p "$work/stage" "$sys32" "$feats" "$work/lib"
 printf 'ours\n' > "$work/stage/d3d11.dll"
 printf 'ours\n' > "$work/stage/dxgi.dll"
 printf 'dylib\n' > "$work/lib/feat.dylib"
-printf '%s\n%s\n' "$conf" "$block" > "$work/block.sh"
+# shellcheck disable=SC2016 # expanded by the inner shell
+stub='np_variant_read() { case " ${NP_TEST_VARIANTS:-} " in (*" $1 "*) return 0 ;; esac; return 1; }'
+printf '%s\n%s\n%s\n' "$stub" "$conf" "$block" > "$work/block.sh"
 
 conf() {
   cat > "$feats/$1"
@@ -375,6 +377,24 @@ ok "and loads without it" "$(line "$out" 2)" "$work/lib/feat.dylib"
 out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=1 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix")
 ok "FEX's wine loads no plugin dylibs" "$(line "$out" 2)" ""
 ok "and the launch log says why" "$(grep -c "FEX's wine drops" "$work/log")" "1"
+
+reset
+conf 10-variant.conf <<EOF
+[NOTPROTON_VARFEAT]
+label = Variant
+stage = $work/stage
+overrides = d3d11=n
+variants = headset
+EOF
+: > "$work/log"
+out=$(run NOTPROTON_VARFEAT=1)
+ok "unusable variant stages nothing" "$(cat "$sys32/d3d11.dll")|$(line "$out" 1)" \
+   "shipped|steamclient=n;lsteamclient=b"
+ok "logged" \
+   "$(grep -c "NOTPROTON_VARFEAT skipped, variant headset can't be used" "$work/log")" "1"
+out=$(run NOTPROTON_VARFEAT=1 NP_TEST_VARIANTS=headset)
+ok "usable variant stages" "$(cat "$sys32/d3d11.dll")|$(line "$out" 1)" \
+   "ours|steamclient=n;lsteamclient=b;d3d11=n"
 
 [ "$fail" -eq 0 ] || exit 1
 echo "==> featstagecheck: plugins stage into the prefix and extend the overrides"

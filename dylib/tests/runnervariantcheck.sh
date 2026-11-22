@@ -738,5 +738,80 @@ wait "$held"
 resolve gc > /dev/null
 ok "and go once it doesn't" "$([ -e "$scratch.new" ] || [ -e "$scratch.old" ] || [ -e "$trash" ] || echo gone)" "gone"
 
+echo "== a plugin brings its variants"
+for t in vr plain; do
+  mkdir -p "$work/trees/$t/x86_64-windows"
+  dll "$work/trees/$t/x86_64-windows/d3d11.dll" "$t"
+  desc "$t-dxmt" <<CONF
+variant = Graphics
+src     = trees/$t
+dst     = lib/dxmt
+CONF
+done
+mkdir -p "$work/trees/extra/x86_64-windows" "$work/plugins"
+dll "$work/trees/extra/x86_64-windows/extra.dll" extra
+desc extra <<CONF
+variant = Loader
+src     = trees/extra
+dst     = lib/wine
+CONF
+cat > "$work/plugins/50-vr.conf" <<CONF
+[NOTPROTON_VR]
+label    = VR
+variants = vr-dxmt
+[NOTPROTON_VR_MIRROR]
+label    = Mirror
+depends  = NOTPROTON_VR
+variants = vr-dxmt
+[NOTPROTON_OTHER]
+label    = Other
+variants = plain-dxmt
+[NOTPROTON_GONE]
+label    = Gone
+variants = missing
+[NOTPROTON_BOTH]
+label    = Both
+variants = vr-dxmt
+variants = extra
+CONF
+presolve() {
+  ( for kv in $2; do export "${kv?}"; done; resolve "$1" )
+}
+
+: > "$work/log"
+ok "plugin on" "$(presolve '' NOTPROTON_VR=1)" "$(newest vr-dxmt)"
+logged "logged" "NOTPROTON_VR adds variant vr-dxmt"
+ok "variant tree" "$(tr -d '\000' < "$(newest vr-dxmt)/lib/dxmt/x86_64-windows/d3d11.dll")" \
+  "Wine builtin DLLvr"
+ok "plugin off" "$(presolve '' NOTPROTON_VR=0)" "$base"
+ok "sub-option, parent off" "$(presolve '' NOTPROTON_VR_MIRROR=1)" "$base"
+ok "sub-option shares parent's variant" \
+  "$(presolve '' 'NOTPROTON_VR=1 NOTPROTON_VR_MIRROR=1')" "$(newest vr-dxmt)"
+ok "missing variant" "$(presolve '' NOTPROTON_GONE=1)" "$base"
+ok "launch variant, other group" "$(presolve extra NOTPROTON_VR=1)" \
+  "$(newest extra+vr-dxmt)"
+ok "two variants" "$(presolve '' NOTPROTON_BOTH=1)" "$(newest extra+vr-dxmt)"
+
+asked() {
+  ( for kv in $2; do export "${kv?}"; done
+    NOTPROTON_RUNNER_VARIANT="$1" HOME="$work" np_support="$work" np_build="26.3" np_flavor=rosetta \
+      log="$work/log" PATH="$PATH" sh -c '. "$1/block.sh"; printf "%s" "$np_variant_asked"' sh "$work" )
+}
+ok "launch variant asked once" "$(asked vr-dxmt NOTPROTON_VR=1)" "vr-dxmt"
+ok "same runner" "$(presolve vr-dxmt NOTPROTON_VR=1)" "$(newest vr-dxmt)"
+
+: > "$work/log"
+ok "launch variant wins" "$(presolve plain-dxmt NOTPROTON_VR=1)" "$(newest plain-dxmt)"
+logged "plugin skipped" \
+  "NOTPROTON_VR skipped, launch options picked plain-dxmt for Graphics"
+: > "$work/log"
+ok "unusable launch variant" \
+  "$(presolve notinstalled NOTPROTON_VR=1)" "$(newest vr-dxmt)"
+: > "$work/log"
+ok "first plugin wins" "$(presolve '' 'NOTPROTON_VR=1 NOTPROTON_OTHER=1')" \
+  "$(newest vr-dxmt)"
+logged "second plugin skipped" \
+  "NOTPROTON_OTHER skipped, NOTPROTON_VR picked vr-dxmt for Graphics"
+
 [ "$fail" -eq 0 ] || exit 1
 echo "==> runnervariantcheck: variants build on demand, refuse bad trees and fall back"

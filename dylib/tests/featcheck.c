@@ -55,6 +55,13 @@ static void make_dir(const char *fmt, const char *a, const char *b) {
     if (system(cmd) != 0) { shout("cannot run %s", cmd); g_failed++; }
 }
 
+static char *live_json(void) {
+    const char *tools[]  = { "notproton", "notproton-26.3", "notproton-fex-rosetta" };
+    const char *builds[] = { "27.0-fex", "26.3.0", "27.0-fex" };
+    const char *archs[]  = { "aarch64", "x86_64", "x86_64" };
+    return np_webpatch_live_json(tools, builds, archs, 3);
+}
+
 static const char *vars_json(void) {
     g_var_done = 0;
     var_build();
@@ -619,7 +626,7 @@ int main(void) {
                "[NOTPROTON_LIVE]\nlabel = Live \"one\", two: three\nsection = dev\n"
                "type = choice\nchoice = a = A\nchoice = b\napps = 2483190\n");
     {
-        char *j = np_webpatch_live_json();
+        char *j = live_json();
         ok(j && strncmp(j, "{\"s\":0,\"r\":{\"NOTPROTON_LIVE\":1},\"f\":[{\"k\":\"NOTPROTON_LIVE\","
                          "\"l\":\"Live \\\"one\\\", two: three\"", 87) == 0,
            "starts with the show-all flag, the readiness and the plugin row, keys quoted");
@@ -630,19 +637,26 @@ int main(void) {
         ok(j && !strstr(j, "{k:") && !strstr(j, ",l:"), "leaves no bare key");
         free(j);
     }
+    np_webpatch_set_tool_builds(NULL, NULL, NULL, 0);
+    {
+        char *j = live_json();
+        ok(j && strstr(j, "\"t\":[\"notproton-26.3\",\"notproton-fex-rosetta\"]") != NULL,
+           "variants survive a refresh");
+        free(j);
+    }
     {
         char flag[1100];
         FILE *f;
         np_support_path(flag, sizeof(flag), g_home, NP_SHOW_ALL_PLUGINS_FILE);
         if ((f = fopen(flag, "w"))) fclose(f);
-        char *j = np_webpatch_live_json();
+        char *j = live_json();
         ok(j && strncmp(j, "{\"s\":1,", 7) == 0, "reports the show-all flag as it is now");
         free(j);
         unlink(flag);
     }
     write_desc("51-late.conf", "[NOTPROTON_LATE]\nlabel = Late\n");
     {
-        char *j = np_webpatch_live_json();
+        char *j = live_json();
         ok(j && strstr(j, "\"k\":\"NOTPROTON_LATE\"") != NULL, "a plugin added since is in the next answer");
         free(j);
     }

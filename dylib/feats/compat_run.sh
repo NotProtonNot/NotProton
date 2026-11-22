@@ -396,8 +396,9 @@ NP_CONF_NAMES
       if (substr(s, 1, 10) != "NOTPROTON_" || length(s) == 10) return 0
       return substr(s, 11) ~ /^[A-Z0-9_]+$/
     }
-    return length(s) <= 64 && s ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+    return varidok(s)
   }
+  function varidok(s) { return length(s) <= 64 && s ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/ }
   function choiceval(s,   eq) {
     eq = index(s, "=")
     return eq ? trim(substr(s, 1, eq - 1)) : s
@@ -452,6 +453,7 @@ NP_CONF_NAMES
       if (names[i] == "apps" && !appok(vals[i])) { detail = "apps"; return "bad-value" }
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
       if (names[i] == "patch" && !patchok(vals[i])) { detail = "patch"; return "bad-value" }
+      if (names[i] == "variants" && !varidok(vals[i])) { detail = "variants"; return "bad-value" }
     }
     if (("hide_crossover" in cnt) && !("tools" in cnt)) { detail = "tools"; return "missing-required" }
     if (("depends" in cnt) && !idok(first["depends"])) { detail = "depends"; return "bad-value" }
@@ -508,8 +510,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove", f, " ")
@@ -597,10 +599,11 @@ np_conf_log() {
 # means two games can use different ones at once.
 np_variant_conf_dir="$np_support/variants"
 np_variant_used=""
+np_v_quiet=""
 np_conf_var_table=$(np_conf_normalise "$np_variant_conf_dir" "" variant) || np_conf_var_table=""
 np_conf_log "$np_conf_var_table" variants
 np_variant_say() {
-  echo "=== variants: $* ===" >> "${log:-/dev/null}" 2>&1 || true
+  [ -n "$np_v_quiet" ] || echo "=== variants: $* ===" >> "${log:-/dev/null}" 2>&1 || true
 }
 
 # Mirrors np_compat_tool_builds in compat.c: the panel and the launch path have to agree
@@ -1179,11 +1182,158 @@ np_variant_stage_prefix() {
   done
 }
 
-CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
+np_feat_dir="$np_support/plugins"
+np_feat_log() {
+  echo "=== $* ===" >> "$log" 2>&1 || true
+}
+np_conf_feat_table=$(np_conf_normalise "$np_feat_dir" "" plugin) || np_conf_feat_table=""
+np_conf_log "$np_conf_feat_table" plugins
+
+np_feat_first() {
+  np_conf_value "$np_conf_feat_table" "$1" "$2"
+}
+np_feat_requires() {
+  np_conf_values "$np_conf_feat_table" "$1" requires | while IFS= read -r np_feat_req; do
+    np_feat_req=$(np_home_path "$np_feat_req")
+    [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; }
+  done
+}
+np_feat_vgood=" "
+np_feat_vbad=" "
+np_feat_bad_variant() {
+  for np_feat_bv in $(np_conf_values "$np_conf_feat_table" "$1" variants); do
+    case "$np_feat_vgood" in (*" $np_feat_bv "*) continue ;; esac
+    case "$np_feat_vbad" in (*" $np_feat_bv "*) return 0 ;; esac
+    np_v_quiet=1
+    if np_variant_read "$np_feat_bv"; then
+      np_feat_vgood="$np_feat_vgood$np_feat_bv "
+    else
+      np_feat_vbad="$np_feat_vbad$np_feat_bv "
+      np_v_quiet=""
+      return 0
+    fi
+    np_v_quiet=""
+  done
+  return 1
+}
+np_feat_installed() {
+  { [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]; } &&
+    ! np_feat_bad_variant "$1"
+}
+np_feat_switched() {
+  eval "np_feat_sv=\${$1-}"
+  if [ -n "$(np_feat_first "$1" type)" ]; then
+    # shellcheck disable=SC2154 # eval assigns np_feat_sv above
+    [ -n "$np_feat_sv" ]
+    return
+  fi
+  np_feat_son=$(np_feat_first "$1" on)
+  [ "$np_feat_sv" = "${np_feat_son:-1}" ]
+}
+np_feat_for_tool() {
+  np_feat_tl=$(np_conf_values "$np_conf_feat_table" "$1" tools)
+  [ -n "$np_feat_tl" ] || return 0
+  while IFS= read -r np_feat_pat; do
+    [ -n "$np_feat_pat" ] || continue
+    # shellcheck disable=SC2254 # the pattern is a glob on purpose, and conf.c keeps it to one *
+    case "$np_tool_name" in
+      ($np_feat_pat) return 0 ;;
+    esac
+  done <<NP_FEAT_TOOLS
+$np_feat_tl
+NP_FEAT_TOOLS
+  return 1
+}
+
+np_feat_active() {
+  [ "$2" -le 32 ] || return 1
+  np_conf_has "$np_conf_feat_table" "$1" || return 1
+  case " $np_feat_skipped " in (*" $1 "*) return 1 ;; esac
+  np_feat_for_tool "$1" || return 1
+  np_feat_switched "$1" || return 1
+  np_feat_installed "$1" || return 1
+  np_feat_adep=$(np_feat_first "$1" depends)
+  [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
+}
+
+np_feat_skipped=""
+np_feat_list=$(np_conf_ids "$np_conf_feat_table")
+
+np_variant_group() {
+  np_v_grp=$(np_conf_value "$np_conf_var_table" "$1" variant)
+  printf '%s' "${np_v_grp:-$1}"
+}
+np_feat_depth() {
+  np_feat_d=0
+  np_feat_dk=$1
+  while [ "$np_feat_d" -lt 32 ]; do
+    np_feat_dk=$(np_feat_first "$np_feat_dk" depends)
+    [ -n "$np_feat_dk" ] || break
+    np_feat_d=$((np_feat_d + 1))
+  done
+  printf '%s' "$np_feat_d"
+}
+np_feat_pick_variants() {
+  np_feat_variants=""
+  np_feat_variant_keys=""
+  np_feat_vkeys=$(for np_feat_vk in $np_feat_list; do
+    [ -z "$(np_feat_first "$np_feat_vk" variants)" ] || printf '%s %s\n' "$(np_feat_depth "$np_feat_vk")" "$np_feat_vk"
+  done | LC_ALL=C sort -s -n -k1,1 | cut -d' ' -f2)
+  [ -n "$np_feat_vkeys" ] || return 0
+  np_feat_taken=""
+  for np_feat_v in $(np_variant_names "$np_variant"); do
+    np_v_quiet=1
+    ! np_variant_read "$np_feat_v" || np_feat_taken="$np_feat_taken$np_feat_v -
+"
+    np_v_quiet=""
+  done
+  for np_feat_vk in $np_feat_vkeys; do
+    np_feat_active "$np_feat_vk" 0 || continue
+    np_feat_vwant=$(np_conf_values "$np_conf_feat_table" "$np_feat_vk" variants)
+    np_feat_vmine=""
+    np_feat_vwhy=""
+    for np_feat_v in $np_feat_vwant; do
+      np_feat_vg=$(np_variant_group "$np_feat_v")
+      while read -r np_feat_tn np_feat_to; do
+        [ -n "$np_feat_tn" ] && [ "$np_feat_tn" != "$np_feat_v" ] || continue
+        [ "$(np_variant_group "$np_feat_tn")" = "$np_feat_vg" ] || continue
+        if [ "$np_feat_to" = - ]; then
+          np_feat_vwhy="launch options picked $np_feat_tn for $np_feat_vg"
+        else
+          np_feat_vwhy="$np_feat_to picked $np_feat_tn for $np_feat_vg"
+        fi
+        break
+      done <<NP_FEAT_TAKEN
+$np_feat_taken$np_feat_vmine
+NP_FEAT_TAKEN
+      [ -z "$np_feat_vwhy" ] || break
+      np_feat_vmine="$np_feat_vmine$np_feat_v $np_feat_vk
+"
+    done
+    if [ -n "$np_feat_vwhy" ]; then
+      np_feat_skipped="$np_feat_skipped $np_feat_vk"
+      np_feat_log "$np_feat_vk skipped, $np_feat_vwhy"
+      continue
+    fi
+    np_feat_taken="$np_feat_taken$np_feat_vmine"
+    np_feat_variant_keys="$np_feat_variant_keys $np_feat_vk"
+    np_feat_log "$np_feat_vk adds variant $(printf '%s' "$np_feat_vwant" | tr '\n' '+')"
+  done
+  np_feat_variants=$(printf '%s' "$np_feat_taken" | awk '$2 == "-" { asked[$1] = 1; next } !asked[$1] { print $1 }' | LC_ALL=C sort -u | tr '\n' '+')
+  np_feat_variants=${np_feat_variants%+}
+}
+
 np_variant=${NOTPROTON_RUNNER_VARIANT:-}
+np_variant_asked=$np_variant
+case "$np_variant" in *[!A-Za-z0-9._+-]*) np_variant="" ;; esac
+np_feat_pick_variants
+if [ -n "$np_feat_variants" ]; then
+  np_variant="${np_variant:+$np_variant+}$np_feat_variants"
+  np_variant_asked="${np_variant_asked:+$np_variant_asked+}$np_feat_variants"
+fi
+CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
 np_variant_key=""
 np_variant_layout=""
-case "$np_variant" in *[!A-Za-z0-9._+-]*) np_variant="" ;; esac
 if [ -n "$np_variant" ]; then
   if np_variant_resolve "$np_variant"; then
     CX_ROOT="$np_variant_root"
@@ -1192,6 +1342,10 @@ if [ -n "$np_variant" ]; then
     np_variant_key=""
     np_variant_layout=""
     np_variant_used=""
+    for np_feat_vk in $np_feat_variant_keys; do
+      np_feat_skipped="$np_feat_skipped $np_feat_vk"
+      np_feat_log "$np_feat_vk skipped, its runner variant couldn't be set up"
+    done
   fi
 fi
 export CX_ROOT
@@ -2163,12 +2317,12 @@ if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
   exit 1
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
-if [ -n "${NOTPROTON_RUNNER_VARIANT:-}" ]; then
+if [ -n "$np_variant_asked" ]; then
   if [ -n "$np_variant_used" ]; then
-    echo "runner: variant asked for $NOTPROTON_RUNNER_VARIANT, using $np_variant_used" \
+    echo "runner: variant asked for $np_variant_asked, using $np_variant_used" \
       >> "$log" 2>&1 || true
   else
-    echo "=== runner variant ${NOTPROTON_RUNNER_VARIANT} not installed, using the base runner ===" \
+    echo "=== runner variant $np_variant_asked not installed, using the base runner ===" \
       >> "$log" 2>&1 || true
   fi
 fi
@@ -3180,76 +3334,20 @@ np_env_reserved() {
 }
 
 stage_step="plugins"
-np_feat_dir="$np_support/plugins"
-np_feat_log() {
-  echo "=== $* ===" >> "$log" 2>&1 || true
-}
-# One reader for plugins and variants alike: the grammar, the limits and every refusal
-# are in np_conf_normalise, and webpatch.c is checked against the same corpus.
-np_conf_feat_table=$(np_conf_normalise "$np_feat_dir" "" plugin) || np_conf_feat_table=""
-np_conf_log "$np_conf_feat_table" plugins
-
-np_feat_first() {
-  np_conf_value "$np_conf_feat_table" "$1" "$2"
-}
-# The first file a plugin names that is actually there; relative ones hang off $HOME.
-np_feat_requires() {
-  np_conf_values "$np_conf_feat_table" "$1" requires | while IFS= read -r np_feat_req; do
-    np_feat_req=$(np_home_path "$np_feat_req")
-    [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; }
-  done
-}
-np_feat_installed() {
-  [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]
-}
-np_feat_switched() {
-  eval "np_feat_sv=\${$1-}"
-  if [ -n "$(np_feat_first "$1" type)" ]; then
-    # shellcheck disable=SC2154 # eval assigns np_feat_sv above
-    [ -n "$np_feat_sv" ]
-    return
-  fi
-  np_feat_son=$(np_feat_first "$1" on)
-  [ "$np_feat_sv" = "${np_feat_son:-1}" ]
-}
-# A plugin may name the tools it is for, as a name or a name ending in "*". Naming none
-# means every tool, which is what nearly all of them want.
-np_feat_for_tool() {
-  np_feat_tl=$(np_conf_values "$np_conf_feat_table" "$1" tools)
-  [ -n "$np_feat_tl" ] || return 0
-  while IFS= read -r np_feat_pat; do
-    [ -n "$np_feat_pat" ] || continue
-    # shellcheck disable=SC2254 # the pattern is a glob on purpose, and conf.c keeps it to one *
-    case "$np_tool_name" in
-      ($np_feat_pat) return 0 ;;
-    esac
-  done <<NP_FEAT_TOOLS
-$np_feat_tl
-NP_FEAT_TOOLS
-  return 1
-}
-
-# A row is on only if everything it hangs off is, so a sub-option cannot outlive its parent.
-np_feat_active() {
-  [ "$2" -le 32 ] || return 1
-  np_conf_has "$np_conf_feat_table" "$1" || return 1
-  np_feat_for_tool "$1" || return 1
-  np_feat_switched "$1" || return 1
-  np_feat_installed "$1" || return 1
-  np_feat_adep=$(np_feat_first "$1" depends)
-  [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
-}
-
-np_feat_list=$(np_conf_ids "$np_conf_feat_table")
-
 np_feat_dylibs=""
 np_feat_envs=""
 np_feat_patches=""
 while IFS= read -r np_feat_key; do
   [ -n "$np_feat_key" ] || continue
   if ! np_feat_installed "$np_feat_key"; then
-    np_feat_switched "$np_feat_key" &&
-      np_feat_log "$np_feat_key is on but is skipped as $np_feat_key's required files are missing"
+    if np_feat_switched "$np_feat_key"; then
+      if np_feat_bad_variant "$np_feat_key"; then
+        np_variant_read "$np_feat_bv" || true
+        np_feat_log "$np_feat_key skipped, variant $np_feat_bv can't be used"
+      else
+        np_feat_log "$np_feat_key is on but is skipped as $np_feat_key's required files are missing"
+      fi
+    fi
     continue
   fi
   np_feat_active "$np_feat_key" 0 || continue

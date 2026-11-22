@@ -86,6 +86,14 @@ NOTPROTON_PATCH	patch	D3DMetal:31=b0 c0=01 c3 90
 !	NOTPROTON_PATCH_FIVE_FORMS	bad-value:patch
 !	NOTPROTON_PATCH_NO_FORM	bad-value:patch
 
+== plugins/39-variants.conf
+NOTPROTON_VARIANTS	label	Variants
+NOTPROTON_VARIANTS	variants	vr-dxmt
+NOTPROTON_VARIANTS	variants	Extra_1.2
+!	NOTPROTON_VARIANT_SLASH	bad-value:variants
+!	NOTPROTON_VARIANT_PLUS	bad-value:variants
+!	NOTPROTON_VARIANT_DASH_FIRST	bad-value:variants
+
 # A "*" anywhere but the end would mean one thing to the panel's startsWith and another
 # to the run script's case pattern, so it is refused rather than left to disagree.
 == plugins/40-no-header.conf

@@ -621,6 +621,30 @@ for (const form of Object.keys(FORMS)) {
          === 'NOTPROTON_RUNNER_VARIANT=one %command%',
        'and so is another runner\u2019s build of the variant being set');
 
+  const VFEATS = JSON.stringify([
+    { k: 'NOTPROTON_HEADSET', l: 'Headset', on: '1', off: '', dep: '', d: '', va: ['one'], rn: 1 },
+    { k: 'NOTPROTON_ELSEWHERE', l: 'Elsewhere', on: '1', off: '', dep: '', d: '', va: ['elsewhere'], rn: 1 },
+    { k: 'NOTPROTON_GONE', l: 'Gone', on: '1', off: '', dep: '', d: '', va: ['missing'], rn: 1 },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PVF } = panel(emit, form, undefined, { vars: VARS, feats: VFEATS, ready: '{}' });
+  const vfrow = (opts, l) => walk(PVF({ details: details(opts) }))
+    .find(x => x.type === 'ToggleField' && x.props.label.startsWith(l));
+  const vfnote = opts => JSON.stringify(vfrow(opts, 'Headset').props.description || '');
+
+  t.ok(vfrow('', 'Headset').props.disabled === false, 'variant on this tool');
+  t.ok(vfrow('', 'Elsewhere').props.disabled === true
+         && vfrow('', 'Elsewhere').props.label.endsWith('(Not Installed)'),
+       'variant on another tool');
+  t.ok(vfrow('', 'Gone').props.disabled === true, 'missing variant');
+  t.ok(vfnote('NOTPROTON_HEADSET=1 NOTPROTON_RUNNER_VARIANT=two %command%')
+         .includes('Not used while Backend Variant is set to Build two'),
+       'clash note');
+  t.ok(!vfnote('NOTPROTON_HEADSET=1 NOTPROTON_RUNNER_VARIANT=one %command%').includes('Not used'),
+       'own variant, no note');
+  t.ok(!vfnote('NOTPROTON_HEADSET=1 NOTPROTON_RUNNER_VARIANT=three %command%').includes('Not used'),
+       'other group, no note');
+  t.ok(!vfnote('NOTPROTON_RUNNER_VARIANT=two %command%').includes('Not used'), 'plugin off, no note');
+
   t.ok(!css[0].props.children.includes('MSCXRowPick'),
        'no hand-rolled picker row styling survives');
   // layout:"inline" does not reach this field in the compat page -- without MSCXRow's

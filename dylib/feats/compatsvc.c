@@ -370,7 +370,10 @@ static int prefix_state(uintptr_t request, uintptr_t response) {
 
 static int get_plugins(uintptr_t request, uintptr_t response) {
     (void)request;
-    char *json = np_webpatch_live_json();
+    const char *tools[NP_WEBPATCH_BUILDS_MAX], *builds[NP_WEBPATCH_BUILDS_MAX];
+    const char *archs[NP_WEBPATCH_BUILDS_MAX];
+    size_t n = np_compat_tool_builds(tools, builds, archs, NP_WEBPATCH_BUILDS_MAX);
+    char *json = np_webpatch_live_json(tools, builds, archs, n);
     if (!json) {
         NP_ERR("compatsvc: the plugin list could not be read");
         return RESULT_FAIL;

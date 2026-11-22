@@ -210,7 +210,22 @@ int np_log_first_hit(const void *anchor, unsigned long tag) {
 }
 
 static const char *stub_live_json;
-char *np_webpatch_live_json(void) {
+static size_t live_tool_count;
+static const char *live_tool, *live_build, *live_arch;
+size_t np_compat_tool_builds(const char **names, const char **builds, const char **archs,
+                             size_t max) {
+    if (max < 1) return 0;
+    names[0] = "notproton-26.1";
+    builds[0] = "26.1";
+    archs[0] = "x86_64";
+    return 1;
+}
+char *np_webpatch_live_json(const char *const *names, const char *const *builds,
+                            const char *const *archs, size_t count) {
+    live_tool_count = count;
+    live_tool = count ? names[0] : NULL;
+    live_build = count ? builds[0] : NULL;
+    live_arch = count ? archs[0] : NULL;
     return stub_live_json ? strdup(stub_live_json) : NULL;
 }
 
@@ -1086,6 +1101,9 @@ static void get_plugins_cases(void) {
     stub_live_json = "{\"s\":0,\"r\":{\"NOTPROTON_A\":1},\"f\":[{\"k\":\"NOTPROTON_A\"}],\"v\":[]}";
     check(h(build_request(REQ_HAS_APPID, 0), (uintptr_t)response_buf) == RESULT_OK
           && strcmp(answer(), stub_live_json) == 0, "plugins: the list is the answer");
+    check(live_tool_count == 1 && live_tool && strcmp(live_tool, "notproton-26.1") == 0
+          && strcmp(live_build, "26.1") == 0 && strcmp(live_arch, "x86_64") == 0,
+          "plugins: variants survive a refresh");
     stub_live_json = NULL;
     check(h(build_request(REQ_HAS_APPID, 0), (uintptr_t)response_buf) == RESULT_FAIL,
           "plugins: a list that cannot be read fails the call");

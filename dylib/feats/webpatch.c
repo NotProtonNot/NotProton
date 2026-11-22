@@ -547,12 +547,14 @@ static int feat_rows(const char *home, char **ready_out, char **rows_out) {
         if (!feat_put_env(&rows, rec, home)) goto done;
         if (!feat_put_list(&rows, ",tl:[", rec, "tools")) goto done;
         if (!feat_put_list(&rows, ",ap:[", rec, "apps")) goto done;
+        if (!feat_put_list(&rows, ",va:[", rec, "variants")) goto done;
         // What the run script would have done, for a page that has to do it itself: the
         // dylib to insert, and whether anything here only our own runner can deliver.
         if (*resolved && inj && strcmp(inj, "1") == 0) {
             if (!out_put(&rows, ",rq:", 4) || !out_jsstr(&rows, resolved)) goto done;
         }
-        if ((np_conf_get(rec, "stage") || np_conf_get(rec, "overrides") || np_conf_get(rec, "patch"))
+        if ((np_conf_get(rec, "stage") || np_conf_get(rec, "overrides") || np_conf_get(rec, "patch")
+             || np_conf_get(rec, "variants"))
             && !out_put(&rows, ",rn:1", 5)) goto done;
         if (np_conf_get(rec, "hide_crossover") && !out_put(&rows, ",hc:1", 5)) goto done;
         if (type) {
@@ -644,11 +646,6 @@ typedef struct {
     char removes[NP_CONF_REC_BUF];
 } np_var_t;
 
-static _Thread_local char g_var_tool[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
-static _Thread_local char g_var_build[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
-static _Thread_local char g_var_arch[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
-static _Thread_local size_t g_var_tools;
-
 typedef struct {
     char tool[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
     char build[NP_WEBPATCH_BUILDS_MAX][NP_TOOL_NAME_MAX];
@@ -656,39 +653,34 @@ typedef struct {
     size_t count;
 } var_tools_t;
 
-static pthread_mutex_t g_live_tools_lock = PTHREAD_MUTEX_INITIALIZER;
-static var_tools_t g_live_tools;
+static _Thread_local var_tools_t g_var_vt;
+
+static void var_tools_fill(var_tools_t *vt, const char *const *names, const char *const *builds,
+                           const char *const *archs, size_t count) {
+    vt->count = 0;
+    for (size_t i = 0; i < count && vt->count < NP_WEBPATCH_BUILDS_MAX; i++) {
+        if (!names[i] || !*names[i] || !builds[i] || !*builds[i]) continue;
+        if (!is_tool_name(names[i]) || !is_tool_name(builds[i])) continue;
+        snprintf(vt->tool[vt->count], NP_TOOL_NAME_MAX, "%s", names[i]);
+        snprintf(vt->build[vt->count], NP_TOOL_NAME_MAX, "%s", builds[i]);
+        snprintf(vt->arch[vt->count], NP_TOOL_NAME_MAX, "%s", archs && archs[i] ? archs[i] : "");
+        vt->count++;
+    }
+}
 
 void np_webpatch_set_tool_builds(const char *const *names, const char *const *builds,
                                  const char *const *archs, size_t count) {
-    g_var_tools = 0;
     if (!g_var_pinned) g_var_done = 0;
-    for (size_t i = 0; i < count && g_var_tools < NP_WEBPATCH_BUILDS_MAX; i++) {
-        if (!names[i] || !*names[i] || !builds[i] || !*builds[i]) continue;
-        if (!is_tool_name(names[i]) || !is_tool_name(builds[i])) continue;
-        snprintf(g_var_tool[g_var_tools], NP_TOOL_NAME_MAX, "%s", names[i]);
-        snprintf(g_var_build[g_var_tools], NP_TOOL_NAME_MAX, "%s", builds[i]);
-        snprintf(g_var_arch[g_var_tools], NP_TOOL_NAME_MAX, "%s",
-                 archs && archs[i] ? archs[i] : "");
-        g_var_tools++;
-    }
-    pthread_mutex_lock(&g_live_tools_lock);
-    for (size_t t = 0; t < g_var_tools; t++) {
-        memcpy(g_live_tools.tool[t], g_var_tool[t], NP_TOOL_NAME_MAX);
-        memcpy(g_live_tools.build[t], g_var_build[t], NP_TOOL_NAME_MAX);
-        memcpy(g_live_tools.arch[t], g_var_arch[t], NP_TOOL_NAME_MAX);
-    }
-    g_live_tools.count = g_var_tools;
-    pthread_mutex_unlock(&g_live_tools_lock);
+    var_tools_fill(&g_var_vt, names, builds, archs, count);
     // They passed is_tool_name, so they need no escaping.
-    np_js_t j = js_alloc(g_var_tools * (2 * NP_TOOL_NAME_MAX + 8) + 3);
+    np_js_t j = js_alloc(g_var_vt.count * (2 * NP_TOOL_NAME_MAX + 8) + 3);
     js_put(&j, "[", 1);
-    for (size_t i = 0; i < g_var_tools; i++) {
+    for (size_t i = 0; i < g_var_vt.count; i++) {
         if (i) js_put(&j, ",", 1);
         js_put(&j, "[\"", 2);
-        js_puts(&j, g_var_tool[i]);
+        js_puts(&j, g_var_vt.tool[i]);
         js_put(&j, "\",\"", 3);
-        js_puts(&j, g_var_build[i]);
+        js_puts(&j, g_var_vt.build[i]);
         js_put(&j, "\"]", 2);
     }
     js_put(&j, "]", 1);
@@ -1060,12 +1052,7 @@ static void var_build(void) {
     g_var_done = 1;
     set_input(IN_VARS, NULL);
     if (!vt) return;
-    for (size_t t = 0; t < g_var_tools; t++) {
-        memcpy(vt->tool[t], g_var_tool[t], NP_TOOL_NAME_MAX);
-        memcpy(vt->build[t], g_var_build[t], NP_TOOL_NAME_MAX);
-        memcpy(vt->arch[t], g_var_arch[t], NP_TOOL_NAME_MAX);
-    }
-    vt->count = g_var_tools;
+    *vt = g_var_vt;
     set_input(IN_VARS, var_rows(getenv("HOME"), vt, 0));
     free(vt);
 }
@@ -1102,16 +1089,15 @@ static int out_json_keys(np_out_t *o, const char *js) {
     return 1;
 }
 
-char *np_webpatch_live_json(void) {
+char *np_webpatch_live_json(const char *const *names, const char *const *builds,
+                            const char *const *archs, size_t count) {
     const char *home = getenv("HOME");
     var_tools_t *vt = calloc(1, sizeof(*vt));
     char *ready = NULL, *rows = NULL, *vars = NULL, *ret = NULL;
     np_out_t o = { 0 };
 
     if (!home || !vt) goto done;
-    pthread_mutex_lock(&g_live_tools_lock);
-    *vt = g_live_tools;
-    pthread_mutex_unlock(&g_live_tools_lock);
+    var_tools_fill(vt, names, builds, archs, count);
     if (!feat_rows(home, &ready, &rows) || !(vars = var_rows(home, vt, 1))) goto done;
     if (!out_put(&o, "{\"s\":", 5) || !out_put(&o, show_all_on(home) ? "1" : "0", 1)
         || !out_put(&o, ",\"r\":", 5) || !out_put(&o, ready, strlen(ready))
@@ -1378,10 +1364,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "npLv=globalThis.MSCXLive,MSCXReady=npLv?npLv.r:" NP_READY ",MSCXFeat=(npLv?npLv.f:" NP_FEATS ").filter(f=>(!f.tl||f.tl.some(npFor))" \
     "&&(!f.ap||!app||" NP_CX_SHOW_ALL "||f.ap.includes(String(app))))," \
     "npCx=ours&&!MSCXFeat.some(f=>f.hc),MSCXVar=npLv?npLv.v:" NP_VARS "," \
+    "npRd=k=>{const f=MSCXFeat.find(x=>x.k===k);" \
+    "return MSCXReady[k]!==0&&!(f&&f.va&&f.va.some(x=>!MSCXVar.some(v=>v.k===x&&v.t.indexOf(npTool)>=0)))}," \
     /* A toggle parent is satisfied by its on value; one that holds a value, such as a
        dropdown or a slider, by holding one at all rather than sitting on Default. */ \
     "on1=(k,n=0)=>{const p=MSCXFeat.find(x=>x.k===k);" \
-    "return!!p&&n<32&&MSCXReady[k]!==0" \
+    "return!!p&&n<32&&npRd(k)" \
     "&&(p.ty?\"\"!==G(npKey(p)):ours?G(k)===p.on:npHas(p))" \
     "&&(!p.dep||on1(p.dep,n+1))}," \
     /* How deep the chain of parents runs, so a sub-option of a sub-option indents twice. */ \
@@ -1389,6 +1377,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "return n<32&&p&&p.dep?dl(p.dep,n+1):n}," \
     "vav=dev&&npCx?MSCXVar.filter(v=>v.t.indexOf(tool)>=0):[]," \
     "vcur=G(\"NOTPROTON_RUNNER_VARIANT\").split(\"+\").filter(x=>x)," \
+    "npClash=f=>(f.va||[]).map(x=>{const g=(MSCXVar.find(v=>v.k===x)||{}).v," \
+    "y=MSCXVar.find(v=>v.k!==x&&v.v===g&&vcur.indexOf(v.k)>=0);" \
+    "return y&&\"Not used while \"+g+\" Variant is set to \"+y.l}).find(Boolean)," \
     "vids=vav.map(v=>v.v).filter((d,i,a)=>a.indexOf(d)===i)," \
     "vset=(id,val)=>{const keep=vcur.filter(x=>MSCXVar.some(v=>v.k===x&&v.v!==id))," \
     "all=(val?keep.concat([val]):keep).filter((x,i,a)=>a.indexOf(x)===i).sort();" \
@@ -1412,20 +1403,20 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "&&(f.ev||[]).every(e=>G(e.slice(0,e.indexOf(\"=\")))===e.slice(e.indexOf(\"=\")+1))," \
     "npSet=(f,v)=>s((f.rq?[[\"DYLD_INSERT_LIBRARIES\",npIns(f.rq,v)]]:[])" \
     ".concat((f.ev||[]).map(e=>[e.slice(0,e.indexOf(\"=\")),v?e.slice(e.indexOf(\"=\")+1):\"\"])),1)," \
-    "TP=(f,d,lv)=>{const rd=MSCXReady[f.k]!==0;" \
+    "TP=(f,d,lv)=>{const rd=npRd(f.k);" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
     "{label:rd?f.l:f.l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&npHas(f)," \
     "indentLevel:lv||undefined," \
     "onChange:v=>npSet(f,v)},f.k)}," \
-    "TD=(k,l,on,off,d,lv)=>{const rd=MSCXReady[k]!==0;" \
+    "TD=(k,l,on,off,d,lv)=>{const rd=npRd(k);" \
     "return(0," RT ".jsx)(" BARREL ".y4," \
     "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,checked:rd&&G(k)===on," \
     "indentLevel:lv||undefined," \
     "onChange:v=>s([[k,v?on:(off||\"\")]])},k)}," \
     /* A row that holds one of its declared values, with Default for none of them. */ \
-    "TC=(k,l,d,lv,ch,pe)=>{const rd=MSCXReady[k]!==0,v=G(k);" \
+    "TC=(k,l,d,lv,ch,pe)=>{const rd=npRd(k),v=G(k);" \
     "return(0," RT ".jsx)(" BARREL ".m," \
     "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
     "description:d||undefined,layout:\"inline\"," \
@@ -1435,7 +1426,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "selectedOption:rd&&ch.some(c=>c.v===v)?v:\"\",onChange:x=>s([[k,x.data]],pe)},k)}," \
     /* The handle follows the drag on its own; only the finished value is written, and
        the declared default is written as no value at all so launch options stay clean. */ \
-    "TS=(k,l,d,lv,mn,mx,st,df,sf,pe)=>{const rd=MSCXReady[k]!==0,v=G(k)," \
+    "TS=(k,l,d,lv,mn,mx,st,df,sf,pe)=>{const rd=npRd(k),v=G(k)," \
     "n=!rd||\"\"===v.trim()||!isFinite(+v)?(undefined===df?mn:df):+v;" \
     "return(0," RT ".jsx)(" BARREL ".d3," \
     "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
@@ -1448,7 +1439,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     /* The same slider snapped to declared values: the control steps by notch and hands
        back the value itself, so a key holding none of them starts at the default. Its
        own notches are two unlabelled bookends, and ours are spread after them. */ \
-    "TL=(k,l,d,lv,ch,df,pe)=>{const rd=MSCXReady[k]!==0,V=ch.map(c=>c.v),v=G(k)," \
+    "TL=(k,l,d,lv,ch,df,pe)=>{const rd=npRd(k),V=ch.map(c=>c.v),v=G(k)," \
     "n=rd&&V.indexOf(v)>=0?v:(undefined===df?V[0]:df);" \
     "return(0," RT ".jsx)(" BARREL ".gz," \
     "{label:rd?l:l+npL(\" (Not Installed)\",\" (未安装)\",\" (Not Installed)\"),disabled:!rd," \
@@ -1576,8 +1567,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     /* Lines a plugin only wants read once the row is on, such as the keys that
        change the rest of a feature in game, sit under its description while it is. */ \
     ".map(f=>{const lv=f.dep?dl(f.dep,1):0," \
-    "d=f.dn&&on1(f.k)?(0," RT ".jsxs)(\"div\",{children:(f.d?[f.d]:[])" \
-    ".concat(f.dn.map((x,i)=>(0," RT ".jsx)(\"div\"," \
+    "ln=on1(f.k)?(f.dn||[]).concat(npClash(f)||[]):[]," \
+    "d=ln.length?(0," RT ".jsxs)(\"div\",{children:(f.d?[f.d]:[])" \
+    ".concat(ln.map((x,i)=>(0," RT ".jsx)(\"div\"," \
     "{className:\"MSCXKeys\",children:x},i)))}):f.d;" \
     "const kk=npKey(f),pe=ours?0:1;" \
     "return!ours&&!f.ty?TP(f,d,lv)" \
