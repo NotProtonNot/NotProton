@@ -709,7 +709,7 @@ struct PrefixesModelTests {
     func deleteTakesTheWholeSelection() async throws {
         let (dir, library) = try makeLibrary(appIDs: ["1574480", "1649240", "253750"])
         defer { try? FileManager.default.removeItem(at: dir) }
-        let model = PrefixesModel(libraries: { [library] })
+        let model = PrefixesModel(libraries: { [library] }, launchers: dir.appending(path: "launchers"))
         await model.load()
 
         let doomed = model.prefixes.filter { $0.appID != "253750" }
@@ -739,7 +739,7 @@ struct PrefixesModelTests {
             }
             """, to: library.steamapps.appending(path: "appmanifest_1574480.acf"))
 
-        let model = PrefixesModel(libraries: { [library] })
+        let model = PrefixesModel(libraries: { [library] }, launchers: dir.appending(path: "launchers"))
         await model.load()
         await model.delete(model.prefixes)
 
@@ -757,7 +757,7 @@ struct PrefixesModelTests {
         let (dir, library) = try makeLibrary(appIDs: ["1574480", "253750"])
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let model = PrefixesModel(libraries: { [library] })
+        let model = PrefixesModel(libraries: { [library] }, launchers: dir.appending(path: "launchers"))
         await model.load()
         #expect(model.prefixes.count == 2)
 
@@ -793,7 +793,7 @@ struct PrefixesModelTests {
     func deletingNothingDoesNothing() async throws {
         let (dir, library) = try makeLibrary(appIDs: ["1574480"])
         defer { try? FileManager.default.removeItem(at: dir) }
-        let model = PrefixesModel(libraries: { [library] })
+        let model = PrefixesModel(libraries: { [library] }, launchers: dir.appending(path: "launchers"))
         await model.load()
         model.outcome = "untouched"
 

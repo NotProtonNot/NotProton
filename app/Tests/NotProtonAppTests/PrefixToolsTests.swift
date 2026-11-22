@@ -1293,11 +1293,15 @@ struct PrefixToolsTests {
         try FileManager.default.createDirectory(
             at: entry.appending(path: "pfx/drive_c"), withIntermediateDirectories: true)
         try Data("log".utf8).write(to: entry.appending(path: "notproton-run.log"))
+        let launchers = dir.appending(path: "launchers")
+        let runner = launchers.appending(path: "1574480/runner")
+        try FileManager.default.createDirectory(at: runner, withIntermediateDirectories: true)
 
         let prefix = try #require(PrefixStore.all(libraries: [library]).first)
-        try PrefixTools.delete(prefix)
+        try PrefixTools.delete(prefix, launchers: launchers)
 
         #expect(!FileManager.default.fileExists(atPath: entry.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: runner.path(percentEncoded: false)))
         // The compatdata directory itself belongs to Steam and stays.
         #expect(FileManager.default.fileExists(atPath: library.compatdata.path(percentEncoded: false)))
     }

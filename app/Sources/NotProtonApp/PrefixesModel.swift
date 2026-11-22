@@ -69,6 +69,7 @@ final class PrefixesModel {
     private let installedTools: @Sendable () -> [InstalledTool]
     private let rebuild: @Sendable (WinePrefix, InstalledTool, Bool) throws -> URL?
     private let makeBackup: @Sendable (WinePrefix) throws -> URL
+    private let launchers: URL
 
     init(
         libraries: @escaping @Sendable () -> [SteamLibrary] = { PrefixStore.libraries() },
@@ -78,12 +79,14 @@ final class PrefixesModel {
         },
         makeBackup: @escaping @Sendable (WinePrefix) throws -> URL = {
             try PrefixTools.backUp($0)
-        }
+        },
+        launchers: URL = SupportPaths.launchers
     ) {
         self.libraries = libraries
         self.installedTools = installedTools
         self.rebuild = rebuild
         self.makeBackup = makeBackup
+        self.launchers = launchers
     }
 
     private var loadGeneration = 0
@@ -157,7 +160,8 @@ final class PrefixesModel {
     }
 
     func delete(_ targets: [WinePrefix]) async {
-        await eachInTurn(targets, { try PrefixTools.delete($0) }) { deleted in
+        let launchers = launchers
+        await eachInTurn(targets, { try PrefixTools.delete($0, launchers: launchers) }) { deleted in
             if deleted.count == 1 {
                 return String(localized: "Deleted the prefix for \(deleted[0].prefix.title). Steam will make a new prefix if the game is launched again.")
             }

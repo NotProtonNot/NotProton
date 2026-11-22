@@ -407,7 +407,7 @@ enum PrefixTools {
         }
     }
 
-    static func delete(_ prefix: WinePrefix) throws {
+    static func delete(_ prefix: WinePrefix, launchers: URL = SupportPaths.launchers) throws {
         guard let claim = PrefixStore.claim(prefix) else {
             throw StepFailure(
                 step: String(localized: "Delete prefix"),
@@ -419,6 +419,6 @@ enum PrefixTools {
             try FileManager.default.removeItem(at: prefix.root)
         }
         try? FileManager.default.removeItem(
-            at: SupportPaths.launchers.appending(path: prefix.appID).appending(path: "runner"))
+            at: launchers.appending(path: prefix.appID).appending(path: "runner"))
     }
 }
