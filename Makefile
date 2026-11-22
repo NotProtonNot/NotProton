@@ -739,11 +739,12 @@ bridge:
 fonts:
 	fonts/build.sh
 
-app-payload: $(TARGET) $(OVERLAY_SHIM) $(ICONMAKER) $(APPINFO)
+app-payload: $(TARGET) $(OVERLAY_SHIM) $(PLUGIN_HOST) $(ICONMAKER) $(APPINFO)
 	@mkdir -p "$(APP_PAYLOAD)/signatures/macos.arm64"
 	@mkdir -p "$(APP_PAYLOAD)/bridge"
 	cp -f $(TARGET) "$(APP_PAYLOAD)/notproton.dylib"
 	cp -f $(OVERLAY_SHIM) "$(APP_PAYLOAD)/overlay-shim.dylib"
+	cp -f $(PLUGIN_HOST) "$(APP_PAYLOAD)/plugin-host.dylib"
 	cp -f $(ICONMAKER) "$(APP_PAYLOAD)/iconmaker"
 	cp -f $(APPINFO) "$(APP_PAYLOAD)/appinfo"
 	cp -f dylib/feats/compat_run.sh "$(APP_PAYLOAD)/run"

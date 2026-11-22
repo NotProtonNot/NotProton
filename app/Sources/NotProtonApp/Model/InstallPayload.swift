@@ -8,6 +8,7 @@ enum InstallPayload {
     struct Located: Sendable {
         let dylib: URL
         let overlayShim: URL
+        let pluginHost: URL
         let iconmaker: URL
         let appinfo: URL
         let run: URL
@@ -37,6 +38,7 @@ enum InstallPayload {
 
         let dylib = root.appending(path: SupportPaths.dylibName)
         let shim = root.appending(path: "overlay-shim.dylib")
+        let pluginHost = root.appending(path: "plugin-host.dylib")
         let iconmaker = root.appending(path: "iconmaker")
         let appinfo = root.appending(path: "appinfo")
         let run = root.appending(path: "run")
@@ -49,6 +51,9 @@ enum InstallPayload {
         }
         if !files.fileExists(atPath: shim.path(percentEncoded: false)) {
             missing.append("overlay-shim.dylib")
+        }
+        if !files.fileExists(atPath: pluginHost.path(percentEncoded: false)) {
+            missing.append("plugin-host.dylib")
         }
         if !files.fileExists(atPath: iconmaker.path(percentEncoded: false)) {
             missing.append("iconmaker")
@@ -79,7 +84,7 @@ enum InstallPayload {
         }
 
         return Located(
-            dylib: dylib, overlayShim: shim, iconmaker: iconmaker,
+            dylib: dylib, overlayShim: shim, pluginHost: pluginHost, iconmaker: iconmaker,
             appinfo: appinfo, run: run, builtAt: builtAt, signatures: signatures,
             fontsRoot: fontsRoot, fonts: fonts
         )

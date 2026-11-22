@@ -49,6 +49,7 @@ enum AppLog {
         lines.append(
             "state payload staged=\(payload.present)/\(payload.expected) "
                 + "overlayShim=\(payload.overlayShimPresent) "
+                + "pluginHost=\(payload.pluginHostPresent) "
                 + "iconmaker=\(payload.iconmakerPresent) "
                 + "appinfo=\(payload.appinfoPresent) "
                 + "signatures=\(payload.signatureDatabase ?? "none") "

@@ -99,6 +99,7 @@ struct PayloadStateTests {
     private func state(
         missing: [PayloadEntry] = [],
         overlay: Bool = true,
+        host: Bool = true,
         signatures: String? = "1788400362.json",
         problem: String? = nil
     ) -> PayloadState {
@@ -107,6 +108,7 @@ struct PayloadStateTests {
             present: 18 - missing.count,
             missing: missing,
             overlayShimPresent: overlay,
+            pluginHostPresent: host,
             iconmakerPresent: true,
             appinfoPresent: true,
             signatureDatabase: signatures,
@@ -127,6 +129,7 @@ struct PayloadStateTests {
 
         #expect(!state(missing: [entry]).isComplete)
         #expect(!state(overlay: false).isComplete)
+        #expect(!state(host: false).isComplete)
         #expect(!state(signatures: nil).isComplete)
         #expect(!state(problem: "the manifest will not parse").isComplete)
     }
@@ -138,6 +141,7 @@ struct PayloadStateTests {
         let broken = PayloadState(
             expected: 0, present: 0, missing: [],
             overlayShimPresent: true,
+            pluginHostPresent: true,
             iconmakerPresent: true,
             appinfoPresent: true,
             signatureDatabase: "1788400362.json",
@@ -160,8 +164,8 @@ struct PayloadStateTests {
         #expect(!state(overlay: false).isSteamComplete)
         #expect(!state(signatures: nil).isSteamComplete)
         #expect(!state(problem: "the manifest will not parse").isSteamComplete)
-        #expect(state(missing: [built, valve], overlay: false).missingSteamFiles
-            == ["x86_64-unix/lsteamclient.so", "overlay-shim.dylib"])
+        #expect(state(missing: [built, valve], overlay: false, host: false).missingSteamFiles
+            == ["x86_64-unix/lsteamclient.so", "overlay-shim.dylib", "plugin-host.dylib"])
     }
 
     @Test("Missing entries are reported per origin")

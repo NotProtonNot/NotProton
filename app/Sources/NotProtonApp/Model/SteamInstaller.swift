@@ -60,6 +60,7 @@ enum SteamInstaller {
         signatures: URL = SupportPaths.signatures,
         fonts: URL = SupportPaths.fonts,
         overlayShim: URL = SupportPaths.overlayShim,
+        pluginHost: URL = SupportPaths.pluginHost,
         iconmaker: URL = SupportPaths.iconmaker,
         appinfo: URL = SupportPaths.appinfo,
         deployedVersion: URL = SupportPaths.deployedVersion,
@@ -103,7 +104,8 @@ enum SteamInstaller {
         let tools = CompatToolList.installed(runners: runners, file: support.appending(path: "tools"))
         let files = DeploymentContent.files(
             payload: payload, bridgePayload: bridgeLocated, app: app, bridge: bridge,
-            signatures: signatures, fonts: fonts, overlayShim: overlayShim, iconmaker: iconmaker, appinfo: appinfo,
+            signatures: signatures, fonts: fonts, overlayShim: overlayShim, pluginHost: pluginHost, iconmaker: iconmaker,
+            appinfo: appinfo,
             compatTools: compatTools, tools: tools, runners: runners)
         let content = try DeploymentContent.inspect(files: files, bundled: build, installed: previousBuild,
                                                    legacyVersion: SteamBundle.deployedVersion(at: deployedVersion))

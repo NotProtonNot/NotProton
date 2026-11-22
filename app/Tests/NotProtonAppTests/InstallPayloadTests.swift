@@ -6,12 +6,13 @@ import Testing
 @Suite("Install payload")
 struct InstallPayloadTests {
 
-    private func stage(_ root: URL, dylib: Bool = true, shim: Bool = true, iconmaker: Bool = true, appinfo: Bool = true, signatures: [String] = ["1788400362.json"], fonts: [String] = ["arial.ttf"]) throws {
+    private func stage(_ root: URL, dylib: Bool = true, shim: Bool = true, host: Bool = true, iconmaker: Bool = true, appinfo: Bool = true, signatures: [String] = ["1788400362.json"], fonts: [String] = ["arial.ttf"]) throws {
         let files = FileManager.default
         let signatureDir = root.appending(path: "signatures/macos.arm64")
         try files.createDirectory(at: signatureDir, withIntermediateDirectories: true)
         if dylib { try Data("dylib".utf8).write(to: root.appending(path: SupportPaths.dylibName)) }
         if shim { try Data("shim".utf8).write(to: root.appending(path: "overlay-shim.dylib")) }
+        if host { try Data("host".utf8).write(to: root.appending(path: "plugin-host.dylib")) }
         if iconmaker { try Data("iconmaker".utf8).write(to: root.appending(path: "iconmaker")) }
         if appinfo { try Data("appinfo".utf8).write(to: root.appending(path: "appinfo")) }
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: root.appending(path: "run"))
@@ -32,6 +33,7 @@ struct InstallPayloadTests {
 
         #expect(located.dylib.lastPathComponent == "notproton.dylib")
         #expect(located.overlayShim.lastPathComponent == "overlay-shim.dylib")
+        #expect(located.pluginHost.lastPathComponent == "plugin-host.dylib")
         #expect(located.appinfo.lastPathComponent == "appinfo")
         #expect(!located.signatures.isEmpty)
         #expect(located.fonts.contains("arial.ttf"))

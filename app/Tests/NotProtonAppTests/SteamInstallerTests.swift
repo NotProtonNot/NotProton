@@ -36,6 +36,7 @@ struct SteamInstallerTests {
 
         let shim = root.appending(path: "overlay-shim.dylib")
         try FileManager.default.copyItem(at: dylib, to: shim)
+        try FileManager.default.copyItem(at: dylib, to: root.appending(path: "plugin-host.dylib"))
 
         let iconmaker = root.appending(path: "iconmaker")
         try FileManager.default.copyItem(at: dylib, to: iconmaker)
@@ -66,6 +67,7 @@ struct SteamInstallerTests {
         var signatures: URL { support.appending(path: "signatures/macos.arm64") }
         var fonts: URL { support.appending(path: "fonts") }
         var overlayShim: URL { support.appending(path: "overlay-shim.dylib") }
+        var pluginHost: URL { support.appending(path: "plugin-host.dylib") }
         var iconmaker: URL { support.appending(path: "iconmaker") }
         var appinfo: URL { support.appending(path: "appinfo") }
         var deployedVersion: URL { support.appending(path: "dylib.version") }
@@ -114,6 +116,7 @@ struct SteamInstallerTests {
             signatures: fixture.signatures,
             fonts: fixture.fonts,
             overlayShim: fixture.overlayShim,
+            pluginHost: fixture.pluginHost,
             iconmaker: fixture.iconmaker,
             appinfo: fixture.appinfo,
             deployedVersion: fixture.deployedVersion,
@@ -152,6 +155,7 @@ struct SteamInstallerTests {
         let files = FileManager.default
         #expect(files.fileExists(atPath: fixture.deployedDylib.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.overlayShim.path(percentEncoded: false)))
+        #expect(files.fileExists(atPath: fixture.pluginHost.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.iconmaker.path(percentEncoded: false)))
         #expect(files.fileExists(atPath: fixture.appinfo.path(percentEncoded: false)))
         #expect(
@@ -642,7 +646,8 @@ struct SteamInstallerTests {
         let bridge = try BridgePayload.locate()
         let files = DeploymentContent.files(payload: fixture.payload, bridgePayload: bridge, app: fixture.app,
                                             bridge: fixture.bridge, signatures: fixture.signatures,
-                                            fonts: fixture.fonts, overlayShim: fixture.overlayShim, iconmaker: fixture.iconmaker,
+                                            fonts: fixture.fonts, overlayShim: fixture.overlayShim, pluginHost: fixture.pluginHost,
+                                            iconmaker: fixture.iconmaker,
                                             appinfo: fixture.appinfo, compatTools: work.appending(path: "compatibilitytools.d"),
                                             tools: tools, runners: runners)
         #expect(try files.allSatisfy { try $0.matches() })

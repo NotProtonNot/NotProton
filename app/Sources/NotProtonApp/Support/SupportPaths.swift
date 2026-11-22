@@ -32,6 +32,7 @@ enum SupportPaths {
 
     static var fonts: URL { support.appending(path: "fonts") }
     static var overlayShim: URL { support.appending(path: "overlay-shim.dylib") }
+    static var pluginHost: URL { support.appending(path: "plugin-host.dylib") }
     static var iconmaker: URL { support.appending(path: "iconmaker") }
     static var appinfo: URL { support.appending(path: "appinfo") }
 

@@ -7,6 +7,7 @@ struct PayloadState: Sendable {
     var present: Int
     var missing: [PayloadEntry]
     var overlayShimPresent: Bool
+    var pluginHostPresent: Bool
     var iconmakerPresent: Bool
     var appinfoPresent: Bool
     var signatureDatabase: String?
@@ -21,6 +22,7 @@ struct PayloadState: Sendable {
     var missingSteamFiles: [String] {
         var names = missing(origin: .built).map(\.path)
         if !overlayShimPresent { names.append("overlay-shim.dylib") }
+        if !pluginHostPresent { names.append("plugin-host.dylib") }
         if !iconmakerPresent { names.append("iconmaker") }
         if !appinfoPresent { names.append("appinfo") }
         return names
@@ -31,7 +33,7 @@ struct PayloadState: Sendable {
     }
 
     var isEmpty: Bool {
-        present == 0 && !overlayShimPresent && !iconmakerPresent && !appinfoPresent
+        present == 0 && !overlayShimPresent && !pluginHostPresent && !iconmakerPresent && !appinfoPresent
             && signatureDatabase == nil
     }
 
@@ -77,6 +79,7 @@ enum PayloadInspector {
             present: expected - missing.count,
             missing: missing,
             overlayShimPresent: fm.fileExists(atPath: SupportPaths.overlayShim.path(percentEncoded: false)),
+            pluginHostPresent: fm.fileExists(atPath: SupportPaths.pluginHost.path(percentEncoded: false)),
             iconmakerPresent: fm.fileExists(atPath: SupportPaths.iconmaker.path(percentEncoded: false)),
             appinfoPresent: fm.fileExists(atPath: SupportPaths.appinfo.path(percentEncoded: false)),
             signatureDatabase: newestSignatureDatabase(),
