@@ -1,0 +1,71 @@
+#ifndef PLUGIN_HOST_CHECK_H
+#define PLUGIN_HOST_CHECK_H
+
+#include <fcntl.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
+
+extern char **environ;
+
+static int failures;
+
+static unsigned char *slurp(const char *path, size_t *len) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *b = n > 0 ? malloc((size_t)n + 1) : NULL;
+    if (b && fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; }
+    fclose(f);
+    if (b) { b[n] = 0; *len = (size_t)n; }
+    return b;
+}
+
+static int run(char *const argv[], const char *log, char *out, size_t outsz) {
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, 1, log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    posix_spawn_file_actions_adddup2(&fa, 1, 2);
+    pid_t pid;
+    int status = -1;
+    if (posix_spawn(&pid, argv[0], &fa, NULL, argv, environ) == 0) waitpid(pid, &status, 0);
+    posix_spawn_file_actions_destroy(&fa);
+    size_t len = 0;
+    char *text = (char *)slurp(log, &len);
+    snprintf(out, outsz, "%s", text ? text : "");
+    free(text);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 99;
+}
+
+static int count_of(const char *text, const char *needle) {
+    int n = 0;
+    for (const char *p = text; (p = strstr(p, needle)); p += strlen(needle)) n++;
+    return n;
+}
+
+static void expect(const char *what, int rc, const char *out, int want_rc, const char *needle, int times) {
+    int ok = rc == want_rc && (!needle || (times ? count_of(out, needle) == times : strstr(out, needle) != NULL));
+    if (!ok) failures++;
+    printf("  %s  %s\n", ok ? "PASS" : "FAIL", what);
+    if (!ok) {
+        printf("      exit %d, wanted %d%s%s\n", rc, want_rc, needle ? ", and the log to say: " : "", needle ? needle : "");
+        for (const char *l = out; *l;) {
+            const char *e = strchr(l, '\n');
+            int n = e ? (int)(e - l) : (int)strlen(l);
+            printf("      | %.*s\n", n, l);
+            l += n + (e ? 1 : 0);
+        }
+    }
+}
+
+static int finish(const char *name, const char *passed) {
+    if (failures) printf("==> %s: %d check(s) failed\n", name, failures);
+    else printf("==> %s: %s\n", name, passed);
+    return failures ? 1 : 0;
+}
+
+#endif

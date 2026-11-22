@@ -67,8 +67,8 @@ jobs:
       - name: Build the dylib
         run: make all
 
-      - name: Build the overlay shim
-        run: make overlay-shim
+      - name: Build the overlay shim and plugin host
+        run: make overlay-shim plugin-host
 
       - name: Build helpers
         run: make iconmaker appinfo
@@ -130,6 +130,7 @@ jobs:
           make -s envpasscheck
           make -s featcheck
           make -s featstagecheck
+          make -s plugin-host-tests
           make -s conf-fixtures
           make -s confcheck
           make -s runnervariantcheck

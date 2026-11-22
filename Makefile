@@ -76,6 +76,7 @@ DEPS := $(OBJS:.o=.d)
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures ceg-check panel-behavior app-tests \
         featcheck featstagecheck runnervariantcheck conf-fixtures confcheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
+        plugin-host plugin-host-install plugin-host-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
         compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
@@ -579,6 +580,31 @@ endef
 overlay-shim-install: $(OVERLAY_SHIM)
 	$(call install_atomically,$(OVERLAY_SHIM),$(SUPPORT_DIR)/overlay-shim.dylib)
 	@echo "==> Installed: $(SUPPORT_DIR)/overlay-shim.dylib"
+
+PLUGIN_HOST_SRC   := plugin-host/plugin_host.c
+PLUGIN_HOST_ARM   := $(OUT_DIR)/plugin-host.arm64.dylib
+PLUGIN_HOST_X86   := $(OUT_DIR)/plugin-host.x86_64.dylib
+PLUGIN_HOST       := $(OUT_DIR)/plugin-host.dylib
+PLUGIN_HOST_FLAGS := -mmacosx-version-min=$(MIN_VER) $(AVAIL) -std=c17 -dynamiclib -O2 -Wall -Wextra \
+                     -install_name @rpath/plugin-host.dylib
+PLUGIN_HOST_TESTS := $(OUT_DIR)/plugin-host-tests
+
+plugin-host: $(PLUGIN_HOST)
+
+$(PLUGIN_HOST): $(PLUGIN_HOST_SRC)
+	@mkdir -p $(OUT_DIR)
+	$(CC) -arch arm64 $(PLUGIN_HOST_FLAGS) -o $(PLUGIN_HOST_ARM) $<
+	$(CC) -arch x86_64 $(PLUGIN_HOST_FLAGS) -o $(PLUGIN_HOST_X86) $<
+	lipo -create $(PLUGIN_HOST_ARM) $(PLUGIN_HOST_X86) -output $@
+	codesign -fs - $@
+	@lipo -info $@
+
+plugin-host-install: $(PLUGIN_HOST)
+	$(call install_atomically,$(PLUGIN_HOST),$(SUPPORT_DIR)/plugin-host.dylib)
+	@echo "==> Installed: $(SUPPORT_DIR)/plugin-host.dylib"
+
+plugin-host-tests: $(PLUGIN_HOST)
+	@CC="$(CC)" MIN_VER=$(MIN_VER) sh plugin-host/tests/run.sh "$(PLUGIN_HOST_TESTS)" "$(CURDIR)/$(PLUGIN_HOST)"
 
 overlay-shim-tests: $(OVERLAY_SHIM)
 	@if [ ! -d $(OVERLAY_SHIM_TESTS) ]; then \
