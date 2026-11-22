@@ -574,7 +574,6 @@ static int patch_loaded(const struct patch *p) {
     int n = 0, done = 0;
     if (p->pe) {
         n = images_by_file(p->module, imgs, IMAGES_MAX);
-        if (!n) n = images_by_scan(p->module, imgs, IMAGES_MAX);
     } else {
         for (uint32_t i = 0; i < _dyld_image_count() && n < IMAGES_MAX; i++) {
             const char *name = _dyld_get_image_name(i);
@@ -791,6 +790,79 @@ static int api_redirect(const struct mach_header_64 *mh, intptr_t slide, const c
     return 1;
 }
 
+typedef int32_t (*map_fn)(void *section, void *process, void **addr, uintptr_t zero_bits, size_t commit,
+                          const void *offset, size_t *size, int inherit, uint32_t alloc_type, uint32_t protect);
+typedef int32_t (*map_ex_fn)(void *section, void *process, void **addr, const void *offset, size_t *size,
+                             uint32_t alloc_type, uint32_t protect, void *params, uint32_t count);
+static uintptr_t g_map, g_map_ex;
+
+static void patch_view(uintptr_t base) {
+    struct proc_regionwithpathinfo info;
+    unsigned char mz[2];
+    const char *file = "";
+    if (!copy_in(base, mz, 2) || mz[0] != 'M' || mz[1] != 'Z') return;
+    memset(&info, 0, sizeof(info));
+    if (proc_pidinfo(getpid(), PROC_PIDREGIONPATHINFO, base, &info, sizeof(info)) == (int)sizeof(info)
+        && info.prp_prinfo.pri_address <= base && info.prp_vip.vip_path[0])
+        file = base_name(info.prp_vip.vip_path);
+    int n = __atomic_load_n(&g_npatches, __ATOMIC_ACQUIRE), named = 0;
+    for (int i = 0; i < n && !named; i++)
+        named = g_patches[i].pe && (!*file || strcasecmp(file, g_patches[i].module) == 0);
+    if (!named) return;
+
+    os_unfair_lock_lock(&g_patch_lock);
+    int kept = 0;
+    for (int i = 0; i < g_napplied; i++)
+        if (g_applied[i].base != base) g_applied[kept++] = g_applied[i];
+    g_napplied = kept;
+    for (int i = 0; i < g_npatches; i++) {
+        const struct patch *p = &g_patches[i];
+        struct image img;
+        int first = p->pe && (!*file || strcasecmp(file, p->module) == 0);
+        for (int j = 0; j < i && first; j++) first = strcasecmp(g_patches[j].module, p->module) != 0;
+        if (first && pe_image(base, *file ? NULL : p->module, &img)) patch_plugins(&img, p->module);
+    }
+    os_unfair_lock_unlock(&g_patch_lock);
+}
+
+static void after_map(void *process, void **addr, int32_t status) {
+    static int looked;
+    int n = __atomic_load_n(&g_npatches, __ATOMIC_ACQUIRE), pe = 0;
+    for (int i = 0; i < n && !pe; i++) pe = g_patches[i].pe;
+    if (!pe) return;
+    if (!__atomic_exchange_n(&looked, 1, __ATOMIC_ACQ_REL)) {
+        for (int i = 0; i < n; i++) {
+            int first = g_patches[i].pe;
+            for (int j = 0; j < i && first; j++)
+                first = strcmp(g_patches[j].plugin, g_patches[i].plugin) != 0
+                        || strcasecmp(g_patches[j].module, g_patches[i].module) != 0;
+            if (first) patch_loaded(&g_patches[i]);
+        }
+    }
+    if (status >= 0 && process == (void *)~(uintptr_t)0 && addr && *addr) patch_view((uintptr_t)*addr);
+}
+
+static int32_t map_hook(void *section, void *process, void **addr, uintptr_t zero_bits, size_t commit,
+                        const void *offset, size_t *size, int inherit, uint32_t alloc_type, uint32_t protect) {
+    int32_t status = ((map_fn)g_map)(section, process, addr, zero_bits, commit, offset, size, inherit, alloc_type,
+                                     protect);
+    after_map(process, addr, status);
+    return status;
+}
+
+static int32_t map_ex_hook(void *section, void *process, void **addr, const void *offset, size_t *size,
+                           uint32_t alloc_type, uint32_t protect, void *params, uint32_t count) {
+    int32_t status = ((map_ex_fn)g_map_ex)(section, process, addr, offset, size, alloc_type, protect, params, count);
+    after_map(process, addr, status);
+    return status;
+}
+
+static void watch_maps(const struct mach_header_64 *mh, intptr_t slide, const char *path) {
+    int map = api_redirect(mh, slide, "_NtMapViewOfSection", (uintptr_t)map_hook, &g_map);
+    int map_ex = api_redirect(mh, slide, "_NtMapViewOfSectionEx", (uintptr_t)map_ex_hook, &g_map_ex);
+    if (!map || !map_ex) host_log("%s: only modules with a unix half get their patches", path);
+}
+
 static uint64_t be_int(const unsigned char *p, int n) {
     uint64_t v = 0;
     while (n--) v = v << 8 | *p++;
@@ -908,6 +980,7 @@ __attribute__((constructor))
 static void plugin_host_init(void) {
     const char *spec = getenv("NOTPROTON_PLUGIN_PATCHES");
     if (spec && *spec) parse_spec(spec);
+    api_on_first_image("ntdll.so", "-unix/", watch_maps);
     _dyld_register_func_for_add_image(on_add_image);
     _dyld_register_func_for_remove_image(on_remove_image);
 }

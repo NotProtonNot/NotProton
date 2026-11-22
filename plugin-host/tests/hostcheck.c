@@ -2,6 +2,7 @@
 #include "../notproton_plugin.h"
 
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
 #include <stdint.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -176,6 +177,66 @@ static int child_pe_api(const char *host, const char *dll, const char *trigger, 
     return 0;
 }
 
+static int changed(const struct pe *pe, const unsigned char *base, const char *want, const char *when) {
+    char got[512];
+    pe_changes(pe, base, got, sizeof(got));
+    if (strcmp(got, want) == 0) return 1;
+    printf("%s changed [%s], wanted [%s]\n", when, got, want);
+    return 0;
+}
+
+static int child_map(const char *host, const char *ntdll, const char *dll, const char *exe) {
+    static unsigned char plain[0x1000];
+    struct pe pe, game;
+    void *self = (void *)~(uintptr_t)0;
+    if (!pe_parse(dll, &pe) || !pe_parse(exe, &game)) { printf("cannot read %s or %s\n", dll, exe); return 2; }
+    setenv("NOTPROTON_PLUGIN_PATCHES", "NP_A:npfixture.dll: 31 d2 e8 ?? ?? ?? ?? 75=eb 05;"
+                                       "NP_B:npgame.exe: 31 d2 e8 ?? ?? ?? ?? 75=eb 05", 1);
+    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    void *nt = dlopen(ntdll, RTLD_NOW);
+    int32_t (*map)(void *, int, int32_t, void *) = nt ? (int32_t (*)(void *, int, int32_t, void *))dlsym(nt, "np_fake_map") : NULL;
+    if (!map) { printf("dlopen %s: %s\n", ntdll, dlerror()); return 2; }
+    unsigned char *gbase = pe_load(exe, &game, 1, NULL);
+    if (!gbase) { printf("cannot load %s\n", exe); return 2; }
+    if (!changed(&game, gbase, "", "before any section was mapped the exe")) return 1;
+    map(plain, 0, 0, self);
+    if (!changed(&game, gbase, "75>eb*1", "after the first section the exe")) return 1;
+
+    unsigned char *base = pe_load(dll, &pe, 1, NULL);
+    if (!base) { printf("cannot load %s\n", dll); return 2; }
+    map(base, 0, (int32_t)0xc0000018, self);
+    if (!changed(&pe, base, "", "a failed mapping")) return 1;
+    map(base, 0, 0, (void *)4);
+    if (!changed(&pe, base, "", "another process's mapping")) return 1;
+    if (map(base, 0, 0x40000003, self) != 0x40000003) { printf("the status was lost\n"); return 1; }
+    if (!changed(&pe, base, "75>eb*1", "the mapped DLL")) return 1;
+    if (pe_load(dll, &pe, 1, base) != base) { printf("cannot map %s again\n", dll); return 2; }
+    map(base, 1, 0, self);
+    if (!changed(&pe, base, "75>eb*1", "the DLL mapped again")) return 1;
+    unsigned char *copy = pe_load(dll, &pe, 0, NULL);
+    if (!copy) { printf("cannot copy %s in\n", dll); return 2; }
+    map(copy, 1, 0, self);
+    return changed(&pe, copy, "75>eb*1", "the copied-in DLL") ? 0 : 1;
+}
+
+static int child_ntdll(const char *host, const char *path) {
+    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    if (!dlopen(path, RTLD_NOW | RTLD_LOCAL)) { printf("dlopen %s: %s\n", path, dlerror()); return 3; }
+    const struct np_plugin_api *api = np_plugin_api();
+    for (uint32_t i = 0; api && i < _dyld_image_count(); i++) {
+        if (strcmp(_dyld_get_image_name(i), path) != 0) continue;
+        const struct mach_header_64 *mh = (const struct mach_header_64 *)_dyld_get_image_header(i);
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        uintptr_t map = api->symbol(mh, slide, "_NtMapViewOfSection"), ex = api->symbol(mh, slide, "_NtMapViewOfSectionEx");
+        int left = map ? api->count_pointers(mh, slide, map, NULL) : -1;
+        int left_ex = ex ? api->count_pointers(mh, slide, ex, NULL) : -1;
+        printf("%d and %d pointers still reach NtMapViewOfSection and NtMapViewOfSectionEx\n", left, left_ex);
+        return left == 0 && left_ex == 0 ? 0 : 1;
+    }
+    printf("ntdll.so loaded under another name\n");
+    return 2;
+}
+
 static int child_fixture_dylib(const char *host, const char *dylib) {
     setenv("NOTPROTON_PLUGIN_PATCHES", "NOTPROTON_HOSTCHECK:npfixture.dylib: b8 34=35 12 5a 5a c3", 1);
     if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
@@ -271,6 +332,15 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
     int rc = run(api, log, out, sizeof(out));
     expect("fixture: patches a plugin gives in code land the same way", rc, out, 0,
            "hostcheck#1: patched npfixture.dll", 1);
+    char exe[1024], ntdll[1024];
+    snprintf(exe, sizeof(exe), "%s/npgame.exe", scratch);
+    snprintf(ntdll, sizeof(ntdll), "%s/np-unix/ntdll.so", dir);
+    char *map[] = { (char *)self, "--map", (char *)host, ntdll, dll, exe, NULL };
+    rc = write_fixture_dll(exe, 0x1000) ? run(map, log, out, sizeof(out)) : 2;
+    expect("fixture: an exe is patched by the time the first section is mapped", rc, out, 0,
+           "NP_B: patched npgame.exe", 1);
+    expect("fixture: a module without a unix half is patched each time it is mapped", rc, out, 0,
+           "NP_A: patched npfixture.dll", 3);
     char *argv[] = { (char *)self, "--dylib", (char *)host, dylib, NULL };
     rc = run(argv, log, out, sizeof(out));
 #if defined(__x86_64__)
@@ -286,6 +356,8 @@ int main(int argc, char **argv) {
         return child_pe(argv[2], argv[3], argv[4], argv[5], atoi(argv[6]), argv[7], atoi(argv[8]));
     if (argc == 7 && strcmp(argv[1], "--pe-api") == 0) return child_pe_api(argv[2], argv[3], argv[4], argv[5], argv[6]);
     if (argc == 4 && strcmp(argv[1], "--dylib") == 0) return child_fixture_dylib(argv[2], argv[3]);
+    if (argc == 6 && strcmp(argv[1], "--map") == 0) return child_map(argv[2], argv[3], argv[4], argv[5]);
+    if (argc == 4 && strcmp(argv[1], "--ntdll") == 0) return child_ntdll(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--macho") == 0) return child_macho(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--fixture") == 0)
         return write_fixture_dll(argv[2], (uint32_t)strtoul(argv[3], NULL, 0)) ? 0 : 2;
@@ -314,6 +386,16 @@ int main(int argc, char **argv) {
         else expect(what, rc, out, 0, "NOTPROTON_HOSTCHECK: patched D3DMetal", 1);
     }
     globfree(&metals);
+    glob_t libs;
+    runner_files("lib/wine/x86_64-unix/ntdll.so", &libs);
+    for (size_t i = 0; i < libs.gl_pathc; i++) {
+        char what[256], *a[] = { self, "--ntdll", (char *)host, libs.gl_pathv[i], NULL };
+        snprintf(what, sizeof(what), "%s: section mapping is watched", runner_of(libs.gl_pathv[i]));
+        int rc = run(a, log, out, sizeof(out));
+        if (rc == 3) printf("  SKIP  %s: %s", what, out);
+        else expect(what, rc, out, 0, NULL, 0);
+    }
+    globfree(&libs);
 #endif
 
     return finish("plugin host", "patches land once, in memory, or not at all");

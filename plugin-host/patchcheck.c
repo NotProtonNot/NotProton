@@ -199,8 +199,7 @@ static int plugin_patches(int plugin, const char *module) {
     return 0;
 }
 
-static void check_plugin(const struct image *img, const char *module, int plugin, const char *where,
-                         const char *never) {
+static void check_plugin(const struct image *img, const char *module, int plugin, const char *where) {
     char why[128] = "", sites[384] = "";
     size_t used = 0;
     int k = 0;
@@ -226,12 +225,11 @@ static void check_plugin(const struct image *img, const char *module, int plugin
                               : snprintf(sites + used, sizeof(sites) - used, "%spatch %d at%s", used ? ", " : "", k, at);
         if (w > 0) used += (size_t)w;
     }
-    if (never) result(plugin, "not reached", where, "%s; %s", never, *why ? why : sites);
-    else if (*why) result(plugin, "left alone", where, "%s", why);
+    if (*why) result(plugin, "left alone", where, "%s", why);
     else result(plugin, "patched", where, "%s", sites);
 }
 
-static void check_file(const char *path, const char *module, int pe, const char *where, const char *never) {
+static void check_file(const char *path, const char *module, int pe, const char *where) {
     const unsigned char *p = NULL;
     size_t len = 0;
     struct image img;
@@ -241,7 +239,7 @@ static void check_file(const char *path, const char *module, int pe, const char 
         if (!plugin_patches(k, module)) continue;
         if (!mapped) result(k, "left alone", where, "unreadable");
         else if (!ok) result(k, "left alone", where, "%s", arm64 ? "arm64 code can't be changed" : "no code to read");
-        else check_plugin(&img, module, k, where, never);
+        else check_plugin(&img, module, k, where);
     }
     if (mapped) munmap((void *)p, len);
 }
@@ -253,14 +251,12 @@ static void check_runner(const char *runner, const char *name) {
     snprintf(root, sizeof(root), "%s/CrossOver", runner);
     char *roots[] = { root, NULL };
     char (*found)[1024] = calloc(FOUND_MAX, sizeof(*found));
-    int which[FOUND_MAX], nfound = 0, loads[PATCHES_MAX] = { 0 }, has[PATCHES_MAX] = { 0 };
+    int which[FOUND_MAX], nfound = 0, has[PATCHES_MAX] = { 0 };
     FTS *fts = found ? fts_open(roots, FTS_PHYSICAL | FTS_NOCHDIR, by_name) : NULL;
     if (!fts) { free(found); return; }
     for (FTSENT *e; (e = fts_read(fts));) {
         if (e->fts_info != FTS_F) continue;
         for (int i = 0; i < g_npatches; i++) {
-            if (g_patches[i].pe && strstr(e->fts_path, "-unix/") && !strcasecmp(e->fts_name, g_patches[i].trigger))
-                loads[i] = 1;
             if (strcasecmp(e->fts_name, g_patches[i].module) != 0) continue;
             has[i] = 1;
             int j = 0;
@@ -279,10 +275,9 @@ static void check_runner(const char *runner, const char *name) {
     }
     for (int f = 0; f < nfound; f++) {
         const struct patch *p = &g_patches[which[f]];
-        char where[1400], never[128];
+        char where[1400];
         snprintf(where, sizeof(where), "%s: %s", name, found[f] + strlen(root) + 1);
-        snprintf(never, sizeof(never), "no %s to load it", p->trigger);
-        check_file(found[f], p->module, p->pe, where, p->pe && !loads[which[f]] ? never : NULL);
+        check_file(found[f], p->module, p->pe, where);
     }
     free(found);
 }
@@ -343,8 +338,7 @@ int main(int argc, char **argv) {
         int i = 0;
         while (i < g_npatches && strcasecmp(g_patches[i].module, base_name(argv[a])) != 0) i++;
         if (i == g_npatches) printf("%s: no patch is for %s\n", argv[a], base_name(argv[a]));
-        else check_file(argv[a], g_patches[i].module, g_patches[i].pe, argv[a],
-                        g_patches[i].pe ? "game files aren't patched yet" : NULL);
+        else check_file(argv[a], g_patches[i].module, g_patches[i].pe, argv[a]);
     }
 
     int missed = 0;

@@ -9,19 +9,15 @@ fail=0
 
 rm -rf "$home"
 mkdir -p "$confs"
-for r in aligned packed nounix "aligned+extra@0123456789ab"; do
-  mkdir -p "$runners/crossover-$r/CrossOver/lib/wine/x86_64-windows" "$runners/crossover-$r/CrossOver/lib/wine/x86_64-unix"
+for r in aligned packed "aligned+extra@0123456789ab"; do
+  mkdir -p "$runners/crossover-$r/CrossOver/lib/wine/x86_64-windows"
 done
 mkdir -p "$runners/crossover-bare/CrossOver/lib/wine" "$runners/crossover-aligned/CrossOver/lib64"
 "$d/hostcheck" --fixture "$runners/crossover-aligned/CrossOver/lib/wine/x86_64-windows/npfixture.dll" 0x1000
 "$d/hostcheck" --fixture "$runners/crossover-packed/CrossOver/lib/wine/x86_64-windows/npfixture.dll" 0x400
-"$d/hostcheck" --fixture "$runners/crossover-nounix/CrossOver/lib/wine/x86_64-windows/npfixture.dll" 0x1000
 "$d/hostcheck" --fixture "$runners/crossover-aligned+extra@0123456789ab/CrossOver/lib/wine/x86_64-windows/npfixture.dll" 0x1000
 "$d/hostcheck" --fixture "$home/npfixture.dll" 0x400
 : > "$home/other.dll"
-for r in aligned packed; do
-  cp "$d/npfixture.so" "$runners/crossover-$r/CrossOver/lib/wine/x86_64-unix/npfixture.so"
-done
 cp "$d/npfixture.dylib" "$runners/crossover-aligned/CrossOver/lib64/npfixture.dylib"
 
 cat > "$confs/10-fix.conf" <<CONF
@@ -75,7 +71,6 @@ check "$confs/10-fix.conf"
 exits "patched somewhere" 0
 says "aligned sections" "patched      crossover-aligned: $dll (patch 1 at +0x1107, patch 2 at +0x1205)"
 says "packed sections" "patched      crossover-packed: $dll (patch 1 at +0x1107, patch 2 at +0x1205)"
-says "no unix half" "not reached  crossover-nounix: $dll (no npfixture.so to load it; patch 1 at +0x1107, patch 2 at +0x1205)"
 says "no module" "missing      crossover-bare (no npfixture.dll)"
 says "forms" "patched      crossover-aligned: $dll (patch 1 form 2 at +0x1306)"
 silent "variant builds" "+extra"
@@ -83,7 +78,7 @@ silent "other files" "NOTPROTON_C"
 silent "other files' refusals" "refused"
 
 check "$confs/10-fix.conf" "$home/npfixture.dll" "$home/other.dll"
-says "game file" "not reached  $home/npfixture.dll (game files aren't patched yet; patch 1 at +0x1107, patch 2 at +0x1205)"
+says "game file" "patched      $home/npfixture.dll (patch 1 at +0x1107, patch 2 at +0x1205)"
 says "unnamed game file" "$home/other.dll: no patch is for other.dll"
 
 check "$confs/20-twice.conf"
