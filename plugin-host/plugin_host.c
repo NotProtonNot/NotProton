@@ -5,6 +5,7 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <mach-o/dyld.h>
+#include <mach-o/loader.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -36,6 +37,7 @@ struct patch {
     char plugin[NAME_LEN];
     char module[NAME_LEN];
     char trigger[NAME_LEN];
+    int pe;
     int nforms;
     struct form forms[FORMS_MAX];
 };
@@ -155,7 +157,8 @@ static const char *parse_patch(struct patch *p, const char *s, const char *end) 
     while (me > m && me[-1] == ' ') me--;
     if (!name_ok(m, (size_t)(me - m), ".+-")) return "the module is not a file name";
     memcpy(p->module, m, (size_t)(me - m));
-    if (!pe_module(p->module, p->trigger)) return "the module is not a .dll, .drv, .sys or .exe";
+    p->pe = pe_module(p->module, p->trigger);
+    if (!p->pe) snprintf(p->trigger, sizeof(p->trigger), "%s", p->module);
     for (const char *f = colon + 1; f < end;) {
         const char *bar = memchr(f, '|', (size_t)(end - f));
         if (!bar) bar = end;
@@ -278,6 +281,41 @@ static int pe_image(uintptr_t base, const char *name, struct image *img) {
         if (!range_has(img->code[i].start, img->code[i].size, VM_PROT_READ)) return 0;
     return 1;
 }
+
+#if !defined(__arm64__)
+static const struct load_command *next_command(const struct mach_header_64 *mh, const struct load_command *c) {
+    const unsigned char *lc = c ? (const unsigned char *)c + c->cmdsize : (const unsigned char *)(mh + 1);
+    const unsigned char *end = (const unsigned char *)(mh + 1) + mh->sizeofcmds;
+    const struct load_command *n = (const struct load_command *)lc;
+    if (lc + sizeof(*n) > end || n->cmdsize < sizeof(*n) || lc + n->cmdsize > end) return NULL;
+    return n;
+}
+
+#define EACH_COMMAND(mh, c) \
+    for (uint32_t c##_i = 0; c##_i < (mh)->ncmds && ((c = next_command((mh), c##_i ? c : NULL))); c##_i++)
+
+static int macho_image(const struct mach_header *mh, intptr_t slide, struct image *img) {
+    if (mh->magic != MH_MAGIC_64) return 0;
+    const struct mach_header_64 *h = (const struct mach_header_64 *)mh;
+    const struct load_command *c = NULL;
+    img->base = (uintptr_t)mh;
+    img->nsections = 0;
+    EACH_COMMAND(h, c) {
+        if (c->cmd != LC_SEGMENT_64) continue;
+        const struct segment_command_64 *seg = (const struct segment_command_64 *)c;
+        const struct section_64 *s = (const struct section_64 *)(seg + 1);
+        if (sizeof(*seg) + (size_t)seg->nsects * sizeof(*s) > c->cmdsize) return 0;
+        if (!(seg->initprot & VM_PROT_EXECUTE)) continue;
+        for (uint32_t k = 0; k < seg->nsects && img->nsections < SECTIONS_MAX; k++) {
+            if (!s[k].size || (s[k].flags & SECTION_TYPE) == S_ZEROFILL) continue;
+            img->code[img->nsections].start = (uintptr_t)(s[k].addr + (uint64_t)slide);
+            img->code[img->nsections].size = (size_t)s[k].size;
+            img->nsections++;
+        }
+    }
+    return img->nsections > 0;
+}
+#endif
 
 static const char *base_name(const char *path) {
     const char *slash = strrchr(path, '/');
@@ -473,9 +511,24 @@ static void patch_pe_module(const char *module) {
     for (int m = 0; m < n; m++) patch_plugins(&imgs[m], module);
 }
 
+static void patch_macho_module(const char *module, const struct mach_header *mh, intptr_t slide) {
+    struct image img;
+#if defined(__arm64__)
+    (void)mh;
+    (void)slide;
+    (void)img;
+    host_log("%s is left alone, arm64 code can't be changed without breaking its signature", module);
+#else
+    if (!macho_image(mh, slide, &img)) {
+        host_log("%s has no code section this can read, nothing patched", module);
+        return;
+    }
+    patch_plugins(&img, module);
+#endif
+}
+
 static void on_add_image(const struct mach_header *mh, intptr_t slide) {
     Dl_info info;
-    (void)slide;
     if (!dladdr(mh, &info) || !info.dli_fname) return;
     const char *name = base_name(info.dli_fname);
     for (int i = 0; i < g_npatches; i++) {
@@ -483,7 +536,8 @@ static void on_add_image(const struct mach_header *mh, intptr_t slide) {
         int first = 1;
         for (int j = 0; j < i; j++) first &= strcasecmp(g_patches[j].module, g_patches[i].module) != 0;
         if (!first) continue;
-        patch_pe_module(g_patches[i].module);
+        if (g_patches[i].pe) patch_pe_module(g_patches[i].module);
+        else patch_macho_module(g_patches[i].module, mh, slide);
     }
 }
 

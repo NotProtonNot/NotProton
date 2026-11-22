@@ -23,6 +23,7 @@ for a in arm64 x86_64; do
   d="$out/$a"
   mkdir -p "$d"
   echo 'int np_fixture_trigger;' | "$plugin_cc" -arch "$a" -x c -dynamiclib -o "$d/npfixture.so" -
+  "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -dynamiclib -o "$d/npfixture.dylib" plugin-host/tests/npfixture.c
   "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -o "$d/hostcheck" plugin-host/tests/hostcheck.c
   step "$d/hostcheck" "$host" "$d" "$d"
 done

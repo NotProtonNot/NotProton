@@ -2,6 +2,7 @@
 #define PLUGIN_HOST_CHECK_H
 
 #include <fcntl.h>
+#include <glob.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,25 @@ static void expect(const char *what, int rc, const char *out, int want_rc, const
         }
     }
 }
+
+static inline const char *runner_of(const char *path) {
+    static char name[128];
+    const char *r = strstr(path, "/runners/");
+    const char *e = r ? strchr(r + 9, '/') : NULL;
+    snprintf(name, sizeof(name), "%.*s%s", e ? (int)(e - r - 9) : 0, r ? r + 9 : "",
+             strstr(path, "apple_gptk3") ? " GPTK 3" : "");
+    return name;
+}
+
+static inline void runner_files(const char *tail, glob_t *g) {
+    char pattern[1024];
+    snprintf(pattern, sizeof(pattern), "%s/Library/Application Support/notproton/runners/*/CrossOver/%s",
+             getenv("HOME"), tail);
+    memset(g, 0, sizeof(*g));
+    glob(pattern, 0, NULL, g);
+}
+
+#define D3DMETALS "lib*/apple_gptk*/external/D3DMetal.framework/Versions/A/D3DMetal"
 
 static int finish(const char *name, const char *passed) {
     if (failures) printf("==> %s: %d check(s) failed\n", name, failures);

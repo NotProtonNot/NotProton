@@ -154,10 +154,51 @@ static int child_pe(const char *host, const char *dll, const char *trigger, cons
     return 0;
 }
 
+static int child_fixture_dylib(const char *host, const char *dylib) {
+    setenv("NOTPROTON_PLUGIN_PATCHES", "NOTPROTON_HOSTCHECK:npfixture.dylib: b8 34=35 12 5a 5a c3", 1);
+    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    void *h = dlopen(dylib, RTLD_NOW);
+    if (!h) { printf("dlopen %s: %s\n", dylib, dlerror()); return 2; }
+    unsigned (*value)(void) = (unsigned (*)(void))dlsym(h, "np_fixture_value");
+    if (!value) { printf("no np_fixture_value\n"); return 2; }
+#if defined(__x86_64__)
+    if (value() != 0x5a5a1235) { printf("returned %#x\n", value()); return 1; }
+#else
+    if (value() != 0x5a5a1234) { printf("returned %#x\n", value()); return 1; }
+#endif
+    return 0;
+}
+
+static int child_macho(const char *host, const char *d3dmetal) {
+    void *h = dlopen(d3dmetal, RTLD_NOW);
+    if (!h) { printf("dlopen %s: %s\n", d3dmetal, dlerror()); return 3; }
+    unsigned char *fn = dlsym(h, "DXGIDeclareAdapterRemovalSupport");
+    if (!fn) { printf("no DXGIDeclareAdapterRemovalSupport\n"); return 3; }
+    unsigned (*call)(void) = (unsigned (*)(void))fn;
+    unsigned before = call() & 0xff;
+    if (before || fn[0] != 0x31 || fn[1] != 0xc0 || fn[2] != 0xc3) {
+        printf("DXGIDeclareAdapterRemovalSupport is not xor eax, eax; ret\n");
+        return 3;
+    }
+    char spec[512];
+    int n = snprintf(spec, sizeof(spec), "NOTPROTON_HOSTCHECK:D3DMetal:");
+    for (int i = -12; i < 15; i++) {
+        if (i == 0) n += snprintf(spec + n, sizeof(spec) - (size_t)n, " 31=b0");
+        else if (i == 1) n += snprintf(spec + n, sizeof(spec) - (size_t)n, " c0=01");
+        else n += snprintf(spec + n, sizeof(spec) - (size_t)n, " %02x", fn[i]);
+    }
+    setenv("NOTPROTON_PLUGIN_PATCHES", spec, 1);
+    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    unsigned after = call() & 0xff;
+    if (after != 1) { printf("returned %u before and %u after\n", before, after); return 1; }
+    return 0;
+}
+
 static void fixture_cases(const char *self, const char *host, const char *dir, const char *scratch, const char *log) {
-    char dll[1024], trigger[1024], out[16384];
+    char dll[1024], trigger[1024], dylib[1024], out[16384];
     snprintf(dll, sizeof(dll), "%s/npfixture.dll", scratch);
     snprintf(trigger, sizeof(trigger), "%s/npfixture.so", dir);
+    snprintf(dylib, sizeof(dylib), "%s/npfixture.dylib", dir);
     if (!write_fixture_dll(dll)) {
         printf("  FAIL  fixture DLL could not be written to %s\n", dll);
         failures++;
@@ -201,11 +242,21 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
             expect(what, rc, out, 0, cases[k].needle, cases[k].times);
         }
     }
+    char *argv[] = { (char *)self, "--dylib", (char *)host, dylib, NULL };
+    int rc = run(argv, log, out, sizeof(out));
+#if defined(__x86_64__)
+    expect("fixture: a dylib's code changes in memory and the change runs", rc, out, 0,
+           "NOTPROTON_HOSTCHECK: patched npfixture.dylib", 1);
+#else
+    expect("fixture: arm64 code is left alone", rc, out, 0, "arm64 code can't be changed", 1);
+#endif
 }
 
 int main(int argc, char **argv) {
     if (argc == 9 && strcmp(argv[1], "--pe") == 0)
         return child_pe(argv[2], argv[3], argv[4], argv[5], atoi(argv[6]), argv[7], atoi(argv[8]));
+    if (argc == 4 && strcmp(argv[1], "--dylib") == 0) return child_fixture_dylib(argv[2], argv[3]);
+    if (argc == 4 && strcmp(argv[1], "--macho") == 0) return child_macho(argv[2], argv[3]);
     if (argc != 4) {
         fprintf(stderr, "usage: hostcheck <plugin-host.dylib> <fixture dir> <scratch dir>\n");
         return 2;
@@ -216,6 +267,22 @@ int main(int argc, char **argv) {
     snprintf(log, sizeof(log), "%s/child.log", scratch);
 
     fixture_cases(self, host, dir, scratch, log);
+
+#if defined(__x86_64__)
+    glob_t metals;
+    char out[16384];
+    runner_files(D3DMETALS, &metals);
+    if (!metals.gl_pathc) printf("  SKIP  runner checks: no runners installed\n");
+    for (size_t i = 0; i < metals.gl_pathc; i++) {
+        char what[256], *a[] = { self, "--macho", (char *)host, metals.gl_pathv[i], NULL };
+        snprintf(what, sizeof(what), "%s: D3DMetal's code changes in memory and the change runs",
+                 runner_of(metals.gl_pathv[i]));
+        int rc = run(a, log, out, sizeof(out));
+        if (rc == 3) printf("  SKIP  %s: %s", what, out);
+        else expect(what, rc, out, 0, "NOTPROTON_HOSTCHECK: patched D3DMetal", 1);
+    }
+    globfree(&metals);
+#endif
 
     return finish("plugin host", "patches land once, in memory, or not at all");
 }
