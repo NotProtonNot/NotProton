@@ -1,4 +1,5 @@
 #include "check.h"
+#include "../notproton_plugin.h"
 
 #include <dlfcn.h>
 #include <stdint.h>
@@ -156,6 +157,25 @@ static int child_pe(const char *host, const char *dll, const char *trigger, cons
     return 0;
 }
 
+static int child_pe_api(const char *host, const char *dll, const char *trigger, const char *patches,
+                        const char *want) {
+    struct pe pe;
+    char got[512];
+    if (!pe_parse(dll, &pe)) { printf("cannot read %s\n", dll); return 2; }
+    unsigned char *base = pe_load(dll, &pe, 1, NULL);
+    if (!base) { printf("cannot load %s\n", dll); return 2; }
+    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    const struct np_plugin_api *api = np_plugin_api();
+    if (!api) { printf("no plugin API\n"); return 2; }
+    int n = api->patch("hostcheck", patches);
+    pe_changes(&pe, base, got, sizeof(got));
+    if (n != 1 || strcmp(got, want) != 0) { printf("patch gave %d and changed [%s], wanted [%s]\n", n, got, want); return 1; }
+    if (!dlopen(trigger, RTLD_NOW)) { printf("dlopen %s: %s\n", trigger, dlerror()); return 2; }
+    pe_changes(&pe, base, got, sizeof(got));
+    if (strcmp(got, want) != 0) { printf("after the unix half loaded changed [%s], wanted [%s]\n", got, want); return 1; }
+    return 0;
+}
+
 static int child_fixture_dylib(const char *host, const char *dylib) {
     setenv("NOTPROTON_PLUGIN_PATCHES", "NOTPROTON_HOSTCHECK:npfixture.dylib: b8 34=35 12 5a 5a c3", 1);
     if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
@@ -245,8 +265,14 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
             expect(what, rc, out, 0, cases[k].needle, cases[k].times);
         }
     }
+    char *api[] = { (char *)self, "--pe-api", (char *)host, dll, trigger,
+                    "npfixture.dll: 31 d2 e8 ?? ?? ?? ?? 75=eb 05; npfixture.dll: 48 8b 0b 41 b8 01=00 00 00 00",
+                    "01>00*1,75>eb*1", NULL };
+    int rc = run(api, log, out, sizeof(out));
+    expect("fixture: patches a plugin gives in code land the same way", rc, out, 0,
+           "hostcheck#1: patched npfixture.dll", 1);
     char *argv[] = { (char *)self, "--dylib", (char *)host, dylib, NULL };
-    int rc = run(argv, log, out, sizeof(out));
+    rc = run(argv, log, out, sizeof(out));
 #if defined(__x86_64__)
     expect("fixture: a dylib's code changes in memory and the change runs", rc, out, 0,
            "NOTPROTON_HOSTCHECK: patched npfixture.dylib", 1);
@@ -258,6 +284,7 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
 int main(int argc, char **argv) {
     if (argc == 9 && strcmp(argv[1], "--pe") == 0)
         return child_pe(argv[2], argv[3], argv[4], argv[5], atoi(argv[6]), argv[7], atoi(argv[8]));
+    if (argc == 7 && strcmp(argv[1], "--pe-api") == 0) return child_pe_api(argv[2], argv[3], argv[4], argv[5], argv[6]);
     if (argc == 4 && strcmp(argv[1], "--dylib") == 0) return child_fixture_dylib(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--macho") == 0) return child_macho(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--fixture") == 0)

@@ -33,9 +33,15 @@ static int swap(const struct mach_header_64 *mh, intptr_t slide, const char *nam
 
 static void arm(const struct mach_header_64 *mh, intptr_t slide, const char *path) {
     char version[32];
+    const char *hidden = api->symbol_name(mh, slide, api->symbol(mh, slide, "_fixture_hidden"));
+    uintptr_t none = 0;
     if (!swap(mh, slide, "_np_fixture_value", &real_value, (uintptr_t)value_plus_one)
-        || !swap(mh, slide, "_fixture_hidden", &real_hidden, (uintptr_t)hidden_plus_one))
+        || !api->redirect(mh, slide, "_fixture_hidden", (uintptr_t)hidden_plus_one, &real_hidden))
         return;
+    api->log(TAG, "%s redirected", hidden ? hidden : "nameless");
+    if (!api->redirect(mh, slide, "_np_fixture_call", (uintptr_t)hidden_plus_one, &none)
+        && !api->redirect(mh, slide, "_fixture_absent", (uintptr_t)hidden_plus_one, &none) && !none)
+        api->log(TAG, "redirects without one pointer are refused");
     if (api->bundle_short_version(path, version, sizeof(version))) api->log(TAG, "version %s", version);
     else api->log(TAG, "no version");
 }
@@ -52,6 +58,8 @@ static void sample_init(void) {
         fprintf(stderr, TAG ": plugin-host.dylib isn't loaded, not armed\n");
         return;
     }
+    api->log(TAG, "patch changed %d", api->patch(TAG, "npfixture.dylib: b8 78=79 56 5a 5a c3"));
+    api->log(TAG, "bad patch gave %d", api->patch(TAG, "npfixture.dylib: b8 78=79; npfixture.dylib: b8 zz"));
     api->on_first_image("npfixture.dylib", "/Versions/A/", arm);
     api->on_first_image("npfixture.dylib", "/elsewhere/", never);
 }

@@ -61,6 +61,7 @@ struct image {
 
 static struct patch g_patches[PATCHES_MAX];
 static int g_npatches;
+static os_unfair_lock g_patch_lock = OS_UNFAIR_LOCK_INIT;
 
 static struct {
     char plugin[NAME_LEN];
@@ -450,14 +451,14 @@ static int write_form(uintptr_t site, const struct form *f, uintptr_t base, char
     return 1;
 }
 
-static void patch_image(const struct image *img, const char *module, const char *plugin) {
+static int patch_image(const struct image *img, const char *module, const char *plugin) {
     static unsigned char saved[PATCHES_MAX][BYTES_MAX];
     uintptr_t sites[PATCHES_MAX];
     int idx[PATCHES_MAX], forms[PATCHES_MAX], n = 0;
     char where[512];
     size_t used = 0;
 
-    if (applied(plugin, img->base)) return;
+    if (applied(plugin, img->base)) return 0;
     for (int i = 0; i < g_npatches; i++) {
         const struct patch *p = &g_patches[i];
         if (strcmp(p->plugin, plugin) != 0 || strcasecmp(p->module, module) != 0) continue;
@@ -465,11 +466,11 @@ static void patch_image(const struct image *img, const char *module, const char 
         if (count != 1) {
             host_log("%s: %s at %#lx is left alone as its patch %d is found %d times, not once",
                      plugin, module, (unsigned long)img->base, n + 1, count);
-            return;
+            return 0;
         }
         idx[n++] = i;
     }
-    if (!n) return;
+    if (!n) return 0;
 
     where[0] = 0;
     for (int k = 0; k < n; k++) {
@@ -484,7 +485,7 @@ static void patch_image(const struct image *img, const char *module, const char 
         }
         host_log("%s: %s at %#lx could not be written, %s", plugin, module, (unsigned long)img->base,
                  undone ? "so it is put back as it was" : "and could not be put back, it is half patched");
-        return;
+        return 0;
     }
     if (g_napplied < APPLIED_MAX) {
         memcpy(g_applied[g_napplied].plugin, plugin, NAME_LEN);
@@ -492,6 +493,7 @@ static void patch_image(const struct image *img, const char *module, const char 
         g_applied[g_napplied++].base = img->base;
     }
     host_log("%s: patched %s at %#lx (%s)", plugin, module, (unsigned long)img->base, where);
+    return 1;
 }
 
 static void patch_plugins(const struct image *img, const char *module) {
@@ -535,8 +537,9 @@ static void patch_macho_module(const char *module, const struct mach_header *mh,
 
 static void on_add_image(const struct mach_header *mh, intptr_t slide) {
     Dl_info info;
-    if (!dladdr(mh, &info) || !info.dli_fname) return;
+    if (!__atomic_load_n(&g_npatches, __ATOMIC_ACQUIRE) || !dladdr(mh, &info) || !info.dli_fname) return;
     const char *name = base_name(info.dli_fname);
+    os_unfair_lock_lock(&g_patch_lock);
     for (int i = 0; i < g_npatches; i++) {
         if (strcasecmp(g_patches[i].trigger, name) != 0) continue;
         int first = 1;
@@ -545,14 +548,16 @@ static void on_add_image(const struct mach_header *mh, intptr_t slide) {
         if (g_patches[i].pe) patch_pe_module(g_patches[i].module);
         else patch_macho_module(g_patches[i].module, mh, slide);
     }
+    os_unfair_lock_unlock(&g_patch_lock);
 }
 
 static void on_remove_image(const struct mach_header *mh, intptr_t slide) {
     Dl_info info;
     (void)slide;
-    if (!dladdr(mh, &info) || !info.dli_fname) return;
+    if (!__atomic_load_n(&g_npatches, __ATOMIC_ACQUIRE) || !dladdr(mh, &info) || !info.dli_fname) return;
     const char *name = base_name(info.dli_fname);
     int kept = 0;
+    os_unfair_lock_lock(&g_patch_lock);
     for (int i = 0; i < g_napplied; i++) {
         int gone = 0;
         for (int j = 0; j < g_npatches && !gone; j++)
@@ -561,6 +566,68 @@ static void on_remove_image(const struct mach_header *mh, intptr_t slide) {
         if (!gone) g_applied[kept++] = g_applied[i];
     }
     g_napplied = kept;
+    os_unfair_lock_unlock(&g_patch_lock);
+}
+
+static int patch_loaded(const struct patch *p) {
+    struct image imgs[IMAGES_MAX];
+    int n = 0, done = 0;
+    if (p->pe) {
+        n = images_by_file(p->module, imgs, IMAGES_MAX);
+        if (!n) n = images_by_scan(p->module, imgs, IMAGES_MAX);
+    } else {
+        for (uint32_t i = 0; i < _dyld_image_count() && n < IMAGES_MAX; i++) {
+            const char *name = _dyld_get_image_name(i);
+            const struct mach_header *mh = _dyld_get_image_header(i);
+            if (!name || !mh || strcasecmp(base_name(name), p->module) != 0) continue;
+#if defined(__arm64__)
+            host_log("%s is left alone, arm64 code can't be changed without breaking its signature", p->module);
+#else
+            if (macho_image(mh, _dyld_get_image_vmaddr_slide(i), &imgs[n])) n++;
+#endif
+        }
+    }
+    os_unfair_lock_lock(&g_patch_lock);
+    for (int m = 0; m < n; m++) done += patch_image(&imgs[m], p->module, p->plugin);
+    os_unfair_lock_unlock(&g_patch_lock);
+    return done;
+}
+
+static int api_patch(const char *tag, const char *patches) {
+    static int groups;
+    char group[NAME_LEN];
+    const char *why = NULL;
+    if (!patches) return -1;
+    os_unfair_lock_lock(&g_patch_lock);
+    int base = g_npatches, n = 0;
+    snprintf(group, sizeof(group), "%.40s#%d", tag && *tag ? tag : "plugin", ++groups);
+    for (const char *s = patches; *s && !why;) {
+        const char *end = strchr(s, ';');
+        if (!end) end = s + strlen(s);
+        if (base + n >= PATCHES_MAX) {
+            why = "there are too many patches";
+        } else {
+            struct patch *p = &g_patches[base + n++];
+            memset(p, 0, sizeof(*p));
+            memcpy(p->plugin, group, NAME_LEN);
+            why = parse_patch(p, s, end);
+        }
+        s = *end ? end + 1 : end;
+    }
+    if (!why && !n) why = "it has no bytes";
+    if (!why) __atomic_store_n(&g_npatches, base + n, __ATOMIC_RELEASE);
+    os_unfair_lock_unlock(&g_patch_lock);
+    if (why) {
+        host_log("%s: a patch is refused as %s, so are the ones given with it", group, why);
+        return -1;
+    }
+    int done = 0;
+    for (int i = base; i < base + n; i++) {
+        int first = 1;
+        for (int j = base; j < i; j++) first &= strcasecmp(g_patches[j].module, g_patches[i].module) != 0;
+        if (first) done += patch_loaded(&g_patches[i]);
+    }
+    return done;
 }
 
 static struct {
@@ -704,6 +771,26 @@ static int api_swap_pointer(uintptr_t *slot, uintptr_t expect, uintptr_t value) 
     return ok;
 }
 
+static int api_redirect(const struct mach_header_64 *mh, intptr_t slide, const char *symbol, uintptr_t replacement,
+                        uintptr_t *original) {
+    uintptr_t fn = api_symbol(mh, slide, symbol), *slot = NULL;
+    if (!fn || !replacement || !original) {
+        host_log("redirect: no %s, nothing changed", symbol ? symbol : "symbol");
+        return 0;
+    }
+    int n = api_count_pointers(mh, slide, fn, &slot);
+    if (n != 1) {
+        host_log("redirect: %d pointers to %s, not one, nothing changed", n, symbol);
+        return 0;
+    }
+    *original = fn;
+    if (!api_swap_pointer(slot, fn, replacement)) {
+        host_log("redirect: the pointer to %s could not be written", symbol);
+        return 0;
+    }
+    return 1;
+}
+
 static uint64_t be_int(const unsigned char *p, int n) {
     uint64_t v = 0;
     while (n--) v = v << 8 | *p++;
@@ -804,6 +891,8 @@ static const struct np_plugin_api g_api = {
     .count_pointers = api_count_pointers,
     .swap_pointer = api_swap_pointer,
     .bundle_short_version = api_bundle_short_version,
+    .patch = api_patch,
+    .redirect = api_redirect,
 };
 
 __attribute__((visibility("default")))
@@ -818,9 +907,7 @@ __attribute__((constructor))
 #endif
 static void plugin_host_init(void) {
     const char *spec = getenv("NOTPROTON_PLUGIN_PATCHES");
-    if (!spec || !*spec) return;
-    parse_spec(spec);
-    if (!g_npatches) return;
+    if (spec && *spec) parse_spec(spec);
     _dyld_register_func_for_add_image(on_add_image);
     _dyld_register_func_for_remove_image(on_remove_image);
 }

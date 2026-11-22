@@ -13,6 +13,14 @@ static int child_load(const char *host, const char *plugin, const char *fixture,
     if (!call) { printf("no np_fixture_call\n"); return 2; }
     unsigned a = call(0), b = call(1), wa = changed ? 0x5a5a1235 : 0x5a5a1234, wb = changed ? 0x78 : 0x77;
     if (a != wa || b != wb) { printf("returned %#x and %#x, wanted %#x and %#x\n", a, b, wa, wb); return 1; }
+    unsigned (*patched)(void) = (unsigned (*)(void))dlsym(fx, "np_fixture_patched");
+    if (!patched) { printf("no np_fixture_patched\n"); return 2; }
+#if defined(__x86_64__)
+    unsigned wp = changed ? 0x5a5a5679 : 0x5a5a5678;
+#else
+    unsigned wp = 0x5a5a5678;
+#endif
+    if (patched() != wp) { printf("the patched function returned %#x, wanted %#x\n", patched(), wp); return 1; }
     return 0;
 }
 
@@ -54,14 +62,24 @@ int main(int argc, char **argv) {
     int rc = run(first, log, out, sizeof(out));
     expect("api: an exported function is found, named and swapped", rc, out, 0,
            "_np_fixture_value is _np_fixture_value, swapped", 1);
-    expect("api: a hidden function is found, named and swapped", rc, out, 0,
-           "_fixture_hidden is _fixture_hidden, swapped", 1);
+    expect("api: a hidden function is found, named and redirected", rc, out, 0, "_fixture_hidden redirected", 1);
+    expect("api: a redirect needs exactly one pointer", rc, out, 0, "redirects without one pointer are refused", 1);
+    expect("api: a malformed patch refuses the ones given with it", rc, out, 0, "bad patch gave -1", 1);
+#if defined(__x86_64__)
+    expect("api: a patch waits for its module", rc, out, 0, "patch changed 0", 1);
+    expect("api: and lands when it loads", rc, out, 0, "sample#1: patched npfixture.dylib", 1);
+#else
+    expect("api: arm64 code is left alone", rc, out, 0, "arm64 code can't be changed", 1);
+#endif
     expect("api: an XML Info.plist gives the version", rc, out, 0, "version 1.2.3", 1);
     absent("api: a watch for another path never fires", out, "fired for");
 
     char *late[] = { self, "--load", (char *)host, (char *)plugin, xml, "1", "1", NULL };
     rc = run(late, log, out, sizeof(out));
     expect("api: an image loaded before the plugin still reaches it", rc, out, 0, "_np_fixture_value is", 1);
+#if defined(__x86_64__)
+    expect("api: a patch for a loaded module lands at once", rc, out, 0, "patch changed 1", 1);
+#endif
 
     char *binary[] = { self, "--load", (char *)host, (char *)plugin, bin, "0", "1", NULL };
     rc = run(binary, log, out, sizeof(out));

@@ -20,6 +20,9 @@ struct np_plugin_api {
     int (*count_pointers)(const struct mach_header_64 *mh, intptr_t slide, uintptr_t value, uintptr_t **first);
     int (*swap_pointer)(uintptr_t *slot, uintptr_t expect, uintptr_t value);
     int (*bundle_short_version)(const char *image_path, char *out, size_t len);
+    int (*patch)(const char *tag, const char *patches);
+    int (*redirect)(const struct mach_header_64 *mh, intptr_t slide, const char *symbol, uintptr_t replacement,
+                    uintptr_t *original);
 };
 
 static inline const struct np_plugin_api *np_plugin_api(void) {
