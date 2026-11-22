@@ -408,6 +408,27 @@ NP_CONF_NAMES
     eq = index(s, "=")
     return eq > 1 && substr(s, 1, eq - 1) ~ /^[A-Z_][A-Z0-9_]*$/
   }
+  function patchok(s,   c, mod, n, alts, i, m, toks, j, t, fixed, writes) {
+    c = index(s, ":")
+    if (!c) return 0
+    mod = trim(substr(s, 1, c - 1))
+    if (mod !~ /^[A-Za-z0-9_.+-]+$/ || length(mod) > 63) return 0
+    n = split(substr(s, c + 1), alts, "|")
+    if (n < 1 || n > 4) return 0
+    for (i = 1; i <= n; i++) {
+      m = split(alts[i], toks, " ")
+      if (m > 128) return 0
+      fixed = 0; writes = 0
+      for (j = 1; j <= m; j++) {
+        t = toks[j]
+        if (t ~ /^[0-9A-Fa-f][0-9A-Fa-f]=[0-9A-Fa-f][0-9A-Fa-f]$/) { fixed++; writes++ }
+        else if (t ~ /^[0-9A-Fa-f][0-9A-Fa-f]$/) fixed++
+        else if (t != "??") return 0
+      }
+      if (!writes || fixed < 4) return 0
+    }
+    return 1
+  }
   function relok(s, top) {
     if (substr(s, 1, 1) == "/" || index(s, "..")) return 0
     return top || s ~ /[^.\/]/
@@ -430,6 +451,7 @@ NP_CONF_NAMES
       if (names[i] == "tools" && !toolok(vals[i])) { detail = "tools"; return "bad-value" }
       if (names[i] == "apps" && !appok(vals[i])) { detail = "apps"; return "bad-value" }
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
+      if (names[i] == "patch" && !patchok(vals[i])) { detail = "patch"; return "bad-value" }
     }
     if (("hide_crossover" in cnt) && !("tools" in cnt)) { detail = "tools"; return "missing-required" }
     if (("depends" in cnt) && !idok(first["depends"])) { detail = "depends"; return "bad-value" }
@@ -486,8 +508,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove", f, " ")
@@ -3222,6 +3244,7 @@ np_feat_list=$(np_conf_ids "$np_conf_feat_table")
 
 np_feat_dylibs=""
 np_feat_envs=""
+np_feat_patches=""
 while IFS= read -r np_feat_key; do
   [ -n "$np_feat_key" ] || continue
   if ! np_feat_installed "$np_feat_key"; then
@@ -3318,9 +3341,34 @@ $np_feat_envs"
   done <<NP_FEAT_ENV
 $(np_conf_values "$np_conf_feat_table" "$np_feat_key" env)
 NP_FEAT_ENV
+
+  np_feat_pl=$(np_conf_values "$np_conf_feat_table" "$np_feat_key" patch)
+  if [ -n "$np_feat_pl" ]; then
+    while IFS= read -r np_feat_p; do
+      [ -n "$np_feat_p" ] && np_feat_patches="${np_feat_patches:+$np_feat_patches;}$np_feat_key:$np_feat_p"
+    done <<NP_FEAT_PATCH
+$np_feat_pl
+NP_FEAT_PATCH
+    np_feat_log "$np_feat_key asks for $(printf '%s\n' "$np_feat_pl" | grep -c .) patch(es)"
+  fi
 done <<NP_FEAT_LIST
 $np_feat_list
 NP_FEAT_LIST
+
+np_plugin_host="$np_support/plugin-host.dylib"
+if [ "${wine_unix##*/}" != x86_64-unix ]; then
+  [ -z "$np_feat_dylibs$np_feat_patches" ] ||
+    np_feat_log "plugin dylibs and patches are not loaded, FEX's wine drops DYLD_INSERT_LIBRARIES"
+  np_feat_dylibs=""
+elif [ -n "$np_feat_dylibs$np_feat_patches" ]; then
+  if [ -f "$np_plugin_host" ]; then
+    np_feat_dylibs="$np_plugin_host${np_feat_dylibs:+:$np_feat_dylibs}"
+    [ -z "$np_feat_patches" ] || np_feat_envs="NOTPROTON_PLUGIN_PATCHES=$np_feat_patches
+$np_feat_envs"
+  elif [ -n "$np_feat_patches" ]; then
+    np_feat_log "plugin patches are skipped as $np_plugin_host is missing"
+  fi
+fi
 
 game_cwd="$(pwd)"
 if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
@@ -3401,7 +3449,6 @@ if [ -n "$game_runner" ]; then
     [ -z "$np_feat_dylibs" ] || inserts="${inserts:+$inserts:}$np_feat_dylibs"
   else
     inserts=""
-    [ -z "$np_feat_dylibs" ] || np_feat_log "plugin dylibs are not loaded, FEX's wine drops DYLD_INSERT_LIBRARIES: $np_feat_dylibs"
   fi
   np_started=$(date +%s)
   np_terminated=0

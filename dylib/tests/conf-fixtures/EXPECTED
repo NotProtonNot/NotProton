@@ -73,6 +73,19 @@ NOTPROTON_FH6	apps	4294967295
 !	NOTPROTON_APP_BIG	bad-value:apps
 !	NOTPROTON_APP_WORD	bad-value:apps
 
+== plugins/39-patch.conf
+NOTPROTON_PATCH	label	Patches
+NOTPROTON_PATCH	patch	winegstreamer.dll: 31 d2 e8 ?? ?? ?? ?? 85 c0 75=eb | 31 D2 E8 ?? 85 C0 75=EB
+NOTPROTON_PATCH	patch	D3DMetal:31=b0 c0=01 c3 90
+!	NOTPROTON_PATCH_NO_MODULE	bad-value:patch
+!	NOTPROTON_PATCH_SPACED_MODULE	bad-value:patch
+!	NOTPROTON_PATCH_NO_WRITE	bad-value:patch
+!	NOTPROTON_PATCH_FEW_FIXED	bad-value:patch
+!	NOTPROTON_PATCH_BAD_BYTE	bad-value:patch
+!	NOTPROTON_PATCH_EMPTY_FORM	bad-value:patch
+!	NOTPROTON_PATCH_FIVE_FORMS	bad-value:patch
+!	NOTPROTON_PATCH_NO_FORM	bad-value:patch
+
 # A "*" anywhere but the end would mean one thing to the panel's startsWith and another
 # to the run script's case pattern, so it is refused rather than left to disagree.
 == plugins/40-no-header.conf

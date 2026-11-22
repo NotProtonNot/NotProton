@@ -22,6 +22,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "min", 1, 0 },
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
+    { "patch", 16, 0 },
     { NULL, 0, 0 }
 };
 
@@ -171,6 +172,49 @@ static int conf_env_ok(const char *v) {
     return 1;
 }
 
+static int conf_hex(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// Same rules as parse_patch in plugin_host.c and patchok in compat_run.sh
+static int conf_patch_ok(const char *v) {
+    const char *colon = strchr(v, ':'), *p = v;
+    size_t mod = 0;
+    if (!colon) return 0;
+    while (p < colon && *p == ' ') p++;
+    for (; p < colon && *p != ' '; p++, mod++)
+        if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') ||
+              *p == '_' || *p == '.' || *p == '+' || *p == '-')) return 0;
+    while (p < colon && *p == ' ') p++;
+    if (!mod || mod > 63 || p != colon) return 0;
+    int forms = 0;
+    for (p = colon + 1;;) {
+        int bytes = 0, fixed = 0, writes = 0;
+        for (;;) {
+            while (*p == ' ') p++;
+            if (!*p || *p == '|') break;
+            if (p[0] == '?' && p[1] == '?') {
+                p += 2;
+            } else if (conf_hex(p[0]) && conf_hex(p[1])) {
+                fixed++;
+                p += 2;
+                if (*p == '=') {
+                    if (!conf_hex(p[1]) || !conf_hex(p[2])) return 0;
+                    writes++;
+                    p += 3;
+                }
+            } else {
+                return 0;
+            }
+            if (*p && *p != ' ' && *p != '|') return 0;
+            bytes++;
+        }
+        if (++forms > 4 || bytes > 128 || !writes || fixed < 4) return 0;
+        if (!*p) return 1;
+        p++;
+    }
+}
+
 // dst may be the CrossOver folder itself, a remove has to name something under it.
 static int conf_rel_ok(const char *v, int may_be_top) {
     int named = 0;
@@ -240,6 +284,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "hide_crossover") == 0 && strcmp(v, "1") != 0) {
             *detail = "hide_crossover";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "patch") == 0 && !conf_patch_ok(v)) {
+            *detail = "patch";
             return NP_CONF_BAD_VALUE;
         }
     }

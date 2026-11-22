@@ -552,7 +552,7 @@ static int feat_rows(const char *home, char **ready_out, char **rows_out) {
         if (*resolved && inj && strcmp(inj, "1") == 0) {
             if (!out_put(&rows, ",rq:", 4) || !out_jsstr(&rows, resolved)) goto done;
         }
-        if ((np_conf_get(rec, "stage") || np_conf_get(rec, "overrides"))
+        if ((np_conf_get(rec, "stage") || np_conf_get(rec, "overrides") || np_conf_get(rec, "patch"))
             && !out_put(&rows, ",rn:1", 5)) goto done;
         if (np_conf_get(rec, "hide_crossover") && !out_put(&rows, ",hc:1", 5)) goto done;
         if (type) {

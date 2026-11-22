@@ -9,9 +9,10 @@ conf=$(awk '/^np_conf_normalise\(\) \(/ { f = 1 }
             f { print }
             /^np_conf_log\(\) \{/ { g = 1 }
             g && /^}$/ { exit }' "$SRC")
-block=$(sed -n '/^np_env_reserved() {/,/^}$/p; /^np_feat_dir=/,/^NP_FEAT_LIST$/p' "$SRC")
+block=$(sed -n '/^np_env_reserved() {/,/^}$/p; /^np_feat_dir=/,/^NP_FEAT_LIST$/p
+                /^np_plugin_host=/,/^fi$/p' "$SRC")
 case "$conf$block" in
-  *np_conf_normalise*np_env_reserved*np_feat_stage*np_feat_over*) ;;
+  *np_conf_normalise*np_env_reserved*np_feat_stage*np_feat_over*np_plugin_host*) ;;
   *) echo "FAIL: the plugin loop was not found in $SRC"; exit 1 ;;
 esac
 
@@ -40,7 +41,8 @@ restore() {
 run() {
   # shellcheck disable=SC2016 # expanded by the inner shell
   env -i PATH="$PATH" HOME="$work" np_support="$work/Library/Application Support/notproton" \
-    log="$work/log" WINEPREFIX="$work/pfx" WINEDLLOVERRIDES="steamclient=n;lsteamclient=b" "$@" \
+    log="$work/log" WINEPREFIX="$work/pfx" WINEDLLOVERRIDES="steamclient=n;lsteamclient=b" \
+    wine_unix="$work/x86_64-unix" "$@" \
     sh -c 'set -e; . "$1/block.sh"; printf "%s\n%s\n%s" "$WINEDLLOVERRIDES" "$np_feat_dylibs" "$np_feat_envs"' \
     sh "$work"
 }
@@ -328,6 +330,51 @@ ok "plugin dylibs load after the overlay" "$dyld" \
 dyld=$(env -i HOME="$work" NOTPROTON_FEATURE_DYLIBS=/f.dylib \
   sh -c 'eval "$1"; printf "%s|%s" "$DYLD_INSERT_LIBRARIES" "${NOTPROTON_OVERLAY_SHIM:+shim}"' sh "$inject")
 ok "plugin dylibs load without the overlay shim" "$dyld" "/f.dylib|"
+
+host="$work/Library/Application Support/notproton/plugin-host.dylib"
+reset
+conf 10-patch.conf <<EOF
+[NOTPROTON_PATCHA]
+label = Patch A
+patch = winegstreamer.dll: 31 d2 e8 ?? 75=eb | 31 d2 e9 ?? 75=eb
+patch = D3DMetal: 31=b0 c0=01 c3 90
+[NOTPROTON_PATCHB]
+label = Patch B
+patch = winemac.drv: 48 8b 0b 41=42 b8
+EOF
+rm -f "$host"
+: > "$work/log"
+out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=1)
+ok "patches without the plugin host load nothing" "$(line "$out" 2)|$(line "$out" 3)" "|"
+ok "and the launch log says why" "$(grep -c "plugin-host.dylib is missing" "$work/log")" "1"
+: > "$host"
+out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=1)
+ok "patches load the plugin host" "$(line "$out" 2)" "$host"
+ok "and hand it every active plugin's patches" "$(line "$out" 3)" \
+   "NOTPROTON_PLUGIN_PATCHES=NOTPROTON_PATCHA:winegstreamer.dll: 31 d2 e8 ?? 75=eb | 31 d2 e9 ?? 75=eb;NOTPROTON_PATCHA:D3DMetal: 31=b0 c0=01 c3 90;NOTPROTON_PATCHB:winemac.drv: 48 8b 0b 41=42 b8"
+out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=0)
+ok "a plugin switched off hands over none" "$(line "$out" 3)" \
+   "NOTPROTON_PLUGIN_PATCHES=NOTPROTON_PATCHA:winegstreamer.dll: 31 d2 e8 ?? 75=eb | 31 d2 e9 ?? 75=eb;NOTPROTON_PATCHA:D3DMetal: 31=b0 c0=01 c3 90"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0)
+ok "no active patches load no host" "$(line "$out" 2)|$(line "$out" 3)" "|"
+
+conf 20-inject.conf <<EOF
+[NOTPROTON_INJECTED]
+label = Injected
+on = 1
+inject = 1
+requires = lib/feat.dylib
+EOF
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1)
+ok "an inject plugin brings the plugin host" "$(line "$out" 2)" "$host:$work/lib/feat.dylib"
+rm -f "$host"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1)
+ok "and loads without it" "$(line "$out" 2)" "$work/lib/feat.dylib"
+: > "$host"
+: > "$work/log"
+out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=1 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix")
+ok "FEX's wine loads no plugin dylibs" "$(line "$out" 2)" ""
+ok "and the launch log says why" "$(grep -c "FEX's wine drops" "$work/log")" "1"
 
 [ "$fail" -eq 0 ] || exit 1
 echo "==> featstagecheck: plugins stage into the prefix and extend the overrides"
