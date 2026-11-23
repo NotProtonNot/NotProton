@@ -76,7 +76,7 @@ DEPS := $(OBJS:.o=.d)
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures ceg-check panel-behavior app-tests \
         featcheck featstagecheck runnervariantcheck conf-fixtures confcheck \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
-        plugin-host plugin-host-install plugin-host-tests patchcheck \
+        plugin-host plugin-host-install plugin-host-tests patchcheck npload \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
         compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
@@ -586,8 +586,8 @@ PLUGIN_HOST_HDR   := plugin-host/notproton_plugin.h
 PLUGIN_HOST_ARM   := $(OUT_DIR)/plugin-host.arm64.dylib
 PLUGIN_HOST_X86   := $(OUT_DIR)/plugin-host.x86_64.dylib
 PLUGIN_HOST       := $(OUT_DIR)/plugin-host.dylib
-PLUGIN_HOST_FLAGS := -mmacosx-version-min=$(MIN_VER) $(AVAIL) -std=c17 -dynamiclib -O2 -Wall -Wextra \
-                     -install_name @rpath/plugin-host.dylib
+UNIX_LIB_FLAGS    := -mmacosx-version-min=$(MIN_VER) $(AVAIL) -std=c17 -dynamiclib -O2 -Wall -Wextra
+PLUGIN_HOST_FLAGS := $(UNIX_LIB_FLAGS) -install_name @rpath/plugin-host.dylib
 PLUGIN_HOST_TESTS := $(OUT_DIR)/plugin-host-tests
 
 plugin-host: $(PLUGIN_HOST)
@@ -599,6 +599,17 @@ $(PLUGIN_HOST): $(PLUGIN_HOST_SRC) $(PLUGIN_HOST_HDR)
 	lipo -create $(PLUGIN_HOST_ARM) $(PLUGIN_HOST_X86) -output $@
 	codesign -fs - $@
 	@lipo -info $@
+
+NPLOAD := $(OUT_DIR)/npload.so
+
+npload: $(NPLOAD)
+
+$(NPLOAD): plugin-host/npload.c
+	@mkdir -p $(OUT_DIR)
+	$(CC) -arch arm64 $(UNIX_LIB_FLAGS) -install_name @rpath/npload.so -o $(OUT_DIR)/npload.arm64.so $<
+	$(CC) -arch x86_64 $(UNIX_LIB_FLAGS) -install_name @rpath/npload.so -o $(OUT_DIR)/npload.x86_64.so $<
+	lipo -create $(OUT_DIR)/npload.arm64.so $(OUT_DIR)/npload.x86_64.so -output $@
+	codesign -fs - $@
 
 plugin-host-install: $(PLUGIN_HOST)
 	$(call install_atomically,$(PLUGIN_HOST),$(SUPPORT_DIR)/plugin-host.dylib)
@@ -737,7 +748,8 @@ BRIDGE_FILES := \
 	$(WINE_BUILD)/dlls/lsteamclient/x86_64-windows/lsteamclient.dll:x86_64-windows-lsteamclient.dll \
 	$(WINE_BUILD)/dlls/lsteamclient/lsteamclient.so:x86_64-unix-lsteamclient.so \
 	$(WINE_BUILD_ARM64)/dlls/lsteamclient/lsteamclient.so:aarch64-unix-lsteamclient.so \
-	$(WINE_BUILD)/dlls/lsteamclient/i386-windows/lsteamclient.dll:i386-windows-lsteamclient.dll
+	$(WINE_BUILD)/dlls/lsteamclient/i386-windows/lsteamclient.dll:i386-windows-lsteamclient.dll \
+	$(NPLOAD):npload.so
 
 bridge:
 	bridge/setup-wine-tree.sh
@@ -751,7 +763,7 @@ bridge:
 fonts:
 	fonts/build.sh
 
-app-payload: $(TARGET) $(OVERLAY_SHIM) $(PLUGIN_HOST) $(ICONMAKER) $(APPINFO)
+app-payload: $(TARGET) $(OVERLAY_SHIM) $(PLUGIN_HOST) $(NPLOAD) $(ICONMAKER) $(APPINFO)
 	@mkdir -p "$(APP_PAYLOAD)/signatures/macos.arm64"
 	@mkdir -p "$(APP_PAYLOAD)/bridge"
 	cp -f $(TARGET) "$(APP_PAYLOAD)/notproton.dylib"

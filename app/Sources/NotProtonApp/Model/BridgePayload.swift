@@ -31,6 +31,9 @@ enum BridgePayload {
         Entry(resource: "i386-windows-lsteamclient.dll", bridgePaths: [
             "i386-windows/lsteamclient.dll",
         ]),
+        Entry(resource: "npload.so", bridgePaths: [
+            "npload.so",
+        ]),
     ]
 
     struct Located: Sendable {

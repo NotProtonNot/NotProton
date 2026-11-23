@@ -5,6 +5,7 @@ built    i386-windows/lsteamclient.dll
 built    x86_64-windows/lsteamclient.dll
 built    x86_64-unix/lsteamclient.so
 built    aarch64-unix/lsteamclient.so
+built    npload.so
 patched  wine/i386-windows/ntdll.dll
 patched  wine/x86_64-windows/ntdll.dll
 patched  wine/aarch64-windows/ntdll.dll

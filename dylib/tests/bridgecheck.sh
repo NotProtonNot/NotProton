@@ -22,7 +22,7 @@ fi"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-files="steamclient64.dll steamclient.dll tier0_s64.dll vstdlib_s64.dll lsteamclient.dll steam.exe"
+files="steamclient64.dll steamclient.dll tier0_s64.dll vstdlib_s64.dll lsteamclient.dll steam.exe npload.so"
 mkdir -p "$work/bridge"
 for f in $files; do printf 'bridge %s\n' "$f" > "$work/bridge/$f"; done
 for arch in aarch64-unix x86_64-unix; do
@@ -59,7 +59,7 @@ staged() {
 echo "== a fresh prefix gets the whole bridge"
 stage
 is "the launch goes on past staging" reached "$(cat "$work/out")"
-is "every file is copied" 6 "$(staged)"
+is "every file is copied" 7 "$(staged)"
 is "the ARM64 unix library is staged beside the DLL" "aarch64-unix bridge" "$(cat "$steam/lsteamclient.so" 2>/dev/null)"
 unlogged "nothing claims to be staged already" "=== bridge already staged ==="
 is "the prefix has system32/config, which Steam's CEG survey looks up" yes \
@@ -92,7 +92,7 @@ touch -r "$work/stamp" "$work/bridge/steam.exe"
 is "the metadata still matches" "$(stat -f '%z %m' "$steam/steam.exe")" "$(stat -f '%z %m' "$work/bridge/steam.exe")"
 stage
 unlogged "matching metadata does not hide changed contents" "=== bridge already staged ==="
-is "the prefix receives the changed bytes" 6 "$(staged)"
+is "the prefix receives the changed bytes" 7 "$(staged)"
 
 echo "== a DLL the bridge no longer ships is pruned"
 printf 'old\n' > "$steam/old.dll"
@@ -106,7 +106,7 @@ printf 'bridge steamclient64.dll, newer build\n' > "$work/bridge/steamclient64.d
 stage
 is "the launch goes on" reached "$(cat "$work/out")"
 unlogged "the old copy is not taken as current" "=== bridge already staged ==="
-is "every file matches the bridge" 6 "$(staged)"
+is "every file matches the bridge" 7 "$(staged)"
 
 echo "== a bridge missing a file still stages the rest"
 rm -rf "$prefix"
@@ -114,7 +114,7 @@ rm "$work/bridge/steam.exe"
 stage
 is "the launch goes on" reached "$(cat "$work/out")"
 logged "the missing file is logged" "=== bridge missing steam.exe ==="
-is "the other files are copied" 5 "$(staged)"
+is "the other files are copied" 6 "$(staged)"
 printf 'bridge steam.exe\n' > "$work/bridge/steam.exe"
 
 echo "== a prefix on the same drive clones from the bridge itself"
@@ -122,7 +122,7 @@ rm -rf "$prefix"
 compat="$work/library/compatdata/1"
 cache="$work/library/compatdata/notproton-template/bridge"
 stage
-is "every file is copied" 6 "$(staged)"
+is "every file is copied" 7 "$(staged)"
 is "no copy of the bridge is made" no "$([ -e "$cache" ] && echo yes || echo no)"
 
 echo "== a prefix on another drive clones from that drive's copy"
@@ -130,7 +130,7 @@ rm -rf "$prefix"
 cross=1
 stage
 is "the launch goes on" reached "$(cat "$work/out")"
-is "every file is copied" 6 "$(staged)"
+is "every file is copied" 7 "$(staged)"
 is "the drive keeps a copy of steam.exe" "bridge steam.exe" "$(cat "$cache/steam.exe" 2>/dev/null)"
 is "the drive keeps the unix library under its architecture" "updated x86_64 bridge" \
 	"$(cat "$cache/x86_64-unix/lsteamclient.so" 2>/dev/null)"
@@ -147,7 +147,7 @@ rm -rf "$prefix" "$cache"
 mkdir -p "$work/elsewhere"
 ln -s "$work/elsewhere" "$cache"
 stage
-is "every file is copied" 6 "$(staged)"
+is "every file is copied" 7 "$(staged)"
 is "nothing is written through the link" "" "$(ls "$work/elsewhere")"
 rm "$cache"
 
@@ -158,7 +158,7 @@ chmod 500 "${cache%/*}"
 stage
 chmod 700 "${cache%/*}"
 is "the launch goes on" reached "$(cat "$work/out")"
-is "every file is copied" 6 "$(staged)"
+is "every file is copied" 7 "$(staged)"
 
 echo "== a file that cannot be staged stops the launch"
 cross=""
@@ -172,7 +172,7 @@ is "the reason is logged" yes "$(grep -q 'Permission denied' "$work/log" && echo
 logged "the player is told" "alert: Steam files could not be copied"
 stage
 is "the next launch stages it" reached "$(cat "$work/out")"
-is "every file is copied" 6 "$(staged)"
+is "every file is copied" 7 "$(staged)"
 
 echo "== a syswow64 trigger that cannot be installed stops the launch"
 trigger=$(sed -n '/^install_lsteamclient_trigger() {/,/^}/p;/^bridge_origin() {/,/^}/p;/^place_bridge_file() {/,/^}/p' "$SRC")

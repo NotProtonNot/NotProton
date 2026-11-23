@@ -2904,7 +2904,7 @@ link_legacy_steam_dll() {
 }
 
 bridge_files="steamclient64.dll steamclient.dll tier0_s64.dll vstdlib_s64.dll"
-bridge_files="$bridge_files lsteamclient.dll lsteamclient.so steam.exe"
+bridge_files="$bridge_files lsteamclient.dll lsteamclient.so steam.exe npload.so"
 # A clone cannot cross drives, so a prefix on another drive clones from a copy of the
 # bridge kept beside that drive's templates.
 bridge_origin() {
