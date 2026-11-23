@@ -647,6 +647,7 @@ typedef struct {
     // NUL-separated, so any record conf.c admits fits.
     char builds[NP_CONF_REC_BUF];
     char removes[NP_CONF_REC_BUF];
+    char apps[NP_CONF_REC_BUF];
 } np_var_t;
 
 typedef struct {
@@ -943,7 +944,7 @@ static const char *var_take(const np_conf_rec_t *rec, void *ctx, const char **de
     var_ctx_t *vc = ctx;
     np_var_t *v = &vc->list[vc->count];
     const char *n, *val;
-    size_t nb = 0, nr = 0;
+    size_t nb = 0, nr = 0, na = 0;
     int it = 0;
 
     (void)detail;
@@ -961,6 +962,9 @@ static const char *var_take(const np_conf_rec_t *rec, void *ctx, const char **de
         } else if (strcmp(n, "remove") == 0) {
             memcpy(v->removes + nr, val, strlen(val) + 1);
             nr += strlen(val) + 1;
+        } else if (strcmp(n, "apps") == 0) {
+            memcpy(v->apps + na, val, strlen(val) + 1);
+            na += strlen(val) + 1;
         }
     }
     if (!*v->label) snprintf(v->label, sizeof(v->label), "%s", v->name);
@@ -1035,7 +1039,14 @@ static char *var_rows(const char *home, const var_tools_t *vt, int quiet) {
         if (!out_put(&rows, ",v:", 3) || !out_jsstr(&rows, list[i].variant)) goto done;
         // Tool names passed is_tool_name, so they need no escaping.
         if (!out_put(&rows, ",t:[", 4) || !out_put(&rows, tools, strlen(tools))) goto done;
-        if (!out_put(&rows, "]}", 2)) goto done;
+        if (!out_put(&rows, "]", 1)) goto done;
+        if (*list[i].apps) {
+            if (!out_put(&rows, ",ap:[", 5)) goto done;
+            for (const char *a = list[i].apps; *a; a += strlen(a) + 1)
+                if ((a != list[i].apps && !out_put(&rows, ",", 1)) || !out_jsstr(&rows, a)) goto done;
+            if (!out_put(&rows, "]", 1)) goto done;
+        }
+        if (!out_put(&rows, "}", 1)) goto done;
         wrote++;
         if (!fits && !quiet)
             NP_LOG("variants: %s fits no installed runner, so it is offered nowhere",
@@ -1378,8 +1389,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     /* How deep the chain of parents runs, so a sub-option of a sub-option indents twice. */ \
     "dl=(k,n)=>{const p=MSCXFeat.find(x=>x.k===k);" \
     "return n<32&&p&&p.dep?dl(p.dep,n+1):n}," \
-    "vav=dev&&npCx?MSCXVar.filter(v=>v.t.indexOf(tool)>=0):[]," \
     "vcur=G(\"NOTPROTON_RUNNER_VARIANT\").split(\"+\").filter(x=>x)," \
+    "vav=dev&&npCx?MSCXVar.filter(v=>v.t.indexOf(tool)>=0&&(!v.ap||!app||" NP_CX_SHOW_ALL \
+    "||v.ap.includes(String(app))||vcur.indexOf(v.k)>=0)):[]," \
     "npClash=f=>(f.va||[]).map(x=>{const g=(MSCXVar.find(v=>v.k===x)||{}).v," \
     "y=MSCXVar.find(v=>v.k!==x&&v.v===g&&vcur.indexOf(v.k)>=0);" \
     "return y&&\"Not used while \"+g+\" Variant is set to \"+y.l}).find(Boolean)," \

@@ -182,6 +182,13 @@ trimmed	dst	.
 trimmed	remove	lib/wine/x86_64-windows/winegstreamer.dll
 trimmed	remove	./lib/wine/x86_64-unix/winegstreamer.so
 
+== variants/16-apps.conf
+game-only	src	code/game-only
+game-only	dst	lib/wine
+game-only	apps	287700
+game-only	apps	631510
+!	game-zero	bad-value:apps
+
 == variants/20-faults.conf
 !	no-src	missing-required:src
 !	escapes	bad-value:dst
@@ -246,8 +253,7 @@ cap-24	src	code/cap
 cap-24	dst	lib/wine
 cap-25	src	code/cap
 cap-25	dst	lib/wine
-cap-26	src	code/cap
-cap-26	dst	lib/wine
+!	cap-26	limit
 !	cap-27	limit
 !	cap-28	limit
 !	cap-29	limit

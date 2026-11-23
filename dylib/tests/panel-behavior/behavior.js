@@ -609,6 +609,21 @@ for (const form of Object.keys(FORMS)) {
        'the empty choice is named for what it means: whatever the runner ships');
   t.ok(vdrop('', 'Loader').props.rgOptions.map(o => o.data).join(',') === ',three',
        'the other variant offers only its own');
+  {
+    const AVARS = JSON.stringify([
+      { k: 'here', l: 'Here', v: 'Pack', t: ['notproton'], ap: ['287700'] },
+      { k: 'there', l: 'There', v: 'Pack', t: ['notproton'], ap: ['631510'] },
+      { k: 'any', l: 'Any', v: 'Pack', t: ['notproton'] },
+    ]).replace(/"(\w+)":/g, '$1:');
+    const { render: PA } = panel(emit, form, undefined, { vars: AVARS });
+    const apick = opts => walk(PA({ details: details(opts) })).find(
+      x => x.type === 'Dropdown' && x.props.label === 'Pack Variant');
+    t.ok(apick('').props.rgOptions.map(o => o.data).join(',') === ',here,any',
+         'a variant limited to other games is not offered for this one');
+    t.ok(apick('NOTPROTON_RUNNER_VARIANT=there %command%').props.rgOptions.map(o => o.data).join(',')
+         === ',here,there,any',
+         'unless this game already uses it');
+  }
   t.ok(vdrop('', 'Backend').props.selectedOption === '',
        'nothing selected shows as the default');
   t.ok(vdrop('NOTPROTON_RUNNER_VARIANT=two %command%', 'Backend')

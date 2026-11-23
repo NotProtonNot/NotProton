@@ -444,6 +444,7 @@ NP_CONF_NAMES
       for (i = 1; i <= nkv; i++) {
         if (names[i] == "remove" && !relok(vals[i], 0)) { detail = "remove"; return "bad-value" }
         if (names[i] == "build" && vals[i] !~ /^[A-Za-z0-9.-]+$/) { detail = "build"; return "bad-value" }
+        if (names[i] == "apps" && !appok(vals[i])) { detail = "apps"; return "bad-value" }
       }
       return ""
     }
@@ -516,8 +517,8 @@ NP_CONF_NAMES
       split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1", m, " ")
       split("label", req, " "); nreq = 1
     } else {
-      split("label variant src dst build remove", f, " ")
-      split("1 1 1 1 8 32", m, " ")
+      split("label variant src dst build remove apps", f, " ")
+      split("1 1 1 1 8 32 16", m, " ")
       split("src dst", req, " "); nreq = 2
     }
     for (i in f) most[f[i]] = m[i] + 0

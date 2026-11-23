@@ -611,6 +611,13 @@ int main(void) {
                "src = trees/empty\ndst = lib/dxmt\n");
     ok(strcmp(vars_json(), "[]") == 0, "is not offered at all");
 
+    puts("== a variant for some games");
+    clear_vars();
+    write_var("games.conf",
+               "[games]\nvariant = Backend\nsrc = trees/one\ndst = lib/dxmt\n"
+               "apps = 287700\napps = 631510\n");
+    ok(strstr(vars_json(), ",ap:[\"287700\",\"631510\"]}") != NULL, "names its games");
+
     puts("== a label cannot break the page it renders into");
     clear_vars();
     write_var("quoted.conf",

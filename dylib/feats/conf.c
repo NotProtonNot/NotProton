@@ -30,7 +30,7 @@ static const np_conf_spec_t kPlugin[] = {
 // its group says its name once.
 static const np_conf_spec_t kVariant[] = {
     { "label", 1, 0 }, { "variant", 1, 0 }, { "src", 1, 1 }, { "dst", 1, 1 },
-    { "build", 8, 0 }, { "remove", 32, 0 }, { NULL, 0, 0 }
+    { "build", 8, 0 }, { "remove", 32, 0 }, { "apps", 16, 0 }, { NULL, 0, 0 }
 };
 
 static int conf_space(char c) { return c == ' ' || (c >= '\t' && c <= '\r'); }
@@ -274,6 +274,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
             }
             if (strcmp(n, "build") == 0 && !conf_build_ok(v)) {
                 *detail = "build";
+                return NP_CONF_BAD_VALUE;
+            }
+            if (strcmp(n, "apps") == 0 && !conf_app_ok(v)) {
+                *detail = "apps";
                 return NP_CONF_BAD_VALUE;
             }
         }
