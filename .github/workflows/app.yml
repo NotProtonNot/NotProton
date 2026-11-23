@@ -108,6 +108,46 @@ jobs:
       - name: Check the translations
         run: make -s l10ncheck
 
+      - name: Run the Swift tests
+        run: make -s app-tests
+
+      - name: Package the app bundle
+        run: |
+          mkdir -p out/artifact
+          ditto -c -k --keepParent out/NotProton.app out/artifact/NotProton.zip
+
+      - name: Upload the app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotProton
+          path: out/artifact
+
+  tests:
+    name: hermetic C suites
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the toolchain
+        run: sudo xcode-select -s /Applications/Xcode_27.0.app
+
+      - name: Clone Dobby at the pinned commit
+        run: |
+          git clone --no-checkout https://github.com/jmpews/Dobby.git vendor/dobby
+          git -C vendor/dobby checkout $DOBBY_COMMIT
+
+      - name: Restore Dobby build cache
+        id: dobby-cache
+        uses: actions/cache@v4
+        with:
+          path: build/dobby
+          key: dobby-xcode-27-${{ env.DOBBY_COMMIT }}-${{ runner.arch }}
+
+      - name: Build Dobby
+        if: steps.dobby-cache.outputs.cache-hit != 'true'
+        run: make dobby
+
       - name: Run the hermetic C suites
         run: |
           make -s sigcheck
@@ -143,17 +183,3 @@ jobs:
           make -s seedcheck
           make -s bundlecheck
           make -s ceg-check
-
-      - name: Run the Swift tests
-        run: make -s app-tests
-
-      - name: Package the app bundle
-        run: |
-          mkdir -p out/artifact
-          ditto -c -k --keepParent out/NotProton.app out/artifact/NotProton.zip
-
-      - name: Upload the app bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: NotProton
-          path: out/artifact
