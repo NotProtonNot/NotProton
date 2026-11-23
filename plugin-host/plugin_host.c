@@ -44,9 +44,13 @@ struct patch {
     char module[NAME_LEN];
     char trigger[NAME_LEN];
     int pe;
+    int arch;
     int nforms;
     struct form forms[FORMS_MAX];
 };
+
+enum { ARCH_ANY, ARCH_X86_64, ARCH_ARM64, ARCH_I386 };
+static const char *const g_arch_names[] = { "any", "x86_64", "arm64", "i386" };
 
 struct span {
     uintptr_t start;
@@ -55,6 +59,7 @@ struct span {
 
 struct image {
     uintptr_t base;
+    int arch;
     int nsections;
     struct span code[SECTIONS_MAX];
 };
@@ -162,6 +167,14 @@ static const char *parse_patch(struct patch *p, const char *s, const char *end) 
     const char *m = s, *me = colon;
     while (m < me && *m == ' ') m++;
     while (me > m && me[-1] == ' ') me--;
+    const char *slash = memchr(m, '/', (size_t)(me - m));
+    if (slash) {
+        size_t n = (size_t)(me - slash - 1);
+        for (int a = ARCH_X86_64; a <= ARCH_I386 && !p->arch; a++)
+            if (strlen(g_arch_names[a]) == n && memcmp(slash + 1, g_arch_names[a], n) == 0) p->arch = a;
+        if (!p->arch) return "its architecture is not x86_64, arm64 or i386";
+        me = slash;
+    }
     if (!name_ok(m, (size_t)(me - m), ".+-")) return "the module is not a file name";
     memcpy(p->module, m, (size_t)(me - m));
     p->pe = pe_module(p->module, p->trigger);
@@ -246,6 +259,12 @@ static int copy_in(uintptr_t addr, void *buf, size_t len) {
 static uint16_t rd16(const unsigned char *p) { return (uint16_t)(p[0] | p[1] << 8); }
 static uint32_t rd32(const unsigned char *p) { return (uint32_t)rd16(p) | (uint32_t)rd16(p + 2) << 16; }
 
+static int pe_arch(unsigned machine, int chpe) {
+    if (machine == 0xaa64 || machine == 0xa641 || (machine == 0x8664 && chpe)) return ARCH_ARM64;
+    if (machine == 0x8664) return ARCH_X86_64;
+    return machine == 0x14c ? ARCH_I386 : ARCH_ANY;
+}
+
 static int pe_image(uintptr_t base, const char *name, struct image *img) {
     unsigned char h[0x1000];
     if (!copy_in(base, h, sizeof(h)) || h[0] != 'M' || h[1] != 'Z') return 0;
@@ -271,6 +290,12 @@ static int pe_image(uintptr_t base, const char *name, struct image *img) {
         if (strcasecmp(got, name) != 0) return 0;
     }
 
+    int chpe = 0;
+    uint32_t cfg = rd32(opt + dirs + 80), cfg_size = rd32(opt + dirs + 84);
+    unsigned char lc[0xd0];
+    if (magic == 0x20b && cfg && cfg_size >= sizeof(lc) && cfg < image_size && copy_in(base + cfg, lc, sizeof(lc)))
+        chpe = rd32(lc) >= sizeof(lc) && (rd32(lc + 0xc8) || rd32(lc + 0xcc));
+    img->arch = pe_arch(rd16(h + pe + 4), chpe);
     img->base = base;
     img->nsections = 0;
     for (unsigned i = 0; i < nsec && img->nsections < SECTIONS_MAX; i++) {
@@ -305,6 +330,7 @@ static int macho_image(const struct mach_header *mh, intptr_t slide, struct imag
     if (mh->magic != MH_MAGIC_64) return 0;
     const struct mach_header_64 *h = (const struct mach_header_64 *)mh;
     const struct load_command *c = NULL;
+    img->arch = ARCH_X86_64;
     img->base = (uintptr_t)mh;
     img->nsections = 0;
     EACH_COMMAND(h, c) {
@@ -462,6 +488,7 @@ static int patch_image(const struct image *img, const char *module, const char *
     for (int i = 0; i < g_npatches; i++) {
         const struct patch *p = &g_patches[i];
         if (strcmp(p->plugin, plugin) != 0 || strcasecmp(p->module, module) != 0) continue;
+        if (p->arch && p->arch != img->arch) continue;
         int count = find_patch(img, p, &sites[n], &forms[n]);
         if (count != 1) {
             host_log("%s: %s at %#lx is left alone as its patch %d is found %d times, not once",

@@ -45,6 +45,15 @@ cat > "$confs/40-none.conf" <<CONF
 [NOTPROTON_E]
 label = E
 CONF
+cat > "$confs/42-arch.conf" <<CONF
+[NOTPROTON_H]
+label = H
+patch = npfixture.dll/x86_64: 31 d2 e8 ?? ?? ?? ?? 75=eb 05
+patch = npfixture.dll/arm64: cc cc cc cc cc=90
+[NOTPROTON_I]
+label = I
+patch = npfixture.dll/arm64: 31 d2 e8 ?? ?? ?? ?? 75=eb 05
+CONF
 printf '[NOTPROTON_G]\nlabel = %03000d\n' 0 > "$confs/45-long.conf"
 cat > "$confs/50-dylib.conf" <<CONF
 [NOTPROTON_F]
@@ -92,6 +101,10 @@ says "refusal" "NOTPROTON_D refused, bad-value:patch"
 
 check "$confs/40-none.conf"
 exits "no patch lines" 2
+
+check "$confs/42-arch.conf"
+says "arch-tagged patch" "patched      crossover-aligned: $dll (patch 1 at +0x1107)"
+says "other arch skipped" "skipped      crossover-aligned: $dll (no patch for x86_64)"
 
 check "$confs/45-long.conf"
 exits "refused file" 1

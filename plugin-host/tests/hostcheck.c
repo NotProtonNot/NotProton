@@ -366,6 +366,15 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
         { "fixture: a module that isn't mapped patches nothing",
           ";NP_B:winemac.drv: 31 d2 e8 ?? ?? ?? ?? 75=eb", "01>00*1,75>eb*1", "NP_A: patched", 1, 0 },
         { "fixture: a patch with no bytes is refused", "=NP_A:npfixture.dll:", "", "no bytes", 0, 0 },
+        { "fixture: an x86_64 patch lands on an x86_64 module",
+          "=NP_A:npfixture.dll/x86_64: 31 d2 e8 ?? ?? ?? ?? 75=eb 05", "75>eb*1", "NP_A: patched npfixture.dll", 1, 0 },
+        { "fixture: an arm64 patch skips an x86_64 module",
+          "=NP_A:npfixture.dll/arm64: 31 d2 e8 ?? ?? ?? ?? 75=eb 05", "", NULL, 0, 0 },
+        { "fixture: a patch for another architecture doesn't stop the plugin's others",
+          "=NP_A:npfixture.dll/arm64: cc cc cc cc cc=90;NP_A:npfixture.dll/x86_64: 31 d2 e8 ?? ?? ?? ?? 75=eb 05",
+          "75>eb*1", "NP_A: patched npfixture.dll", 1, 0 },
+        { "fixture: an unknown architecture is refused", "=NP_A:npfixture.dll/arm: 31 d2 e8 ?? 75=eb", "",
+          "architecture", 0, 0 },
     };
     for (size_t k = 0; k < sizeof(cases) / sizeof(*cases); k++) {
         const char *extra = cases[k].spec;

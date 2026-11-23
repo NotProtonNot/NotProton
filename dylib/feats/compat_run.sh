@@ -413,6 +413,7 @@ NP_CONF_NAMES
     c = index(s, ":")
     if (!c) return 0
     mod = trim(substr(s, 1, c - 1))
+    if (mod ~ /\/(x86_64|arm64|i386)$/) sub(/\/[a-z0-9_]+$/, "", mod)
     if (mod !~ /^[A-Za-z0-9_.+-]+$/ || length(mod) > 63) return 0
     n = split(substr(s, c + 1), alts, "|")
     if (n < 1 || n > 4) return 0

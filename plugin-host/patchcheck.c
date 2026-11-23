@@ -129,6 +129,19 @@ static int pe_file(const unsigned char *p, size_t len, struct image *img) {
     size_t sec = pe + 24 + (size_t)optsize;
     if ((magic != 0x20b && magic != 0x10b) || optsize < 60 || sec + (size_t)nsec * 40 > len) return 0;
     uint32_t image_size = rd32(p + pe + 24 + 56);
+    size_t dirs = magic == 0x20b ? 112 : 96;
+    int chpe = 0;
+    if (magic == 0x20b && optsize >= dirs + 88) {
+        uint32_t cfg = rd32(p + pe + 24 + dirs + 80);
+        for (unsigned i = 0; cfg && i < nsec; i++) {
+            const unsigned char *s = p + sec + i * 40;
+            uint32_t va = rd32(s + 12), rsize = rd32(s + 16), raw = rd32(s + 20);
+            if (cfg < va || cfg - va >= rsize) continue;
+            uint64_t at = (uint64_t)raw + (cfg - va);
+            if (at + 0xd0 <= len && rd32(p + at) >= 0xd0) chpe = rd32(p + at + 0xc8) || rd32(p + at + 0xcc);
+        }
+    }
+    img->arch = pe_arch(rd16(p + pe + 4), chpe);
     img->base = (uintptr_t)p;
     img->nsections = 0;
     for (unsigned i = 0; i < nsec; i++) {
@@ -170,6 +183,7 @@ static int macho_file(const unsigned char *p, size_t len, struct image *img, int
     if (mh->cputype == CPU_TYPE_ARM64) *arm64 = 1;
     if (mh->cputype != CPU_TYPE_X86_64 || sizeof(*mh) + mh->sizeofcmds > size) return 0;
     *arm64 = 0;
+    img->arch = ARCH_X86_64;
     img->base = (uintptr_t)mh;
     img->nsections = 0;
     const struct load_command *c = NULL;
@@ -206,6 +220,7 @@ static void check_plugin(const struct image *img, const char *module, int plugin
     for (int i = 0; i < g_npatches; i++) {
         const struct patch *p = &g_patches[i];
         if (strcmp(p->plugin, g_plugins[plugin]) != 0 || strcasecmp(p->module, module) != 0) continue;
+        if (p->arch && p->arch != img->arch) continue;
         uintptr_t site = 0;
         int form = 0, count = find_patch(img, p, &site, &form);
         k++;
@@ -225,7 +240,8 @@ static void check_plugin(const struct image *img, const char *module, int plugin
                               : snprintf(sites + used, sizeof(sites) - used, "%spatch %d at%s", used ? ", " : "", k, at);
         if (w > 0) used += (size_t)w;
     }
-    if (*why) result(plugin, "left alone", where, "%s", why);
+    if (!k) result(plugin, "skipped", where, "no patch for %s", g_arch_names[img->arch]);
+    else if (*why) result(plugin, "left alone", where, "%s", why);
     else result(plugin, "patched", where, "%s", sites);
 }
 

@@ -182,9 +182,16 @@ static int conf_patch_ok(const char *v) {
     size_t mod = 0;
     if (!colon) return 0;
     while (p < colon && *p == ' ') p++;
-    for (; p < colon && *p != ' '; p++, mod++)
+    for (; p < colon && *p != ' ' && *p != '/'; p++, mod++)
         if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') ||
               *p == '_' || *p == '.' || *p == '+' || *p == '-')) return 0;
+    if (*p == '/') {
+        const char *a = ++p;
+        while (p < colon && *p != ' ') p++;
+        size_t n = (size_t)(p - a);
+        if (!((n == 6 && !memcmp(a, "x86_64", 6)) || (n == 5 && !memcmp(a, "arm64", 5)) ||
+              (n == 4 && !memcmp(a, "i386", 4)))) return 0;
+    }
     while (p < colon && *p == ' ') p++;
     if (!mod || mod > 63 || p != colon) return 0;
     int forms = 0;
