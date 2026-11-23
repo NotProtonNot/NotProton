@@ -10,7 +10,7 @@ conf=$(awk '/^np_conf_normalise\(\) \(/ { f = 1 }
             /^np_conf_log\(\) \{/ { g = 1 }
             g && /^}$/ { exit }' "$SRC")
 block=$(sed -n '/^np_feat_dir=/,/^np_feat_list=/p; /^np_env_reserved() {/,/^}$/p
-                /^stage_step="plugins"$/,/^NP_FEAT_LIST$/p; /^np_plugin_host=/,/^fi$/p' "$SRC")
+                /^stage_step="plugins"$/,/^NP_FEAT_LIST$/p; /^np_plugin_host=/,/^game_cwd=/p' "$SRC")
 case "$conf$block" in
   *np_conf_normalise*np_env_reserved*np_feat_stage*np_feat_over*np_plugin_host*) ;;
   *) echo "FAIL: the plugin loop was not found in $SRC"; exit 1 ;;
@@ -374,8 +374,17 @@ ok "patches and inject plugin" "$(line "$out" 2)" "$host:$work/lib/feat.dylib"
 : > "$host"
 : > "$work/log"
 out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=1 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix")
-ok "FEX's wine loads no plugin dylibs" "$(line "$out" 2)" ""
-ok "and the launch log says why" "$(grep -c "FEX's wine drops" "$work/log")" "1"
+ok "FEX, no loader staged" "$(line "$out" 2)|$(printf '%s' "$out" | grep -c NOTPROTON_PLUGIN_LIBS)" "|0"
+ok "logged" "$(grep -c "plugin loader isn't staged" "$work/log")" "1"
+mkdir -p "$work/steam"
+: > "$work/steam/npload.so"
+out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam")
+ok "FEX, nothing inserted" "$(line "$out" 2)" ""
+ok "FEX, the patched ntdll gets the libraries" "$(line "$out" 3)" "NOTPROTON_PLUGIN_LIBS=$host:$work/lib/feat.dylib"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=0 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam")
+ok "FEX, no plugins, no libraries" "$(printf '%s' "$out" | grep -c NOTPROTON_PLUGIN_LIBS)" "0"
 
 reset
 conf 10-variant.conf <<EOF

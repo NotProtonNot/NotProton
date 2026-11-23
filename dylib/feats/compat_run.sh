@@ -3455,11 +3455,7 @@ $np_feat_list
 NP_FEAT_LIST
 
 np_plugin_host="$np_support/plugin-host.dylib"
-if [ "${wine_unix##*/}" != x86_64-unix ]; then
-  [ -z "$np_feat_dylibs$np_feat_patches" ] ||
-    np_feat_log "plugin dylibs and patches are not loaded, FEX's wine drops DYLD_INSERT_LIBRARIES"
-  np_feat_dylibs=""
-elif [ -n "$np_feat_patches" ]; then
+if [ -n "$np_feat_patches" ]; then
   if [ -f "$np_plugin_host" ]; then
     np_feat_dylibs="$np_plugin_host${np_feat_dylibs:+:$np_feat_dylibs}"
     np_feat_envs="NOTPROTON_PLUGIN_PATCHES=$np_feat_patches
@@ -3467,6 +3463,16 @@ $np_feat_envs"
   else
     np_feat_log "plugin patches are skipped as $np_plugin_host is missing"
   fi
+fi
+# FEX's wine drops DYLD_INSERT_LIBRARIES, so the patched ntdll loads the plugin dylibs instead
+if [ "${wine_unix##*/}" != x86_64-unix ] && [ -n "$np_feat_dylibs" ]; then
+  if [ -f "${prefix_steam-}/npload.so" ]; then
+    np_feat_envs="NOTPROTON_PLUGIN_LIBS=$np_feat_dylibs
+$np_feat_envs"
+  else
+    np_feat_log "plugin dylibs and patches are not loaded, the plugin loader isn't staged"
+  fi
+  np_feat_dylibs=""
 fi
 
 game_cwd="$(pwd)"
