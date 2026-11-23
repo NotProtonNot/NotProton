@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 
 extern char **environ;
 
@@ -50,8 +51,14 @@ static int count_of(const char *text, const char *needle) {
 
 static void expect(const char *what, int rc, const char *out, int want_rc, const char *needle, int times) {
     int ok = rc == want_rc && (!needle || (times ? count_of(out, needle) == times : strstr(out, needle) != NULL));
+    static double last;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now = ts.tv_sec + ts.tv_nsec / 1e9;
+    if (!last) last = now;
     if (!ok) failures++;
-    printf("  %s  %s\n", ok ? "PASS" : "FAIL", what);
+    printf("  %s  %s (%.1fs)\n", ok ? "PASS" : "FAIL", what, now - last);
+    last = now;
     if (!ok) {
         printf("      exit %d, wanted %d%s%s\n", rc, want_rc, needle ? ", and the log to say: " : "", needle ? needle : "");
         for (const char *l = out; *l;) {
@@ -61,6 +68,7 @@ static void expect(const char *what, int rc, const char *out, int want_rc, const
             l += n + (e ? 1 : 0);
         }
     }
+    fflush(stdout);
 }
 
 static inline const char *runner_of(const char *path) {
