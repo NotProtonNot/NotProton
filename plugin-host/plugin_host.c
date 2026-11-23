@@ -373,6 +373,22 @@ static int images_by_file(const char *module, struct image *out, int max) {
     return found;
 }
 
+static int top_region_at(uintptr_t addr, uintptr_t *start, size_t *size, vm_prot_t *prot, int *submap) {
+    mach_vm_address_t a = addr;
+    mach_vm_size_t s = 0;
+    natural_t depth = 0;
+    vm_region_submap_short_info_data_64_t info;
+    mach_msg_type_number_t n = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+    if (mach_vm_region_recurse(mach_task_self(), &a, &s, &depth, (vm_region_recurse_info_t)&info, &n)
+        != KERN_SUCCESS)
+        return 0;
+    *start = (uintptr_t)a;
+    *size = (size_t)s;
+    *prot = info.protection;
+    *submap = info.is_submap;
+    return 1;
+}
+
 static int images_by_scan(const char *module, struct image *out, int max) {
     uintptr_t addr = 0;
     int found = 0;
@@ -380,8 +396,9 @@ static int images_by_scan(const char *module, struct image *out, int max) {
         uintptr_t start;
         size_t size;
         vm_prot_t prot;
-        if (!region_at(addr, &start, &size, &prot) || !size) break;
-        if (prot & VM_PROT_READ) {
+        int submap;
+        if (!top_region_at(addr, &start, &size, &prot, &submap) || !size) break;
+        if ((prot & VM_PROT_READ) && !submap) {
             for (uintptr_t a = start; a < start + size && found < max;
                  a = (a + 0x10000) & ~(uintptr_t)0xffff) {
                 unsigned char mz[2];
