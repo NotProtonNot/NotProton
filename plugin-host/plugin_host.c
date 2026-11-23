@@ -791,7 +791,7 @@ static int api_redirect(const struct mach_header_64 *mh, intptr_t slide, const c
 }
 
 typedef int32_t (*map_fn)(void *section, void *process, void **addr, uintptr_t zero_bits, size_t commit,
-                          const void *offset, size_t *size, int inherit, uint32_t alloc_type, uint32_t protect);
+                          const void *offset, size_t *size, int inherit, uint64_t alloc_type, uint64_t protect);
 typedef int32_t (*map_ex_fn)(void *section, void *process, void **addr, const void *offset, size_t *size,
                              uint32_t alloc_type, uint32_t protect, void *params, uint32_t count);
 static uintptr_t g_map, g_map_ex;
@@ -843,7 +843,7 @@ static void after_map(void *process, void **addr, int32_t status) {
 }
 
 static int32_t map_hook(void *section, void *process, void **addr, uintptr_t zero_bits, size_t commit,
-                        const void *offset, size_t *size, int inherit, uint32_t alloc_type, uint32_t protect) {
+                        const void *offset, size_t *size, int inherit, uint64_t alloc_type, uint64_t protect) {
     int32_t status = ((map_fn)g_map)(section, process, addr, zero_bits, commit, offset, size, inherit, alloc_type,
                                      protect);
     after_map(process, addr, status);
@@ -857,8 +857,65 @@ static int32_t map_ex_hook(void *section, void *process, void **addr, const void
     return status;
 }
 
+#if defined(__arm64__)
+static int redirect_wrapper(const struct mach_header_64 *mh, intptr_t slide, uintptr_t fn, uintptr_t replacement,
+                            uintptr_t *original) {
+    const struct load_command *c = NULL;
+    uintptr_t lo = 0, hi = 0, *slot = NULL, wrapper = 0;
+    int found = 0;
+    EACH_COMMAND(mh, c) {
+        const struct segment_command_64 *seg = (const struct segment_command_64 *)c;
+        if (c->cmd == LC_SEGMENT_64 && strcmp(seg->segname, "__TEXT") == 0) {
+            lo = (uintptr_t)(seg->vmaddr + (uint64_t)slide);
+            hi = lo + (uintptr_t)seg->vmsize;
+        }
+    }
+    c = NULL;
+    EACH_COMMAND(mh, c) {
+        const struct segment_command_64 *seg = (const struct segment_command_64 *)c;
+        if (c->cmd != LC_SEGMENT_64 || strncmp(seg->segname, "__DATA", 6) != 0) continue;
+        const struct section_64 *s = (const struct section_64 *)(seg + 1);
+        for (uint32_t k = 0; k < seg->nsects; k++) {
+            uint8_t type = s[k].flags & SECTION_TYPE;
+            if (type == S_ZEROFILL || type == S_GB_ZEROFILL || type == S_THREAD_LOCAL_ZEROFILL) continue;
+            uintptr_t *w = (uintptr_t *)(uintptr_t)(s[k].addr + (uint64_t)slide);
+            for (size_t i = 0; i < (size_t)s[k].size / sizeof(uintptr_t); i++) {
+                uintptr_t v = w[i];
+                if (v < lo || v + 16 > hi || (v & 3)) continue;
+                for (int n = 0; n < 4; n++) {
+                    uint32_t insn = ((const uint32_t *)v)[n];
+                    if ((insn & 0xfc000000u) != 0x14000000u) continue;
+                    int64_t off = (int64_t)((int32_t)(insn << 6) >> 6) * 4;
+                    if (v + 4 * (uintptr_t)n + (uintptr_t)off == fn && ++found == 1) {
+                        slot = &w[i];
+                        wrapper = v;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    if (found != 1) {
+        host_log("redirect: %d wrappers of NtMapViewOfSection, not one, nothing changed", found);
+        return 0;
+    }
+    *original = wrapper;
+    return api_swap_pointer(slot, wrapper, replacement);
+}
+#endif
+
+static int redirect_map(const struct mach_header_64 *mh, intptr_t slide) {
+#if defined(__arm64__)
+    // arm64 Wine's syscall table points at a wrapper, not NtMapViewOfSection
+    uintptr_t fn = api_symbol(mh, slide, "_NtMapViewOfSection");
+    if (fn && !api_count_pointers(mh, slide, fn, NULL))
+        return redirect_wrapper(mh, slide, fn, (uintptr_t)map_hook, &g_map);
+#endif
+    return api_redirect(mh, slide, "_NtMapViewOfSection", (uintptr_t)map_hook, &g_map);
+}
+
 static void watch_maps(const struct mach_header_64 *mh, intptr_t slide, const char *path) {
-    int map = api_redirect(mh, slide, "_NtMapViewOfSection", (uintptr_t)map_hook, &g_map);
+    int map = redirect_map(mh, slide);
     int map_ex = api_redirect(mh, slide, "_NtMapViewOfSectionEx", (uintptr_t)map_ex_hook, &g_map_ex);
     if (!map || !map_ex) host_log("%s: only modules with a unix half get their patches", path);
 }

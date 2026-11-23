@@ -209,6 +209,11 @@ static int child_map(const char *host, const char *ntdll, const char *dll, const
     map(base, 0, 0, (void *)4);
     if (!changed(&pe, base, "", "another process's mapping")) return 1;
     if (map(base, 0, 0x40000003, self) != 0x40000003) { printf("the status was lost\n"); return 1; }
+    const uint32_t *alloc_type = dlsym(nt, "np_alloc_type"), *protect = dlsym(nt, "np_protect");
+    if (!alloc_type || !protect || *alloc_type != 0x2000 || *protect != 0x40) {
+        printf("the arguments arrived as %#x %#x\n", alloc_type ? *alloc_type : 0, protect ? *protect : 0);
+        return 1;
+    }
     if (!changed(&pe, base, "75>eb*1", "the mapped DLL")) return 1;
     if (pe_load(dll, &pe, 1, base) != base) { printf("cannot map %s again\n", dll); return 2; }
     map(base, 1, 0, self);
@@ -219,22 +224,53 @@ static int child_map(const char *host, const char *ntdll, const char *dll, const
     return changed(&pe, copy, "75>eb*1", "the copied-in DLL") ? 0 : 1;
 }
 
-static int child_ntdll(const char *host, const char *path) {
-    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
-    if (!dlopen(path, RTLD_NOW | RTLD_LOCAL)) { printf("dlopen %s: %s\n", path, dlerror()); return 3; }
-    const struct np_plugin_api *api = np_plugin_api();
-    for (uint32_t i = 0; api && i < _dyld_image_count(); i++) {
+struct words {
+    uintptr_t *at;
+    size_t n;
+    uintptr_t *before;
+};
+
+static int data_words(const char *path, struct words *out, int max) {
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         if (strcmp(_dyld_get_image_name(i), path) != 0) continue;
         const struct mach_header_64 *mh = (const struct mach_header_64 *)_dyld_get_image_header(i);
-        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
-        uintptr_t map = api->symbol(mh, slide, "_NtMapViewOfSection"), ex = api->symbol(mh, slide, "_NtMapViewOfSectionEx");
-        int left = map ? api->count_pointers(mh, slide, map, NULL) : -1;
-        int left_ex = ex ? api->count_pointers(mh, slide, ex, NULL) : -1;
-        printf("%d and %d pointers still reach NtMapViewOfSection and NtMapViewOfSectionEx\n", left, left_ex);
-        return left == 0 && left_ex == 0 ? 0 : 1;
+        const unsigned char *lc = (const unsigned char *)(mh + 1);
+        int found = 0;
+        for (uint32_t c = 0; c < mh->ncmds && found < max; c++, lc += ((const struct load_command *)lc)->cmdsize) {
+            const struct segment_command_64 *seg = (const struct segment_command_64 *)lc;
+            if (seg->cmd != LC_SEGMENT_64 || strncmp(seg->segname, "__DATA", 6) != 0) continue;
+            out[found].at = (uintptr_t *)(uintptr_t)(seg->vmaddr + (uint64_t)_dyld_get_image_vmaddr_slide(i));
+            out[found].n = (size_t)seg->vmsize / sizeof(uintptr_t);
+            out[found].before = malloc(out[found].n * sizeof(uintptr_t));
+            if (!out[found].before) return 0;
+            memcpy(out[found].before, out[found].at, out[found].n * sizeof(uintptr_t));
+            found++;
+        }
+        return found;
     }
-    printf("ntdll.so loaded under another name\n");
-    return 2;
+    return 0;
+}
+
+static int child_ntdll(const char *host, const char *path) {
+    if (!dlopen(path, RTLD_NOW | RTLD_LOCAL)) { printf("dlopen %s: %s\n", path, dlerror()); return 3; }
+    struct words segs[8];
+    int nsegs = data_words(path, segs, 8);
+    if (!nsegs) { printf("ntdll.so has no data to compare\n"); return 2; }
+    void *h = dlopen(host, RTLD_NOW);
+    if (!h) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    Dl_info self, to;
+    if (!dladdr(dlsym(h, "np_plugin_api_get"), &self)) { printf("the patcher has no np_plugin_api_get\n"); return 2; }
+    int changed = 0, into = 0;
+    for (int s = 0; s < nsegs; s++) {
+        for (size_t i = 0; i < segs[s].n; i++) {
+            if (segs[s].at[i] == segs[s].before[i]) continue;
+            changed++;
+            into += dladdr((void *)segs[s].at[i], &to) && to.dli_fbase == self.dli_fbase;
+        }
+        free(segs[s].before);
+    }
+    printf("%d pointers changed, %d of them into the patcher\n", changed, into);
+    return changed == 2 && into == 2 ? 0 : 1;
 }
 
 static int child_fixture_dylib(const char *host, const char *dylib) {
@@ -372,9 +408,9 @@ int main(int argc, char **argv) {
 
     fixture_cases(self, host, dir, scratch, log);
 
+    char out[16384];
 #if defined(__x86_64__)
     glob_t metals;
-    char out[16384];
     runner_files(D3DMETALS, &metals);
     if (!metals.gl_pathc) printf("  SKIP  runner checks: no runners installed\n");
     for (size_t i = 0; i < metals.gl_pathc; i++) {
@@ -386,8 +422,13 @@ int main(int argc, char **argv) {
         else expect(what, rc, out, 0, "NOTPROTON_HOSTCHECK: patched D3DMetal", 1);
     }
     globfree(&metals);
+#endif
     glob_t libs;
+#if defined(__x86_64__)
     runner_files("lib/wine/x86_64-unix/ntdll.so", &libs);
+#else
+    runner_files("lib/wine/aarch64-unix/ntdll.so", &libs);
+#endif
     for (size_t i = 0; i < libs.gl_pathc; i++) {
         char what[256], *a[] = { self, "--ntdll", (char *)host, libs.gl_pathv[i], NULL };
         snprintf(what, sizeof(what), "%s: section mapping is watched", runner_of(libs.gl_pathv[i]));
@@ -396,7 +437,6 @@ int main(int argc, char **argv) {
         else expect(what, rc, out, 0, NULL, 0);
     }
     globfree(&libs);
-#endif
 
     return finish("plugin host", "patches land once, in memory, or not at all");
 }
