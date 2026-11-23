@@ -274,6 +274,27 @@ ok "env is kept from HOME and NOTPROTON_ as NOTPROTON_ENV_ is, and Wine's own se
   "$(line "$out" 3)|$(line "$out" 4)" "WINEDEBUG=+loaddll|"
 
 reset
+conf 10-patha.conf <<EOF
+[NOTPROTON_PATHA]
+label = Path A
+env = GST_PLUGIN_PATH=~/a
+env = OTHER=1
+EOF
+conf 20-pathb.conf <<EOF
+[NOTPROTON_PATHB]
+label = Path B
+env = GST_PLUGIN_PATH=~/b
+env = OTHER=2
+EOF
+out=$(run NOTPROTON_PATHA=1 NOTPROTON_PATHB=1)
+ok "two plugins setting one *_PATH get both folders" \
+  "$(printf '%s\n' "$out" | grep -c '^GST_PLUGIN_PATH=')|$(printf '%s\n' "$out" | grep '^GST_PLUGIN_PATH=')" \
+  "1|GST_PLUGIN_PATH=$work/a:$work/b"
+ok "other variables still take the last value" "$(printf '%s\n' "$out" | grep -c '^OTHER=')" "2"
+out=$(run NOTPROTON_PATHB=1)
+ok "one plugin's *_PATH is left alone" "$(printf '%s\n' "$out" | grep '^GST_PLUGIN_PATH=')" "GST_PLUGIN_PATH=$work/b"
+
+reset
 mkdir -p "$sys32/dxgi.dll"
 conf 10-dir.conf <<EOF
 [NOTPROTON_DIR]

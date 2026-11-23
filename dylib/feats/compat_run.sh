@@ -3433,6 +3433,29 @@ while IFS= read -r np_feat_key; do
         (*) np_feat_env="$np_feat_env$np_feat_rest"; break ;;
       esac
     done
+    np_feat_joined=""
+    case "${np_feat_env%%=*}" in
+      (*_PATH)
+        np_feat_kept=""
+        while IFS= read -r np_feat_pair; do
+          [ -n "$np_feat_pair" ] || continue
+          if [ -z "$np_feat_joined" ] && [ "${np_feat_pair%%=*}" = "${np_feat_env%%=*}" ]; then
+            np_feat_old=${np_feat_pair#*=}
+            np_feat_joined="${np_feat_env%%=*}=${np_feat_old:+$np_feat_old:}${np_feat_env#*=}"
+            np_feat_pair=$np_feat_joined
+          fi
+          np_feat_kept="$np_feat_kept$np_feat_pair
+"
+        done <<NP_FEAT_PAIRS
+$np_feat_envs
+NP_FEAT_PAIRS
+        ;;
+    esac
+    if [ -n "$np_feat_joined" ]; then
+      np_feat_envs=$np_feat_kept
+      np_feat_log "$np_feat_key adds to ${np_feat_env%%=*}, now $np_feat_joined"
+      continue
+    fi
     # Kept in reverse since they get prepended to open args (which flips the order)
     np_feat_envs="$np_feat_env
 $np_feat_envs"
