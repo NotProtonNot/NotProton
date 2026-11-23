@@ -112,15 +112,15 @@ int np_webui_parse_into(uintptr_t message, const void *bytes, uint32_t len) {
 
 uintptr_t np_webui_registry(void) { return 1; }
 
-static const char *routes_seen[16];
-static uintptr_t   route_requests[16];
-static int       (*route_handlers[16])(uintptr_t, uintptr_t);
+static const char *routes_seen[24];
+static uintptr_t   route_requests[24];
+static int       (*route_handlers[24])(uintptr_t, uintptr_t);
 static int         route_count;
 
 int np_webui_register_route(const char *name, uintptr_t req, uintptr_t resp,
                             int (*handler)(uintptr_t, uintptr_t)) {
     (void)resp;
-    if (route_count < 16) {
+    if (route_count < 24) {
         routes_seen[route_count] = name;
         route_handlers[route_count] = handler;
         route_requests[route_count++] = req;
