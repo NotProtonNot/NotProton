@@ -224,6 +224,17 @@ static int child_map(const char *host, const char *ntdll, const char *dll, const
     return changed(&pe, copy, "75>eb*1", "the copied-in DLL") ? 0 : 1;
 }
 
+static int child_late(const char *host, const char *ntdll, const char *exe) {
+    struct pe game;
+    if (!pe_parse(exe, &game)) { printf("cannot read %s\n", exe); return 2; }
+    setenv("NOTPROTON_PLUGIN_PATCHES", "NP_B:npgame.exe: 31 d2 e8 ?? ?? ?? ?? 75=eb 05", 1);
+    if (!dlopen(ntdll, RTLD_NOW)) { printf("dlopen %s: %s\n", ntdll, dlerror()); return 2; }
+    unsigned char *gbase = pe_load(exe, &game, 1, NULL);
+    if (!gbase) { printf("cannot load %s\n", exe); return 2; }
+    if (!dlopen(host, RTLD_NOW)) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
+    return changed(&game, gbase, "75>eb*1", "once the host loaded the exe") ? 0 : 1;
+}
+
 struct words {
     uintptr_t *at;
     size_t n;
@@ -385,6 +396,9 @@ static void fixture_cases(const char *self, const char *host, const char *dir, c
            "NP_B: patched npgame.exe", 1);
     expect("fixture: a module without a unix half is patched each time it is mapped", rc, out, 0,
            "NP_A: patched npfixture.dll", 3);
+    char *late[] = { (char *)self, "--late", (char *)host, ntdll, exe, NULL };
+    rc = run(late, log, out, sizeof(out));
+    expect("fixture: a host loaded late patches the exe at once", rc, out, 0, "NP_B: patched npgame.exe", 1);
     char *argv[] = { (char *)self, "--dylib", (char *)host, dylib, NULL };
     rc = run(argv, log, out, sizeof(out));
 #if defined(__x86_64__)
@@ -400,6 +414,7 @@ int main(int argc, char **argv) {
         return child_pe(argv[2], argv[3], argv[4], argv[5], atoi(argv[6]), argv[7], atoi(argv[8]));
     if (argc == 7 && strcmp(argv[1], "--pe-api") == 0) return child_pe_api(argv[2], argv[3], argv[4], argv[5], argv[6]);
     if (argc == 4 && strcmp(argv[1], "--dylib") == 0) return child_fixture_dylib(argv[2], argv[3]);
+    if (argc == 5 && strcmp(argv[1], "--late") == 0) return child_late(argv[2], argv[3], argv[4]);
     if (argc == 6 && strcmp(argv[1], "--map") == 0) return child_map(argv[2], argv[3], argv[4], argv[5]);
     if (argc == 5 && strcmp(argv[1], "--ntdll") == 0) return child_ntdll(argv[2], argv[3], argv[4]);
     if (argc == 4 && strcmp(argv[1], "--macho") == 0) return child_macho(argv[2], argv[3]);

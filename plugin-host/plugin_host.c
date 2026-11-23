@@ -798,6 +798,7 @@ typedef int32_t (*map_fn)(void *section, void *process, void **addr, uintptr_t z
 typedef int32_t (*map_ex_fn)(void *section, void *process, void **addr, const void *offset, size_t *size,
                              uint32_t alloc_type, uint32_t protect, void *params, uint32_t count);
 static uintptr_t g_map, g_map_ex;
+static int g_late;
 
 static void patch_view(uintptr_t base) {
     struct proc_regionwithpathinfo info;
@@ -921,6 +922,7 @@ static void watch_maps(const struct mach_header_64 *mh, intptr_t slide, const ch
     int map = redirect_map(mh, slide);
     int map_ex = api_redirect(mh, slide, "_NtMapViewOfSectionEx", (uintptr_t)map_ex_hook, &g_map_ex);
     if (!map || !map_ex) host_log("%s: only modules with a unix half get their patches", path);
+    if (g_late) after_map(NULL, NULL, -1);
 }
 
 static void watch_pe(int from, int to) {
@@ -1045,6 +1047,10 @@ __attribute__((unused))
 __attribute__((constructor))
 #endif
 static void plugin_host_init(void) {
+    for (uint32_t i = 0; i < _dyld_image_count() && !g_late; i++) {
+        const char *name = _dyld_get_image_name(i);
+        g_late = name && strstr(name, "-unix/ntdll.so") != NULL;
+    }
     const char *spec = getenv("NOTPROTON_PLUGIN_PATCHES");
     if (spec && *spec) parse_spec(spec);
     watch_pe(0, __atomic_load_n(&g_npatches, __ATOMIC_ACQUIRE));
