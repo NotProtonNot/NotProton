@@ -368,10 +368,9 @@ inject = 1
 requires = lib/feat.dylib
 EOF
 out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1)
-ok "an inject plugin brings the plugin host" "$(line "$out" 2)" "$host:$work/lib/feat.dylib"
-rm -f "$host"
-out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1)
-ok "and loads without it" "$(line "$out" 2)" "$work/lib/feat.dylib"
+ok "inject plugin, no host" "$(line "$out" 2)" "$work/lib/feat.dylib"
+out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1)
+ok "patches and inject plugin" "$(line "$out" 2)" "$host:$work/lib/feat.dylib"
 : > "$host"
 : > "$work/log"
 out=$(run NOTPROTON_PATCHA=1 NOTPROTON_PATCHB=1 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix")

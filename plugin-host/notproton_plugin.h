@@ -6,6 +6,8 @@
 #include <mach-o/loader.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define NP_PLUGIN_API_VERSION 1
 
@@ -26,8 +28,17 @@ struct np_plugin_api {
 };
 
 static inline const struct np_plugin_api *np_plugin_api(void) {
-    const struct np_plugin_api *(*get)(unsigned) =
-        (const struct np_plugin_api *(*)(unsigned))dlsym(RTLD_DEFAULT, "np_plugin_api_get");
+    typedef const struct np_plugin_api *(*np_get_fn)(unsigned);
+    np_get_fn get = (np_get_fn)dlsym(RTLD_DEFAULT, "np_plugin_api_get");
+    if (!get) {
+        const char *home = getenv("HOME");
+        char path[1024];
+        if (!home || !*home) return NULL;
+        snprintf(path, sizeof(path), "%s/Library/Application Support/notproton/plugin-host.dylib", home);
+        void *host = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+        if (!host) return NULL;
+        get = (np_get_fn)dlsym(host, "np_plugin_api_get");
+    }
     return get ? get(NP_PLUGIN_API_VERSION) : NULL;
 }
 

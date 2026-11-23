@@ -251,7 +251,10 @@ static int data_words(const char *path, struct words *out, int max) {
     return 0;
 }
 
-static int child_ntdll(const char *host, const char *path) {
+static int child_ntdll(const char *host, const char *path, const char *mode) {
+    const char *pe = "NP_A:npfixture.dll: 31 d2 e8 ?? ?? ?? ?? 75=eb 05";
+    if (strcmp(mode, "pe") == 0) setenv("NOTPROTON_PLUGIN_PATCHES", pe, 1);
+    if (strcmp(mode, "macho") == 0) setenv("NOTPROTON_PLUGIN_PATCHES", "NP_A:D3DMetal: b8 34=35 12 5a 5a c3", 1);
     if (!dlopen(path, RTLD_NOW | RTLD_LOCAL)) { printf("dlopen %s: %s\n", path, dlerror()); return 3; }
     struct words segs[8];
     int nsegs = data_words(path, segs, 8);
@@ -260,6 +263,11 @@ static int child_ntdll(const char *host, const char *path) {
     if (!h) { printf("dlopen %s: %s\n", host, dlerror()); return 2; }
     Dl_info self, to;
     if (!dladdr(dlsym(h, "np_plugin_api_get"), &self)) { printf("the patcher has no np_plugin_api_get\n"); return 2; }
+    if (strcmp(mode, "api") == 0) {
+        const struct np_plugin_api *api = np_plugin_api();
+        if (!api || api->patch("hostcheck", pe + 5) != 0) { printf("the API patch was not taken\n"); return 2; }
+    }
+    int want = strcmp(mode, "pe") == 0 || strcmp(mode, "api") == 0 ? 2 : 0;
     int changed = 0, into = 0;
     for (int s = 0; s < nsegs; s++) {
         for (size_t i = 0; i < segs[s].n; i++) {
@@ -270,7 +278,7 @@ static int child_ntdll(const char *host, const char *path) {
         free(segs[s].before);
     }
     printf("%d pointers changed, %d of them into the patcher\n", changed, into);
-    return changed == 2 && into == 2 ? 0 : 1;
+    return changed == want && into == want ? 0 : 1;
 }
 
 static int child_fixture_dylib(const char *host, const char *dylib) {
@@ -393,7 +401,7 @@ int main(int argc, char **argv) {
     if (argc == 7 && strcmp(argv[1], "--pe-api") == 0) return child_pe_api(argv[2], argv[3], argv[4], argv[5], argv[6]);
     if (argc == 4 && strcmp(argv[1], "--dylib") == 0) return child_fixture_dylib(argv[2], argv[3]);
     if (argc == 6 && strcmp(argv[1], "--map") == 0) return child_map(argv[2], argv[3], argv[4], argv[5]);
-    if (argc == 4 && strcmp(argv[1], "--ntdll") == 0) return child_ntdll(argv[2], argv[3]);
+    if (argc == 5 && strcmp(argv[1], "--ntdll") == 0) return child_ntdll(argv[2], argv[3], argv[4]);
     if (argc == 4 && strcmp(argv[1], "--macho") == 0) return child_macho(argv[2], argv[3]);
     if (argc == 4 && strcmp(argv[1], "--fixture") == 0)
         return write_fixture_dll(argv[2], (uint32_t)strtoul(argv[3], NULL, 0)) ? 0 : 2;
@@ -429,12 +437,18 @@ int main(int argc, char **argv) {
 #else
     runner_files("lib/wine/aarch64-unix/ntdll.so", &libs);
 #endif
+    static const char *const modes[][2] = {
+        { "pe", "section mapping is watched" }, { "api", "API patch watches section mapping" },
+        { "none", "no patches, ntdll untouched" }, { "macho", "dylib patches only, ntdll untouched" },
+    };
     for (size_t i = 0; i < libs.gl_pathc; i++) {
-        char what[256], *a[] = { self, "--ntdll", (char *)host, libs.gl_pathv[i], NULL };
-        snprintf(what, sizeof(what), "%s: section mapping is watched", runner_of(libs.gl_pathv[i]));
-        int rc = run(a, log, out, sizeof(out));
-        if (rc == 3) printf("  SKIP  %s: %s", what, out);
-        else expect(what, rc, out, 0, NULL, 0);
+        for (size_t m = 0; m < sizeof(modes) / sizeof(*modes); m++) {
+            char what[256], *a[] = { self, "--ntdll", (char *)host, libs.gl_pathv[i], (char *)modes[m][0], NULL };
+            snprintf(what, sizeof(what), "%s: %s", runner_of(libs.gl_pathv[i]), modes[m][1]);
+            int rc = run(a, log, out, sizeof(out));
+            if (rc == 3) printf("  SKIP  %s: %s", what, out);
+            else expect(what, rc, out, 0, NULL, 0);
+        }
     }
     globfree(&libs);
 

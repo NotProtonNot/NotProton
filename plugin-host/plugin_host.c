@@ -592,6 +592,8 @@ static int patch_loaded(const struct patch *p) {
     return done;
 }
 
+static void watch_pe(int from, int to);
+
 static int api_patch(const char *tag, const char *patches) {
     static int groups;
     char group[NAME_LEN];
@@ -620,6 +622,7 @@ static int api_patch(const char *tag, const char *patches) {
         host_log("%s: a patch is refused as %s, so are the ones given with it", group, why);
         return -1;
     }
+    watch_pe(base, base + n);
     int done = 0;
     for (int i = base; i < base + n; i++) {
         int first = 1;
@@ -920,6 +923,13 @@ static void watch_maps(const struct mach_header_64 *mh, intptr_t slide, const ch
     if (!map || !map_ex) host_log("%s: only modules with a unix half get their patches", path);
 }
 
+static void watch_pe(int from, int to) {
+    static int armed;
+    int pe = 0;
+    for (int i = from; i < to && !pe; i++) pe = g_patches[i].pe;
+    if (pe && !__atomic_exchange_n(&armed, 1, __ATOMIC_ACQ_REL)) api_on_first_image("ntdll.so", "-unix/", watch_maps);
+}
+
 static uint64_t be_int(const unsigned char *p, int n) {
     uint64_t v = 0;
     while (n--) v = v << 8 | *p++;
@@ -1037,7 +1047,7 @@ __attribute__((constructor))
 static void plugin_host_init(void) {
     const char *spec = getenv("NOTPROTON_PLUGIN_PATCHES");
     if (spec && *spec) parse_spec(spec);
-    api_on_first_image("ntdll.so", "-unix/", watch_maps);
+    watch_pe(0, __atomic_load_n(&g_npatches, __ATOMIC_ACQUIRE));
     _dyld_register_func_for_add_image(on_add_image);
     _dyld_register_func_for_remove_image(on_remove_image);
 }

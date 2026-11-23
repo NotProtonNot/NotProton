@@ -2,6 +2,7 @@
 #include "../notproton_plugin.h"
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 static int child_load(const char *host, const char *plugin, const char *fixture, int fixture_first, int changed) {
     void *fx = NULL;
@@ -85,9 +86,27 @@ int main(int argc, char **argv) {
     rc = run(binary, log, out, sizeof(out));
     expect("api: a binary Info.plist gives the version", rc, out, 0, "version 4.5.6", 1);
 
+    char home[1024], installed[1200], *real_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+    snprintf(home, sizeof(home), "%s/home", scratch);
+    snprintf(installed, sizeof(installed), "%s/Library/Application Support/notproton", home);
+    char *mk[] = { "/bin/mkdir", "-p", installed, NULL };
+    run(mk, log, out, sizeof(out));
+    snprintf(installed, sizeof(installed), "%s/Library/Application Support/notproton/plugin-host.dylib", home);
+    unlink(installed);
+    setenv("HOME", home, 1);
+
     char *alone[] = { self, "--load", "-", (char *)plugin, xml, "0", "0", NULL };
     rc = run(alone, log, out, sizeof(out));
     expect("api: without the host a plugin changes nothing", rc, out, 0, "isn't loaded, not armed", 1);
+
+    char host_path[1024];
+    if (!realpath(host, host_path) || symlink(host_path, installed) != 0) return 2;
+    char *self_load[] = { self, "--load", "-", (char *)plugin, xml, "0", "1", NULL };
+    rc = run(self_load, log, out, sizeof(out));
+    expect("api: a plugin loads the installed host itself", rc, out, 0, "_np_fixture_value is", 1);
+    unlink(installed);
+    if (real_home) setenv("HOME", real_home, 1);
+    free(real_home);
 
     char *version[] = { self, "--version", (char *)host, NULL };
     rc = run(version, log, out, sizeof(out));

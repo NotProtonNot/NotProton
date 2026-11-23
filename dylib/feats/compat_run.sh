@@ -3458,12 +3458,12 @@ if [ "${wine_unix##*/}" != x86_64-unix ]; then
   [ -z "$np_feat_dylibs$np_feat_patches" ] ||
     np_feat_log "plugin dylibs and patches are not loaded, FEX's wine drops DYLD_INSERT_LIBRARIES"
   np_feat_dylibs=""
-elif [ -n "$np_feat_dylibs$np_feat_patches" ]; then
+elif [ -n "$np_feat_patches" ]; then
   if [ -f "$np_plugin_host" ]; then
     np_feat_dylibs="$np_plugin_host${np_feat_dylibs:+:$np_feat_dylibs}"
-    [ -z "$np_feat_patches" ] || np_feat_envs="NOTPROTON_PLUGIN_PATCHES=$np_feat_patches
+    np_feat_envs="NOTPROTON_PLUGIN_PATCHES=$np_feat_patches
 $np_feat_envs"
-  elif [ -n "$np_feat_patches" ]; then
+  else
     np_feat_log "plugin patches are skipped as $np_plugin_host is missing"
   fi
 fi
