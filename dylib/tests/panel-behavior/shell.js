@@ -6,7 +6,8 @@ const { spawnSync } = require('child_process');
 const { panel, walk, details, runner, FORMS } = require('./harness');
 
 const emit = process.argv[2];
-if (!emit) { console.error('usage: shell.js <emit>'); process.exit(2); }
+const probe = process.argv[3];
+if (!emit || !probe) { console.error('usage: shell.js <emit> <probe>'); process.exit(2); }
 
 const TOGGLES = {
   'Metal HUD': 'MTL_HUD_ENABLED',
@@ -23,12 +24,6 @@ const PANEL_KEYS = ['CX_GRAPHICS_BACKEND', 'MTL_HUD_ENABLED', 'D3DM_ENABLE_METAL
 const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO', 'SteamAppId', 'STEAM_COMPAT_DATA_PATH'];
 
 const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'np-shell-')));
-const probe = path.join(dir, 'probe');
-fs.writeFileSync(probe, '#!' + process.execPath + '\n' +
-  `const k=${JSON.stringify(PANEL_KEYS.concat(OTHER_KEYS))};const e={};` +
-  'k.forEach(n=>{if(n in process.env)e[n]=process.env[n]});' +
-  'require("fs").appendFileSync(process.env.NP_PROBE_OUT,' +
-  'JSON.stringify({argv:process.argv.slice(2),env:e,cwd:process.cwd()})+"\\n");\n', { mode: 0o755 });
 fs.writeFileSync(path.join(dir, 'gamemoderun'), '#!/bin/sh\nexec "$@"\n', { mode: 0o755 });
 
 const quote = s => "'" + s.replace(/'/g, "'\\''") + "'";
@@ -42,14 +37,23 @@ function steamLine(options, command = COMMAND) {
 
 const shells = ['/bin/sh', '/bin/dash'].filter(s => fs.existsSync(s));
 
+const KEYS = PANEL_KEYS.concat(OTHER_KEYS);
+const launched = new Map();
 function launch(shell, options, command) {
+  const id = JSON.stringify([shell, options, command]);
+  if (!launched.has(id)) launched.set(id, JSON.stringify(run(shell, options, command)));
+  return JSON.parse(launched.get(id));
+}
+function run(shell, options, command) {
   const out = path.join(dir, 'runs');
   fs.rmSync(out, { force: true });
   spawnSync(shell, ['-c', steamLine(options, command)], {
     env: { PATH: dir + ':/usr/bin:/bin', HOME: process.env.HOME, NP_PROBE_OUT: out, SteamAppId: '287700', STEAM_COMPAT_DATA_PATH: '/steam/prefix/287700' },
     cwd: dir, timeout: 10000, stdio: 'ignore',
   });
-  return fs.existsSync(out) ? fs.readFileSync(out, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  if (!fs.existsSync(out)) return [];
+  return fs.readFileSync(out, 'utf8').trim().split('\n').map(JSON.parse).map(r =>
+    ({ argv: r.argv, env: Object.fromEntries(KEYS.filter(k => k in r.env).map(k => [k, r.env[k]])), cwd: r.cwd }));
 }
 
 function view(form, options) {
