@@ -231,8 +231,8 @@ enum SupportedRunners {
             ],
             patchedNtdll: [
                 .x86_64Windows: "7548abd874656f6a6455e7fac659020ed755d92f4e1929a33097bbde964699f5",
-                .i386Windows: "e16b0199db721a08201b1512476b9eff255624d2faf3696fa57ff74b1a54be5c",
-                .aarch64Windows: "7623c0b33350f511b431d39c7ec0c0d4f5def4183acef0eee5d4a5c694898956",
+                .i386Windows: "177ae7590b7823180d16bd91a6b2362bad177213b3cac75d812587372f26a785",
+                .aarch64Windows: "ef23d45b712b4dd5f5f4c5705f5c754505e2e337e63ee5ec2e1c44b4967e3fa7",
             ],
             tools: [
                 CompatTool(name: "notproton-fex-41069", flavor: .fex, display: "CrossOver 2026 10 06-ARM64 - FEX"),
@@ -268,8 +268,8 @@ enum SupportedRunners {
             ],
             patchedNtdll: [
                 .x86_64Windows: "2b47ed8c19d1d15d0f82519d39d64bf34113b285c4ada325bb64c5e587326d33",
-                .i386Windows: "3f4b0d9589c1f374e3c2fd135263f2bf3c8300e09dd010fd778936dd71e894ad",
-                .aarch64Windows: "2efb13f3303adc2c8ee61b93e027e4e94730a2e6b0162c7e6aebd4104200f07c",
+                .i386Windows: "723ed49d1b35767cb742185cc613cb4c0c84343e34ee460010198729c127a572",
+                .aarch64Windows: "35968dd81d58ece666f03bcdcf6ca2643e13ef7e1490ba33c661ab9b52f14020",
             ],
             tools: [
                 CompatTool(name: "notproton-fex-41073", flavor: .fex, display: "CrossOver 2026 10 15-ARM64 - FEX"),
@@ -305,8 +305,8 @@ enum SupportedRunners {
             ],
             patchedNtdll: [
                 .x86_64Windows: "503c4a6f71822b212bcfaaf210ba76e838998fa2c61957a64e5c0da3f9b3a6e9",
-                .i386Windows: "c35063d7fda866cd019a8ed1f6014c022a34a74d17037fc5c7f0732f58701f64",
-                .aarch64Windows: "deb1e2dec774ae0b9504f88edd17f02c682d1f78e4839d874d62408a80cf3167",
+                .i386Windows: "f5ed5a1cc75ef5b6e6c82664f9a9a2dd59670c31e368a240a918e87daaa28aec",
+                .aarch64Windows: "c000c190de8495cb8466fbfb90ee006872d044e34bb796df638a40ca8347ede2",
             ],
             tools: [
                 CompatTool(name: "notproton-fex-41303", flavor: .fex, display: "CrossOver 2026 11 11-ARM64 - FEX"),

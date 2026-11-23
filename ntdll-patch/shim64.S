@@ -25,7 +25,7 @@ shim_entry64:
     stp     x18, x1, [sp, #S_X18]
     str     x30, [sp, #S_X30]
 
-    /* ctx table {get_dll_handle, load_dll, protect} */
+    /* ctx table {get_dll_handle, load_dll, protect, query} */
     adrp    x8, LDR_GETDLLHANDLE
     add     x8, x8, :lo12:LDR_GETDLLHANDLE
     adrp    x9, LDR_LOADDLL
@@ -33,7 +33,9 @@ shim_entry64:
     stp     x8, x9, [sp, #S_CTX]
     adrp    x8, NT_PROTECT
     add     x8, x8, :lo12:NT_PROTECT
-    str     x8, [sp, #(S_CTX + 16)]
+    adrp    x9, NT_QUERY
+    add     x9, x9, :lo12:NT_QUERY
+    stp     x8, x9, [sp, #(S_CTX + 16)]
 
     add     x0, sp, #S_CTX
     ldr     x1, [sp, #0x00]
@@ -42,8 +44,10 @@ shim_entry64:
     cmp     x30, x9
     b.ne    1f
     ldur    x2, [x29, #LOAD_PATH_1]
+    mov     w3, #1
     b       2f
 1:  ldur    x2, [x29, #LOAD_PATH_2]
+    mov     w3, #2
 2:  bl      detour_build_module
 
     ldr     x30, [sp, #S_X30]

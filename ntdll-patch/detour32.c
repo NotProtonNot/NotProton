@@ -15,6 +15,7 @@ typedef u32 (STDCALL *nt_openfile_t)(void **handle, u32 access, void *attr, void
 typedef u32 (STDCALL *nt_readfile_t)(void *handle, void *event, void *apc, void *apc_ctx, void *io,
                                      void *buf, u32 len, u64 *offset, void *key);
 typedef u32 (STDCALL *nt_close_t)(void *handle);
+typedef u32 (STDCALL *nt_query_t)(void *proc, void *addr, u32 cls, void *buf, u32 len, u32 *ret);
 
 struct ctx
 {
@@ -25,6 +26,9 @@ struct ctx
     nt_readfile_t      read_file;
     nt_close_t         close;
     u32                delta;   // load base - preferred base; see shim32.S
+#ifdef NP_PLUGINS
+    nt_query_t         query;
+#endif
 };
 
 #define CAVE_PTR(c, p) ((void *)((u8 *)(p) + (c)->delta))
@@ -228,6 +232,45 @@ static int basename_is(void *wm, const char *want)
     return nm[i] == 0;
 }
 
+#ifdef NP_PLUGINS
+#define MEMORY_WINE_LOAD_UNIX_LIB_BY_NAME 1002
+
+static int env_has(const u16 *env, const char *want)
+{
+    while (env && *env)
+    {
+        unsigned i = 0;
+        while (want[i] && env[i] == (u16)want[i])
+            i++;
+        if (!want[i])
+            return 1;
+        while (*env)
+            env++;
+        env++;
+    }
+    return 0;
+}
+
+static const u16 npload_path[] = u"\\??\\C:\\Program Files (x86)\\Steam\\npload.so";
+
+static void load_plugins(struct ctx *c)
+{
+    u8 *teb, *peb, *params;
+    struct us u;
+    u64 res[2];
+
+    __asm__ volatile ("movl %%fs:0x18, %0" : "=r"(teb));
+    peb = *(u8 **)(teb + 0x30);
+    params = peb ? *(u8 **)(peb + 0x10) : 0;
+    if (!params || !env_has(*(const u16 **)(params + 0x48), CAVE_PTR(c, "NOTPROTON_PLUGIN_LIBS=")))
+        return;
+    u.len = sizeof(npload_path) - 2;
+    u.max = sizeof(npload_path);
+    u.buf = CAVE_PTR(c, npload_path);
+    c->query((void *)~0u, &u, MEMORY_WINE_LOAD_UNIX_LIB_BY_NAME, res, sizeof(res), 0);
+}
+#endif
+
 void detour_build_module32(struct ctx *c, void *wm, void *fp)
 {
     u8 *sc, *lsteam;
@@ -235,6 +278,14 @@ void detour_build_module32(struct ctx *c, void *wm, void *fp)
 
     if (!wm)
         return;
+
+#ifdef NP_PLUGINS
+    if (basename_is(wm, CAVE_PTR(c, "kernel32.dll")))
+    {
+        load_plugins(c);
+        return;
+    }
+#endif
 
     is_steamclient32 = basename_is(wm, CAVE_PTR(c, "steamclient.dll"));
     if (!is_steamclient32 && !basename_is(wm, CAVE_PTR(c, "gameoverlayrenderer.dll")))

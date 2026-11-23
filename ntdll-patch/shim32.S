@@ -29,6 +29,10 @@ delta_ref:
     lea     eax, [ecx + NT_CLOSE]
     mov     [esp+0x20], eax
     mov     [esp+0x24], ecx
+#ifdef NP_PLUGINS
+    lea     eax, [ecx + NT_QUERY]
+    mov     [esp+0x28], eax
+#endif
     // detour_build_module32(ctx, wm, fp), cdecl 
     lea     eax, [esp+0x0C]
     mov     [esp+0x00], eax

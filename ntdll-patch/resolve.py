@@ -6,7 +6,7 @@ from capstone import x86 as X86, arm64 as A64
 
 ARCH = {0x8664: 'x86_64-windows', 0x14c: 'i386-windows', 0xaa64: 'aarch64-windows'}
 
-PAYLOAD = {0x8664: 864, 0x14c: 1376, 0xaa64: 868}  # detour2.bin, detour32.bin, detour64-fex.bin
+PAYLOAD = {0x8664: 864, 0x14c: 1680, 0xaa64: 1222}  # largest detour2, detour32 and detour64 payloads
 
 # Keyed by input sha256 so the comparison only runs against the build the tree pins, so a
 # new build will report derived values rather than a wall of expected mismatches
@@ -90,7 +90,7 @@ PINNED = {
     '66b1a244a611795c59a93a9491d17f36c98cd8db9be495004a37864e0e5ed4a5':
         {'hookRVA': 0x2ede2, 'stolen': '8b4514a802', 'caveRVA': 0xa4000, 'caveSize': 4096,
          'resume': 0x2ede7, 'wm': 'esi', 'load_path': -0x3c,
-         'payload': '6ff6c7289e639c4caad85c2670bfa849d9f36baa24152b6979896caede5e249b',
+         'payload': '3dc35cd67e9ef3c2adea809ca4192e3bb956a6202e5ead51a5b49539827b2e6e',
          'exports': {'LdrGetDllHandle': 0x7bc2a670, 'LdrLoadDll': 0x7bc28660,
                      'NtProtectVirtualMemory': 0x7bc4d800, 'NtOpenFile': 0x7bc4d630,
                      'NtReadFile': 0x7bc4d360, 'NtClose': 0x7bc4d3f0}},
@@ -101,8 +101,9 @@ PINNED = {
                    {'hookRVA': 0xa883c, 'stolen': '1f2003d5', 'resume': 0xa8840,
                     'wm': 'x22', 'load_path': -0x88}],
          'guest': {'LdrLoadDll': 0xa0aa0, 'LdrGetDllHandle': 0xa0aa0,
-                   'NtProtectVirtualMemory': 0xecf9c},
-         'payload': 'b27484eaed592366ddd3a5b3c565c2dc05e8fa255fbd7e19d9d8eb619ff57c23',
+                   'NtProtectVirtualMemory': 0xecf9c,
+                   'NtQueryVirtualMemory': 0xeef54},
+         'payload': '9e70e0993f9d7f72dd3df94788f34c30fd0b445a989b7fe1731f42c9209385ee',
          'exports': {'LdrGetDllHandle': 0x18004390c, 'LdrLoadDll': 0x180041344,
                      'NtProtectVirtualMemory': 0x180067050, 'NtOpenFile': 0x180066cb0,
                      'NtReadFile': 0x180066710, 'NtClose': 0x180066830}},
@@ -130,7 +131,7 @@ PINNED = {
     '3ee764335e50709285361e2542731385f0b06e593a76aa84a3c328c278164c4f':
         {'hookRVA': 0x2ecf2, 'stolen': '8b4514a802', 'caveRVA': 0xa4000, 'caveSize': 4096,
          'resume': 0x2ecf7, 'wm': 'esi', 'load_path': -0x3c,
-         'payload': 'e0b3a73bb287ecdebe7a9516a732b60e8de95fa0a756ae5ea4c5bd46e4a807c2',
+         'payload': '1e1ec72d472cd5952567308ca989d2242b4b33a9b62862a64e6380e6fd7d6c90',
          'exports': {'LdrGetDllHandle': 0x7bc2a580, 'LdrLoadDll': 0x7bc28660,
                      'NtProtectVirtualMemory': 0x7bc4d710, 'NtOpenFile': 0x7bc4d540,
                      'NtReadFile': 0x7bc4d270, 'NtClose': 0x7bc4d300}},
@@ -141,8 +142,9 @@ PINNED = {
                    {'hookRVA': 0xa8734, 'stolen': '1f2003d5', 'resume': 0xa8738,
                     'wm': 'x22', 'load_path': -0x88}],
          'guest': {'LdrLoadDll': 0xa0aa0, 'LdrGetDllHandle': 0xa0aa0,
-                   'NtProtectVirtualMemory': 0xece9c},
-         'payload': '8a6fe80587815393059cb2cecfdc542b666c158e147560875ff19f37221726d2',
+                   'NtProtectVirtualMemory': 0xece9c,
+                   'NtQueryVirtualMemory': 0xeee54},
+         'payload': '5a2ffe4c56637c023f2dbd231120aa54b6b0bf55f2f2c1739e4d1522db5b7290',
          'exports': {'LdrGetDllHandle': 0x180043818, 'LdrLoadDll': 0x180041344,
                      'NtProtectVirtualMemory': 0x180066f60, 'NtOpenFile': 0x180066bc0,
                      'NtReadFile': 0x180066620, 'NtClose': 0x180066740}},
@@ -156,7 +158,7 @@ PINNED = {
     '4e8d8b4b54da99252423c7967d779d34976620a56bedaec38529d1f4b710f26a':
         {'hookRVA': 0x2ef8d, 'stolen': '8b4514a802', 'caveRVA': 0x6b3a5, 'caveSize': 3163,
          'resume': 0x2ef92, 'wm': 'edi', 'load_path': -0x40,
-         'payload': '0490e724191cf0cc2d5383a582d1c354c481d675025988e2666bff18a68fab95',
+         'payload': 'dbf6d350139755a75ffd1612bbe0ef3541b89c955c8eb7786f8ffaabdf7e3bf3',
          'exports': {'LdrGetDllHandle': 0x7bc2a7b0, 'LdrLoadDll': 0x7bc288e0,
                      'NtProtectVirtualMemory': 0x7bc4da64, 'NtOpenFile': 0x7bc4d894,
                      'NtReadFile': 0x7bc4d5c4, 'NtClose': 0x7bc4d654}},
@@ -174,14 +176,15 @@ PINNED = {
                    {'hookRVA': 0xa7fec, 'stolen': '1f2003d5', 'resume': 0xa7ff0,
                     'wm': 'x22', 'load_path': -0x88}],
          'guest': {'LdrLoadDll': 0xa0338, 'LdrGetDllHandle': 0xa0338,
-                   'NtProtectVirtualMemory': 0xed964},
-         'payload': '3f81623754fac27bf4a33856a7c80b30d4a9756710d1c55e388b718893e47d48',
+                   'NtProtectVirtualMemory': 0xed964,
+                   'NtQueryVirtualMemory': 0xef94c},
+         'payload': '84bd1e152f22458c992fc520246b804eb6ad07a8ba005ffe327719835ebe442d',
          'exports': {'LdrGetDllHandle': 0x1800438a0, 'LdrLoadDll': 0x1800413cc,
                      'NtProtectVirtualMemory': 0x180067130, 'NtOpenFile': 0x180066d90,
                      'NtReadFile': 0x1800667f0, 'NtClose': 0x180066910}},
 }
 EXPORTS = ['LdrGetDllHandle', 'LdrLoadDll', 'NtProtectVirtualMemory',
-           'NtOpenFile', 'NtReadFile', 'NtClose']
+           'NtOpenFile', 'NtReadFile', 'NtClose', 'NtQueryVirtualMemory']
 SECTION_NAME, SECTION_SIZE, SECTION_FLAGS = b'.npdet', 0x1000, 0x60000020
 PROLOGUES = [rb'\x55\x89\xe5', rb'\x55\x8b\xec']
 NOP64 = bytes.fromhex('1f2003d5')
@@ -680,9 +683,17 @@ def resolve_aarch64(pe):
     span = (max(tv, bm - 0x10000), min(tv + len(text), bm + 0x10000))
     # A detour running under the guest loader has to stay inside it, obviously
     load = aarch64_twin(pe, md, ex['LdrLoadDll'], span)
-    return dict(sites[0], sites=sites,
+
+    def form(t):
+        return next(i.op_str for i in aarch64_body(pe, md, t, t + 0x20) if i.mnemonic == 'ldr')
+
+    query = [t for t in aarch64_guest_syscall(pe, md, ex['NtQueryVirtualMemory'])
+             if form(t) == form(thunk)]
+    if len(query) != 1:
+        raise SystemExit(f"{pe.path}: {len(query)} guest NtQueryVirtualMemory thunks")
+    return dict(sites[0], sites=sites, guest_site=sites.index(guest[0][0]) + 1,
                 guest={'LdrLoadDll': load, 'LdrGetDllHandle': load,
-                       'NtProtectVirtualMemory': thunk})
+                       'NtProtectVirtualMemory': thunk, 'NtQueryVirtualMemory': query[0]})
 
 
 def resolve(path):
@@ -827,6 +838,7 @@ def shell_vars(path):
         out[f'NP_LOAD_PATH_{n}'] = f"{s['load_path']:#x}"
     if r.get('sites'):
         out['NP_SITES'] = str(len(r['sites']))
+        out['NP_GUEST_SITE'] = str(r['guest_site'])
 
     for n, va in r['exports'].items():
         out['NP_' + re.sub(r'(?<!^)(?=[A-Z])', '_', n).upper()] = f"{va:#x}"

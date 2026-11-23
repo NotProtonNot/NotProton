@@ -8,13 +8,19 @@ typedef unsigned char u8;
 typedef u32 (*ldr_getdllhandle_t)(void *path, void *unused, void *name_us, void **out);
 typedef u32 (*ldr_loaddll_t)(void *path, void *flags, void *name_us, void **out);
 typedef u32 (*nt_protect_t)(void *proc, void **base, u64 *size, u32 newprot, u32 *oldprot);
+typedef u32 (*nt_query_t)(void *proc, void *addr, u32 cls, void *buf, u64 len, u64 *ret);
 
 struct ctx
 {
     ldr_getdllhandle_t get_dll_handle;
     ldr_loaddll_t      load_dll;
     nt_protect_t       protect;
+#ifdef NP_PLUGINS
+    nt_query_t         query;
+#endif
 };
+
+#define MEMORY_WINE_LOAD_UNIX_LIB_BY_NAME 1002
 
 // PE image structures, minimal subset needed to walk export tables
 struct dos_header  { u16 e_magic; u8 pad[58]; u32 e_lfanew; };
@@ -160,11 +166,78 @@ static int wm_is_sc64(void *wm)
     return nm[i] == 0;
 }
 
+#ifdef NP_PLUGINS
+static int wm_is_kernel32(void *wm)
+{
+    static const char want[] = "kernel32.dll";
+    const u16 *nm = *(const u16 **)((u8 *)wm + 0x60);
+    unsigned i;
+    if (!nm)
+        return 0;
+    for (i = 0; want[i]; i++)
+    {
+        u16 ch = nm[i];
+        if (ch >= 'A' && ch <= 'Z')
+            ch = (u16)(ch + 32);
+        if (ch != (u16)want[i])
+            return 0;
+    }
+    return nm[i] == 0;
+}
+
+static int env_has(const u16 *env, const char *want)
+{
+    while (env && *env)
+    {
+        unsigned i = 0;
+        while (want[i] && env[i] == (u16)want[i])
+            i++;
+        if (!want[i])
+            return 1;
+        while (*env)
+            env++;
+        env++;
+    }
+    return 0;
+}
+
+static const u16 npload_path[] = u"\\??\\C:\\Program Files (x86)\\Steam\\npload.so";
+
+static void load_plugins(struct ctx *c)
+{
+    u8 *teb, *peb, *params;
+    struct us u;
+    u64 res[2];
+
+    __asm__ volatile ("mov %0, x18" : "=r"(teb));
+    peb = *(u8 **)(teb + 0x60);
+    params = peb ? *(u8 **)(peb + 0x20) : 0;
+    if (!params || !env_has(*(const u16 **)(params + 0x80), "NOTPROTON_PLUGIN_LIBS="))
+        return;
+    u.len = sizeof(npload_path) - 2;
+    u.max = sizeof(npload_path);
+    u.pad = 0;
+    u.buf = (void *)npload_path;
+    c->query((void *)~0ull, &u, MEMORY_WINE_LOAD_UNIX_LIB_BY_NAME, res, sizeof(res), 0);
+}
+#endif
+
 // build_module detour
+#ifdef NP_PLUGINS
+void detour_build_module(struct ctx *c, void *wm, void *load_path, int site)
+#else
 void detour_build_module(struct ctx *c, void *wm, void *load_path)
+#endif
 {
     u8 *sc64, *lsteam;
 
+#ifdef NP_PLUGINS
+    if (wm && site == GUEST_SITE && wm_is_kernel32(wm))
+    {
+        load_plugins(c);
+        return;
+    }
+#endif
     if (!wm || !wm_is_sc64(wm))
         return;
 

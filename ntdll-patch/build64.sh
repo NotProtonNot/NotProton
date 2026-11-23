@@ -27,7 +27,8 @@ LD=/opt/homebrew/bin/ld.lld
 OBJCOPY=/opt/homebrew/opt/llvm/bin/llvm-objcopy
 
 "$CC" -target "$TARGET" -c -Os -ffreestanding -fno-stack-protector \
-  -fno-asynchronous-unwind-tables -mgeneral-regs-only -ffixed-x18 detour.c -o detour64_c.o
+  -fno-asynchronous-unwind-tables -mgeneral-regs-only -ffixed-x18 \
+  -DNP_PLUGINS "-DGUEST_SITE=$NP_GUEST_SITE" detour.c -o detour64_c.o
 "$CC" -target "$TARGET" -c -x assembler-with-cpp shim64.S -o shim64.o \
   "-DLOAD_PATH_1=$NP_LOAD_PATH_1" "-DLOAD_PATH_2=$NP_LOAD_PATH_2"
 
@@ -36,7 +37,8 @@ OBJCOPY=/opt/homebrew/opt/llvm/bin/llvm-objcopy
   "--defsym=BM_RESUME_1=$NP_RESUME_VA_1" \
   "--defsym=LDR_GETDLLHANDLE=$NP_LDR_GET_DLL_HANDLE" \
   "--defsym=LDR_LOADDLL=$NP_LDR_LOAD_DLL" \
-  "--defsym=NT_PROTECT=$NP_NT_PROTECT_VIRTUAL_MEMORY"
+  "--defsym=NT_PROTECT=$NP_NT_PROTECT_VIRTUAL_MEMORY" \
+  "--defsym=NT_QUERY=$NP_NT_QUERY_VIRTUAL_MEMORY"
 "$OBJCOPY" -O binary -j .cave detour64_linked.elf "$out"
 
 got="$(shasum -a 256 "$out" | cut -d' ' -f1)"
