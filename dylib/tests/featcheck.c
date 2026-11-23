@@ -661,6 +661,27 @@ int main(void) {
         free(j);
         unlink(flag);
     }
+    {
+        char path[1100];
+        FILE *f;
+        write_desc("52-rec.conf", "[NOTPROTON_REC]\nlabel = Rec\nimproves = 631510\nneeded_for = 287700 It crashes.\n");
+        np_support_path(path, sizeof(path), g_home, NP_DISMISSED_FIXES_FILE);
+        if ((f = fopen(path, "w"))) {
+            fputs("631510\tNOTPROTON_B\n287700\tNOTPROTON_C\n631510\tNOTPROTON_A\n"
+                  "631510\tNOTPROTON_B\nnot a line\n1\t../evil\n", f);
+            fclose(f);
+        }
+        char *j = live_json();
+        ok(j && strstr(j, "\"im\":[\"631510\"]") != NULL, "carries the games a plugin improves");
+        ok(j && strstr(j, "\"nf\":[\"287700 It crashes.\"]") != NULL, "carries the games a plugin is needed for, with what it fixes");
+        ok(j && strstr(j, ",\"x\":{\"287700\":[\"NOTPROTON_C\"],\"631510\":[\"NOTPROTON_A\",\"NOTPROTON_B\"]}}") != NULL,
+           "carries what each game dismissed, once each, and nothing malformed");
+        free(j);
+        unlink(path);
+        j = live_json();
+        ok(j && strstr(j, ",\"x\":{}}") != NULL, "an empty dismissal list without the file");
+        free(j);
+    }
     write_desc("51-late.conf", "[NOTPROTON_LATE]\nlabel = Late\n");
     {
         char *j = live_json();

@@ -23,6 +23,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
     { "patch", 16, 0 },    { "variants", 8, 0 },    { "group", 1, 0 },
+    { "improves", 16, 0 },  { "needed_for", 16, 0 },
     { NULL, 0, 0 }
 };
 
@@ -163,6 +164,36 @@ static int conf_app_ok(const char *v) {
     return strtoull(v, NULL, 10) <= 4294967295ULL;
 }
 
+static size_t conf_for_app(const char *v) {
+    const char *sp = strchr(v, ' ');
+    return sp ? (size_t)(sp - v) : strlen(v);
+}
+
+// "<appid>" or "<appid> <what it fixes in that game>"
+static int conf_for_ok(const char *v) {
+    char app[16];
+    size_t n = conf_for_app(v);
+    if (!n || n >= sizeof(app)) return 0;
+    memcpy(app, v, n);
+    app[n] = 0;
+    if (!conf_app_ok(app)) return 0;
+    const char *t = v + n;
+    while (*t == ' ') t++;
+    if (strlen(t) > 200) return 0;
+    for (; *t; t++)
+        if ((unsigned char)*t < 0x20 || *t == 0x7f) return 0;
+    return 1;
+}
+
+static int conf_has_app(const np_conf_rec_t *rec, const char *field, const char *want) {
+    const char *n, *v;
+    int it = 0;
+    size_t len = conf_for_app(want);
+    while (np_conf_next(rec, &it, &n, &v))
+        if (strcmp(n, field) == 0 && conf_for_app(v) == len && strncmp(v, want, len) == 0) return 1;
+    return 0;
+}
+
 static int conf_group_ok(const char *v) {
     size_t n = strlen(v);
     if (!n || n > 64) return 0;
@@ -299,6 +330,18 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "apps") == 0 && !conf_app_ok(v)) {
             *detail = "apps";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "improves") == 0 && (!conf_for_ok(v) || np_conf_get(rec, "type"))) {
+            *detail = "improves";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "needed_for") == 0 && (!conf_for_ok(v) || np_conf_get(rec, "type"))) {
+            *detail = "needed_for";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "needed_for") == 0 && conf_has_app(rec, "improves", v)) {
+            *detail = "needed_for";
             return NP_CONF_BAD_VALUE;
         }
         if (strcmp(n, "hide_crossover") == 0 && strcmp(v, "1") != 0) {

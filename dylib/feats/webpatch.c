@@ -492,6 +492,60 @@ static int feat_put_env(np_out_t *o, const np_conf_rec_t *rec, const char *home)
     return ok && out_put(o, "]", 1);
 }
 
+typedef struct { unsigned long app; const char *key; size_t len; } np_dismissed_t;
+
+static int dismissed_cmp(const void *a, const void *b) {
+    const np_dismissed_t *x = a, *y = b;
+    if (x->app != y->app) return x->app < y->app ? -1 : 1;
+    size_t n = x->len < y->len ? x->len : y->len;
+    int c = memcmp(x->key, y->key, n);
+    return c ? c : (x->len > y->len) - (x->len < y->len);
+}
+
+static int dismissed_put(np_out_t *o, const char *home) {
+    char path[1024];
+    size_t len = 0, n = 0;
+    np_dismissed_t *rows = NULL;
+    uint8_t *buf;
+    int ok = 0;
+
+    np_support_path(path, sizeof(path), home, NP_DISMISSED_FIXES_FILE);
+    buf = np_read_file_max(path, 256 * 1024, NP_FILE_NOFOLLOW, &len);
+    if (buf && !(rows = calloc(4096, sizeof(*rows)))) goto done;
+    for (char *p = (char *)buf, *end = p + len; buf && p < end && n < 4096;) {
+        char *nl = memchr(p, '\n', (size_t)(end - p)), *line_end = nl ? nl : end;
+        char *tab = memchr(p, '\t', (size_t)(line_end - p));
+        int good = tab && tab > p && tab - p <= 10 && line_end - tab > 11
+                   && line_end - tab < 193 && strncmp(tab + 1, "NOTPROTON_", 10) == 0;
+        for (char *q = p; good && q < tab; q++) good = *q >= '0' && *q <= '9';
+        for (char *q = tab ? tab + 11 : p; good && q < line_end; q++)
+            good = (*q >= 'A' && *q <= 'Z') || (*q >= '0' && *q <= '9') || *q == '_';
+        if (good) {
+            rows[n].app = strtoul(p, NULL, 10);
+            rows[n].key = tab + 1;
+            rows[n].len = (size_t)(line_end - tab - 1);
+            n++;
+        }
+        p = nl ? nl + 1 : end;
+    }
+    if (n) qsort(rows, n, sizeof(*rows), dismissed_cmp);
+    if (!out_put(o, "{", 1)) goto done;
+    for (size_t i = 0; i < n; i++) {
+        char app[16];
+        if (i && !dismissed_cmp(&rows[i], &rows[i - 1])) continue;
+        if (!i || rows[i].app != rows[i - 1].app) {
+            snprintf(app, sizeof(app), "%lu", rows[i].app);
+            if ((i && !out_put(o, "],", 2)) || !out_jsstr(o, app) || !out_put(o, ":[", 2)) goto done;
+        } else if (!out_put(o, ",", 1)) goto done;
+        if (!out_jsstrn(o, rows[i].key, rows[i].len)) goto done;
+    }
+    ok = out_put(o, n ? "]}" : "}", n ? 2 : 1);
+done:
+    free(rows);
+    free(buf);
+    return ok;
+}
+
 static int show_all_on(const char *home) {
     char flag[1024];
     np_support_path(flag, sizeof(flag), home, NP_SHOW_ALL_PLUGINS_FILE);
@@ -550,6 +604,8 @@ static int feat_rows(const char *home, char **ready_out, char **rows_out) {
         if (!feat_put_env(&rows, rec, home)) goto done;
         if (!feat_put_list(&rows, ",tl:[", rec, "tools")) goto done;
         if (!feat_put_list(&rows, ",ap:[", rec, "apps")) goto done;
+        if (!feat_put_list(&rows, ",im:[", rec, "improves")) goto done;
+        if (!feat_put_list(&rows, ",nf:[", rec, "needed_for")) goto done;
         if (!feat_put_list(&rows, ",va:[", rec, "variants")) goto done;
         // What the run script would have done, for a page that has to do it itself: the
         // dylib to insert, and whether anything here only our own runner can deliver.
@@ -1117,6 +1173,7 @@ char *np_webpatch_live_json(const char *const *names, const char *const *builds,
         || !out_put(&o, ",\"r\":", 5) || !out_put(&o, ready, strlen(ready))
         || !out_put(&o, ",\"f\":", 5) || !out_json_keys(&o, rows)
         || !out_put(&o, ",\"v\":", 5) || !out_json_keys(&o, vars)
+        || !out_put(&o, ",\"x\":", 5) || !dismissed_put(&o, home)
         || !out_put(&o, "}", 1)) goto done;
     ret = out_take(&o);
 done:
@@ -1342,6 +1399,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "padding:8px 14px;font-size:13px;line-height:18px}" \
     "@media(prefers-contrast: more){.DesktopUI .MSCXSetBtn,.MSCXSetBtn.DesktopUI{background:#000;color:#fff}}" \
     ".MSCXBtns{display:flex;gap:8px}" \
+    ".MSCXRecDesc{display:flex;flex-direction:column;gap:4px}.MSCXRecList{color:#dfe3e6}.MSCXRecGap{margin-top:10px}.MSCXRecWhy{padding-left:12px}" \
+    ".DesktopUI .MSCXSetBtn.MSCXApply,.MSCXSetBtn.MSCXApply.DesktopUI{color:#fff;background-color:#1a9fff}" \
+    ".DesktopUI .MSCXSetBtn.MSCXApply:hover,.MSCXSetBtn.MSCXApply.DesktopUI:hover{background-color:#47b4ff}" \
     ".MSCXBtn{background:#3d4450;color:#fff;border:none;border-radius:2px;padding:6px 14px;" \
     "font-size:14px;cursor:pointer}.MSCXBtn:hover{background:#4c5361}" \
     ".MSCXBtn.MSCXMain{background:#1a9fff}.MSCXBtn.MSCXMain:hover{background:#47b4ff}" \
@@ -1544,7 +1604,47 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ":\"slider\"===f.ty?(f.ch?TL(kk,f.l,d,lv,f.ch,f.df,pe)" \
     ":TS(kk,f.l,d,lv,f.mn,f.mx,f.st,f.df,f.sf,pe))" \
     ":TD(f.k,f.l,f.on,f.off,d,lv)}," \
-    "npBody=[npCx&&head," \
+    "npX=npLv&&npLv.x&&app?npLv.x[String(app)]||[]:null," \
+    "npChain=(f,n=0)=>{const p=f.dep&&npRows.find(x=>x.k===f.dep);" \
+    "return p&&!p.ty&&n<32&&!on1(p.k)?npChain(p,n+1).concat([f]):[f]}," \
+    "npWhy=l=>{const v=(l||[]).find(v=>v.split(\" \")[0]===String(app));" \
+    "return v===undefined?null:v.slice(v.indexOf(\" \")<0?v.length:v.indexOf(\" \")).trim()}," \
+    "npOff=f=>!f.ty&&npRd(f.k)&&!on1(f.k)&&npX.indexOf(f.k)<0," \
+    "npNeed=ours&&dev&&npX?npRows.filter(f=>npOff(f)&&npWhy(f.nf)!==null):[]," \
+    "npImp=ours&&dev&&npX?npRows.filter(f=>npOff(f)&&npWhy(f.nf)===null&&npWhy(f.im)!==null):[]," \
+    "npRec=npNeed.concat(npImp)," \
+    "npItems=(fs,fl)=>fs.flatMap((f,i)=>{const g=npG(f),w=npWhy(fl(f));" \
+    "return[(0," RT ".jsx)(\"div\",{className:\"MSCXRecList\"+(i?\"\":\" MSCXRecGap\"),children:(g?g+\": \":\"\")+f.l},\"f:\"+f.k)]" \
+    ".concat(w?[(0," RT ".jsx)(\"div\",{className:\"MSCXRecWhy\",children:w},\"w:\"+f.k)]:[])})," \
+    "npRedraw=()=>globalThis.dispatchEvent?.(new CustomEvent(\"mscxplugins\"))," \
+    "npDismiss=()=>{const ks=npRec.map(f=>f.k),a=String(app),x=npLv.x,was=x[a];" \
+    "x[a]=(was||[]).concat(ks);npRedraw();" \
+    "globalThis.MSCXSpecifyRoute(\"NotProton.DismissFixes#1\",app,ks.join(\"\\n\"))" \
+    ".then(r=>{if(r&&r.BSuccess&&!r.BSuccess())throw\"result \"+r.GetEResult()})" \
+    ".catch(e=>{x[a]=was;npRedraw();console.error(\"NotProton: dismissing the fixes was not saved\",e)})}," \
+    "npRecB=npRec.length?(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Fixes for This Game\",\"Fixes for This Game\"," \
+    "\"Fixes for This Game\"),children:(0," RT ".jsx)(" BARREL ".D0,{className:\"MSCXRec\"," \
+    "label:npL(\"Fixes for this game are available\",\"Fixes for this game are available\",\"Fixes for this game are available\")," \
+    "description:(0," RT ".jsxs)(\"div\",{className:\"MSCXRecDesc\",children:[" \
+    "...npNeed.length?[(0," RT ".jsx)(\"div\",{children:npL(\"Do you want to enable these fixes? This game may not work correctly without them.\"," \
+    "\"Do you want to enable these fixes? This game may not work correctly without them.\"," \
+    "\"Do you want to enable these fixes? This game may not work correctly without them.\")},\"ask\")]" \
+    ".concat(npItems(npNeed,f=>f.nf)):[]," \
+    "...npImp.length?[(0," RT ".jsx)(\"div\",{className:npNeed.length?\"MSCXRecGap\":\"\",children:npNeed.length" \
+    "?npL(\"There are also fixes that aren't needed to run the game, but may fix issues with it.\"," \
+    "\"There are also fixes that aren't needed to run the game, but may fix issues with it.\"," \
+    "\"There are also fixes that aren't needed to run the game, but may fix issues with it.\")" \
+    ":npL(\"These fixes aren't needed to run the game, but may fix issues with it. Do you want to enable them?\"," \
+    "\"These fixes aren't needed to run the game, but may fix issues with it. Do you want to enable them?\"," \
+    "\"These fixes aren't needed to run the game, but may fix issues with it. Do you want to enable them?\")},\"also\")]" \
+    ".concat(npItems(npImp,f=>f.im)):[]]})," \
+    "childrenContainerWidth:\"min\",children:(0," RT ".jsxs)(\"div\",{className:\"MSCXBtns\",children:[" \
+    "(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXSetBtn MSCXApply\"," \
+    "onClick:()=>s(npRec.flatMap(f=>npChain(f)).filter((f,i,a)=>a.indexOf(f)===i).map(f=>[f.k,f.on]))," \
+    "children:npL(\"Apply\",\"Apply\",\"Apply\")},\"apply\")," \
+    "typeof globalThis.MSCXSpecifyRoute==\"function\"&&(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXSetBtn\"," \
+    "onClick:npDismiss,children:npL(\"Dismiss\",\"Dismiss\",\"Dismiss\")},\"dismiss\")]})},\"rec\")},\"recs\"):null," \
+    "npBody=[npRecB,npCx&&head," \
     "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",w(\"CX_GRAPHICS_BACKEND\",v.data||\"auto\",\"auto\")]]" \

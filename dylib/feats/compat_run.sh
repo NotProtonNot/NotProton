@@ -405,6 +405,13 @@ NP_CONF_NAMES
   }
   function toolok(s) { sub(/\*$/, "", s); return s ~ /^[A-Za-z0-9._-]+$/ }
   function appok(s) { return s ~ /^[1-9][0-9]*$/ && length(s) <= 10 && s + 0 <= 4294967295 }
+  function forapp(s,   sp) { sp = index(s, " "); return sp ? substr(s, 1, sp - 1) : s }
+  function forok(s,   t) {
+    if (!appok(forapp(s))) return 0
+    t = substr(s, length(forapp(s)) + 1)
+    sub(/^ +/, "", t)
+    return length(t) <= 200 && t !~ /[\001-\037\177]/
+  }
   function envok(s,   eq) {
     eq = index(s, "=")
     return eq > 1 && substr(s, 1, eq - 1) ~ /^[A-Z_][A-Z0-9_]*$/
@@ -436,7 +443,7 @@ NP_CONF_NAMES
     return top || s ~ /[^.\/]/
   }
   function refuse(scope, c, d) { printf "!\t%s\t%s%s%s\n", scope, c, (d == "" ? "" : ":"), d }
-  function schema(   i, f, t, values, mn, mx, st, df) {
+  function schema(   i, f, t, values, mn, mx, st, df, rcs) {
     for (i = 1; i <= nreq; i++)
       if (!(req[i] in cnt)) { detail = req[i]; return "missing-required" }
     if (kind == "variant") {
@@ -453,11 +460,16 @@ NP_CONF_NAMES
       if (names[i] == "choice" && choiceval(vals[i]) == "") { detail = "choice"; return "bad-value" }
       if (names[i] == "tools" && !toolok(vals[i])) { detail = "tools"; return "bad-value" }
       if (names[i] == "apps" && !appok(vals[i])) { detail = "apps"; return "bad-value" }
+      if (names[i] == "improves" && (!forok(vals[i]) || ("type" in cnt))) { detail = "improves"; return "bad-value" }
+      if (names[i] == "needed_for" && (!forok(vals[i]) || ("type" in cnt))) { detail = "needed_for"; return "bad-value" }
+      if (names[i] == "improves") rcs[forapp(vals[i])] = 1
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
       if (names[i] == "patch" && !patchok(vals[i])) { detail = "patch"; return "bad-value" }
       if (names[i] == "variants" && !varidok(vals[i])) { detail = "variants"; return "bad-value" }
       if (names[i] == "group" && (vals[i] == "" || length(vals[i]) > 64 || vals[i] ~ /[\001-\037\177]/)) { detail = "group"; return "bad-value" }
     }
+    for (i = 1; i <= nkv; i++)
+      if (names[i] == "needed_for" && (forapp(vals[i]) in rcs)) { detail = "needed_for"; return "bad-value" }
     if (("hide_crossover" in cnt) && !("tools" in cnt)) { detail = "tools"; return "missing-required" }
     if (("depends" in cnt) && !idok(first["depends"])) { detail = "depends"; return "bad-value" }
     if (("section" in cnt) && first["section"] != "dev") { detail = "section"; return "bad-value" }
@@ -513,8 +525,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove apps", f, " ")

@@ -469,6 +469,72 @@ for (const form of Object.keys(FORMS)) {
        && walk(PO({ details: details('') })).some(x => x.type === 'Section' && x.props.label === 'Zeta'),
        'with every plugin in a group there is no empty Developer section');
 
+  {
+    const REC = [
+      { k: 'NOTPROTON_R1', l: 'Fix one', on: '1', off: '', dep: '', d: '', gr: 'MacGameFix', nf: ['287700 It crashes at the title.'] },
+      { k: 'NOTPROTON_R2', l: 'Fix two', on: '1', off: '', dep: '', d: '', gr: 'MacGameFix', nf: ['287700'] },
+      { k: 'NOTPROTON_R3', l: 'Loose fix', on: '1', off: '', dep: '', d: '', nf: ['287700'] },
+      { k: 'NOTPROTON_ELSE', l: 'For another game', on: '1', off: '', dep: '', d: '', nf: ['631510'] },
+      { k: 'NOTPROTON_NICE', l: 'Nice to have', on: '1', off: '', dep: '', d: '', gr: 'MacGameFix', im: ['287700 Videos show.'] },
+    ];
+    const ready = Object.fromEntries(REC.map(f => [f.k, 1]));
+    const sent = [];
+    const live = { s: 0, r: ready, f: REC, v: [], x: {} };
+    const rglobals = { document: { documentElement: { lang: 'en' } }, MSCXLive: live,
+                       MSCXSpecifyRoute: (r, a, x) => { sent.push({ r, a, x }); return Promise.resolve(); } };
+    const { render: PR, written: rwritten } = panel(emit, form, rglobals);
+    const rec = opts => walk(PR({ details: details(opts) }))
+      .find(x => x.type === 'Section' && x.props.label === 'Fixes for This Game');
+    const rtext = node => walk(node).flatMap(x => [x.props.label]
+      .concat(walk(x.props.description).map(y => y.props.children), [x.props.children]))
+      .filter(x => typeof x === 'string');
+    const rbtn = (opts, label) => walk(rec(opts)).find(x => x.type === 'Button' && x.props.children === label);
+    t.ok(rec('') && rtext(rec('')).includes('Fixes for this game are available')
+         && walk(rec('')).some(x => x.type === 'Field'),
+         'a game with fixes it is known to need gets the banner');
+    t.ok(rtext(rec('')).includes('MacGameFix: Fix one') && rtext(rec('')).includes('MacGameFix: Fix two')
+         && rtext(rec('')).includes('Loose fix'),
+         'which names every fix, under its group');
+    t.ok(rtext(rec('')).indexOf('It crashes at the title.') === rtext(rec('')).indexOf('MacGameFix: Fix one') + 1,
+         'with what the plugin says it fixes in this game under it');
+    t.ok(!rtext(rec('')).some(x => x.includes('For another game')),
+         'and none recommended for another game');
+    const need = rtext(rec('')).findIndex(x => x.startsWith('Do you want to enable these fixes?'));
+    const also = rtext(rec('')).findIndex(x => x.startsWith('There are also fixes'));
+    t.ok(need >= 0 && also > need && rtext(rec('')).indexOf('MacGameFix: Nice to have') > also
+         && rtext(rec('')).includes('Videos show.'),
+         'a fix that only improves the game is listed after the needed ones, under its own sentence');
+    t.ok(!walk(PR({ details: details('') })).some(x => x.props && /MSCXRecTag/.test(x.props.className || '')),
+         'the rows themselves carry no tag');
+    rwritten.length = 0;
+    rbtn('', 'Apply').props.onClick();
+    t.ok(rwritten.length === 1 && ['NOTPROTON_R1=1', 'NOTPROTON_R2=1', 'NOTPROTON_R3=1', 'NOTPROTON_NICE=1']
+           .every(k => rwritten[0].opts.includes(k)) && !rwritten[0].opts.includes('NOTPROTON_ELSE'),
+         'Apply turns on exactly the fixes it names');
+    t.ok(!rtext(rec('NOTPROTON_R1=1 %command%')).includes('MacGameFix: Fix one')
+         && rtext(rec('NOTPROTON_R1=1 %command%')).includes('MacGameFix: Fix two'),
+         'a fix already on is not offered again');
+    const only = rtext(rec('NOTPROTON_R1=1 NOTPROTON_R2=1 NOTPROTON_R3=1 %command%'));
+    t.ok(only.some(x => x.startsWith("These fixes aren't needed to run the game"))
+         && !only.some(x => x.startsWith('Do you want to enable these fixes?') || x.startsWith('There are also')),
+         'with only fixes that improve the game left, the banner says so on its own');
+    t.ok(!rec('NOTPROTON_R1=1 NOTPROTON_R2=1 NOTPROTON_R3=1 NOTPROTON_NICE=1 %command%'),
+         'with every fix on there is no banner');
+    rbtn('', 'Dismiss').props.onClick();
+    t.ok(sent.length === 1 && sent[0].r === 'NotProton.DismissFixes#1' && sent[0].a === 287700
+         && sent[0].x === 'NOTPROTON_R1\nNOTPROTON_R2\nNOTPROTON_R3\nNOTPROTON_NICE',
+         'Dismiss saves the fixes it named for this game');
+    t.ok(!rec(''), 'and the banner goes');
+    live.f = REC.concat([{ k: 'NOTPROTON_R4', l: 'Fix four', on: '1', off: '', dep: '', d: '',
+                           gr: 'MacGameFix', nf: ['287700'] }]);
+    live.r = { ...ready, NOTPROTON_R4: 1 };
+    t.ok(rec('') && rtext(rec('')).includes('MacGameFix: Fix four') && !rtext(rec('')).includes('Loose fix'),
+         'a fix added later brings it back with only that fix');
+    const { render: PN } = panel(emit, form, undefined, { feats: JSON.stringify(REC).replace(/"(\w+)":/g, '$1:') });
+    t.ok(!walk(PN({ details: details('') })).some(x => x.type === 'Section' && x.props.label === 'Fixes for This Game'),
+         'without the live list, which holds what was dismissed, there is no banner');
+  }
+
   const { render: PF } = panel(emit, form, undefined,
                               { ready: '{"NOTPROTON_ALPHA":0}', feats: FEATS });
   const fnodes = opts => walk(PF({ details: details(opts) }));

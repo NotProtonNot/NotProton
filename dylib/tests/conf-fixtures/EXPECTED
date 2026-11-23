@@ -73,6 +73,20 @@ NOTPROTON_FH6	apps	4294967295
 !	NOTPROTON_APP_BIG	bad-value:apps
 !	NOTPROTON_APP_WORD	bad-value:apps
 
+== plugins/38-improves.conf
+NOTPROTON_IMP	label	Improves
+NOTPROTON_IMP	improves	631510
+NOTPROTON_IMP	improves	287700 Cutscenes play with a picture.
+!	NOTPROTON_IMP_ZERO	bad-value:improves
+!	NOTPROTON_IMP_TYPED	bad-value:improves
+NOTPROTON_NEEDED	label	Needed
+NOTPROTON_NEEDED	needed_for	631510 The game crashes when a cutscene plays.
+NOTPROTON_NEEDED	improves	287700
+!	NOTPROTON_NEEDED_TYPED	bad-value:needed_for
+!	NOTPROTON_NEEDED_BOTH	bad-value:needed_for
+!	NOTPROTON_NEEDED_WORD	bad-value:needed_for
+!	NOTPROTON_NEEDED_LONG	bad-value:needed_for
+
 == plugins/39-group.conf
 NOTPROTON_GROUP_A	label	Group A
 NOTPROTON_GROUP_A	group	Pack of Fixes

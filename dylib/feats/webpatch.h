@@ -37,6 +37,7 @@ typedef struct {
 void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count);
 
 #define NP_SHOW_ALL_PLUGINS_FILE "show-all-plugins"
+#define NP_DISMISSED_FIXES_FILE "dismissed-fixes"
 
 // For tests, so they don't depend on the plugins or variants installed on the machine.
 void np_webpatch_set_features(const char *ready, const char *rows);

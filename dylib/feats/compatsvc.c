@@ -37,6 +37,7 @@
 #define ROUTE_SET_TOOL_DEFAULTS    "NotProton.SetToolDefaults#1"
 #define ROUTE_APPLY_TOOL_DEFAULTS  "NotProton.ApplyToolDefaults#1"
 #define ROUTE_SET_SHOW_ALL         "NotProton.SetShowAllPlugins#1"
+#define ROUTE_DISMISS_FIXES        "NotProton.DismissFixes#1"
 #define ROUTE_GET_PLUGINS          "NotProton.GetPlugins#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
@@ -564,6 +565,45 @@ static int set_show_all(uintptr_t request, uintptr_t response) {
     return RESULT_OK;
 }
 
+static int plugin_key_ok(const char *k, size_t n) {
+    if (n <= 10 || n >= 192 || strncmp(k, "NOTPROTON_", 10) != 0) return 0;
+    for (size_t i = 10; i < n; i++)
+        if (!((k[i] >= 'A' && k[i] <= 'Z') || (k[i] >= '0' && k[i] <= '9') || k[i] == '_')) return 0;
+    return 1;
+}
+
+static int dismiss_fixes(uintptr_t request, uintptr_t response) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    uint32_t app      = (has_bits & SPECIFY_HAS_APPID)
+                      ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
+    const char *keys  = string_field(request + SPECIFY_TOOL_NAME_OFF);
+    const char *home  = np_home_dir();
+    char path[PATH_MAX], line[256];
+    (void)response;
+    if (!home || !app || !*keys || strlen(keys) > 8192) return RESULT_FAIL;
+    for (const char *p = keys; *p;) {
+        const char *e = strchr(p, '\n');
+        size_t n = e ? (size_t)(e - p) : strlen(p);
+        if (!plugin_key_ok(p, n)) return RESULT_FAIL;
+        p += n + (e ? 1 : 0);
+    }
+    np_support_path(path, sizeof path, home, NP_DISMISSED_FIXES_FILE);
+    int fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC, 0644);
+    if (fd < 0) return RESULT_FAIL;
+    int ok = 1;
+    for (const char *p = keys; *p && ok;) {
+        const char *e = strchr(p, '\n');
+        size_t n = e ? (size_t)(e - p) : strlen(p);
+        int len = snprintf(line, sizeof line, "%u\t%.*s\n", app, (int)n, p);
+        ok = write(fd, line, (size_t)len) == len;
+        p += n + (e ? 1 : 0);
+    }
+    close(fd);
+    if (!ok) return RESULT_FAIL;
+    NP_LOG("compatsvc: fixes for app %u dismissed", app);
+    return RESULT_OK;
+}
+
 static uintptr_t g_state_changed;
 static int g_routes = NP_COMPATSVC_UNTRIED;
 
@@ -614,6 +654,9 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
         || !np_webui_register_route(ROUTE_SET_SHOW_ALL, specify_request, specify_response,
                                     set_show_all))
         NP_WARN("compatsvc: the Settings page cannot save default compatibility settings");
+    if (!np_webui_register_route(ROUTE_DISMISS_FIXES, specify_request, specify_response,
+                                 dismiss_fixes))
+        NP_WARN("compatsvc: dismissing a game's fixes cannot be saved");
 
     g_routes = NP_COMPATSVC_READY;
 

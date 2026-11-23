@@ -1082,6 +1082,54 @@ static void show_all_cases(void) {
     snprintf(g_support, sizeof g_support, "/nonexistent");
 }
 
+static void dismiss_cases(void) {
+    char dir[] = "out/compatsvc-dismiss.XXXXXX";
+    if (!mkdtemp(dir)) { check(0, "a scratch support folder exists"); return; }
+    snprintf(g_support, sizeof g_support, "%s", dir);
+    char file[512];
+    snprintf(file, sizeof file, "%s/%s", dir, NP_DISMISSED_FIXES_FILE);
+
+    route_count = 0;
+    g_routes = NP_COMPATSVC_UNTRIED;
+    stub_absent_type = NULL;
+    np_compatsvc_register(NULL, 0, 0, 0);
+    int (*h)(uintptr_t, uintptr_t) = NULL;
+    for (int i = 0; i < route_count; i++)
+        if (strcmp(routes_seen[i], ROUTE_DISMISS_FIXES) == 0) h = route_handlers[i];
+    check(h != NULL, "dismiss: registered");
+    if (!h) return;
+
+    static char keys[] = "NOTPROTON_ONE\nNOTPROTON_TWO";
+    static uint8_t str[24];
+    *(const char **)str = keys;
+    str[23] = (uint8_t)0xFF;
+    uint8_t req[64] = {0};
+    *(uint32_t *)(req + REQ_HAS_BITS_OFF) = SPECIFY_HAS_APPID;
+    *(uint32_t *)(req + SPECIFY_APPID_OFF) = 631510;
+    *(uintptr_t *)(req + SPECIFY_TOOL_NAME_OFF) = (uintptr_t)str;
+    check(h((uintptr_t)req, 0) == RESULT_OK, "dismiss: saves");
+    char got[128] = "";
+    FILE *f = fopen(file, "r");
+    size_t len = f ? fread(got, 1, sizeof got - 1, f) : 0;
+    if (f) fclose(f);
+    check(len == 42 && strcmp(got, "631510\tNOTPROTON_ONE\n631510\tNOTPROTON_TWO\n") == 0,
+          "dismiss: one line per fix, under its game");
+
+    static char bad[] = "NOTPROTON_ONE\n../evil";
+    *(const char **)str = bad;
+    check(h((uintptr_t)req, 0) == RESULT_FAIL, "dismiss: refuses a key that is not a plugin's");
+    *(const char **)str = keys;
+    *(uint32_t *)(req + REQ_HAS_BITS_OFF) = 0;
+    check(h((uintptr_t)req, 0) == RESULT_FAIL, "dismiss: refuses without a game");
+    f = fopen(file, "r");
+    len = f ? fread(got, 1, sizeof got - 1, f) : 0;
+    if (f) fclose(f);
+    check(len == 42, "dismiss: a refused request writes nothing");
+    unlink(file);
+    rmdir(dir);
+    snprintf(g_support, sizeof g_support, "/nonexistent");
+}
+
 static void get_plugins_cases(void) {
     route_count = 0;
     g_routes = NP_COMPATSVC_UNTRIED;
@@ -1127,6 +1175,7 @@ int main(void) {
     string_field_cases();
     rebuild_route_cases();
     show_all_cases();
+    dismiss_cases();
     get_plugins_cases();
 
     if (failures) {
