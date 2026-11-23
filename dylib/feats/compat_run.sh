@@ -455,6 +455,7 @@ NP_CONF_NAMES
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
       if (names[i] == "patch" && !patchok(vals[i])) { detail = "patch"; return "bad-value" }
       if (names[i] == "variants" && !varidok(vals[i])) { detail = "variants"; return "bad-value" }
+      if (names[i] == "group" && (vals[i] == "" || length(vals[i]) > 64 || vals[i] ~ /[\001-\037\177]/)) { detail = "group"; return "bad-value" }
     }
     if (("hide_crossover" in cnt) && !("tools" in cnt)) { detail = "tools"; return "missing-required" }
     if (("depends" in cnt) && !idok(first["depends"])) { detail = "depends"; return "bad-value" }
@@ -511,8 +512,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove", f, " ")

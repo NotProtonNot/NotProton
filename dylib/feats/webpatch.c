@@ -543,6 +543,9 @@ static int feat_rows(const char *home, char **ready_out, char **rows_out) {
         if (!out_put(&rows, ",off:", 5) || !out_jsstr(&rows, off ? off : "")) goto done;
         if (!out_put(&rows, ",dep:", 5) || !out_jsstr(&rows, dep ? dep : "")) goto done;
         if (!out_put(&rows, ",d:", 3) || !out_jsstr(&rows, desc ? desc : "")) goto done;
+        if (np_conf_get(rec, "group")) {
+            if (!out_put(&rows, ",gr:", 4) || !out_jsstr(&rows, np_conf_get(rec, "group"))) goto done;
+        }
         if (!feat_put_list(&rows, ",dn:[", rec, "description_on")) goto done;
         if (!feat_put_env(&rows, rec, home)) goto done;
         if (!feat_put_list(&rows, ",tl:[", rec, "tools")) goto done;
@@ -1513,6 +1516,22 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
        with nothing to deliver. */ \
     "const npRows=ours?MSCXFeat:MSCXFeat.filter(f=>!f.rn&&(f.ty" \
     "?/^NOTPROTON_ENV_/.test(f.k):f.rq||(f.ev||[]).length))," \
+    "npG=f=>f.gr||f.dep&&(npRows.find(x=>x.k===f.dep)||{}).gr||\"\"," \
+    "npGs=[...new Set(npRows.map(npG).filter(Boolean))].sort((a,b)=>a.localeCompare(b))," \
+    "npIn=g=>npRows.filter(f=>npG(f)===g&&(!f.dep||on1(f.dep)))," \
+    /* Lines a plugin only wants read once the row is on, such as the keys that
+       change the rest of a feature in game, sit under its description while it is. */ \
+    "npR=f=>{const lv=f.dep?dl(f.dep,1):0," \
+    "ln=on1(f.k)?(f.dn||[]).concat(npClash(f)||[]):[]," \
+    "d=ln.length?(0," RT ".jsxs)(\"div\",{children:(f.d?[f.d]:[])" \
+    ".concat(ln.map((x,i)=>(0," RT ".jsx)(\"div\"," \
+    "{className:\"MSCXKeys\",children:x},i)))}):f.d;" \
+    "const kk=npKey(f),pe=ours?0:1;" \
+    "return!ours&&!f.ty?TP(f,d,lv)" \
+    ":\"choice\"===f.ty?TC(kk,f.l,d,lv,f.ch,pe)" \
+    ":\"slider\"===f.ty?(f.ch?TL(kk,f.l,d,lv,f.ch,f.df,pe)" \
+    ":TS(kk,f.l,d,lv,f.mn,f.mx,f.st,f.df,f.sf,pe))" \
+    ":TD(f.k,f.l,f.on,f.off,d,lv)}," \
     "npBody=[npCx&&head," \
     "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
@@ -1561,22 +1580,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "checked:\"0\"===G(\"NOTPROTON_GAME_MODE\"),onChange:v=>s([[\"NOTPROTON_GAME_MODE\",w(\"NOTPROTON_GAME_MODE\",v?\"0\":\"1\",\"1\")]])},\"NOTPROTON_GAME_MODE\")" \
     "]},\"misc\")," \
     "exe," \
-    "dev&&(npRows.length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
+    "dev&&(npIn(\"\").length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
-    "children:vids.map(V).concat(npRows.filter(f=>!f.dep||on1(f.dep))" \
-    /* Lines a plugin only wants read once the row is on, such as the keys that
-       change the rest of a feature in game, sit under its description while it is. */ \
-    ".map(f=>{const lv=f.dep?dl(f.dep,1):0," \
-    "ln=on1(f.k)?(f.dn||[]).concat(npClash(f)||[]):[]," \
-    "d=ln.length?(0," RT ".jsxs)(\"div\",{children:(f.d?[f.d]:[])" \
-    ".concat(ln.map((x,i)=>(0," RT ".jsx)(\"div\"," \
-    "{className:\"MSCXKeys\",children:x},i)))}):f.d;" \
-    "const kk=npKey(f),pe=ours?0:1;" \
-    "return!ours&&!f.ty?TP(f,d,lv)" \
-    ":\"choice\"===f.ty?TC(kk,f.l,d,lv,f.ch,pe)" \
-    ":\"slider\"===f.ty?(f.ch?TL(kk,f.l,d,lv,f.ch,f.df,pe)" \
-    ":TS(kk,f.l,d,lv,f.mn,f.mx,f.st,f.df,f.sf,pe))" \
-    ":TD(f.k,f.l,f.on,f.off,d,lv)}))})},\"dev\"):null,npCx&&foot" \
+    "children:vids.map(V).concat(npIn(\"\").map(npR))})},\"dev\"):null," \
+    "dev&&npGs.length?npGs.map(g=>(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:g,children:npIn(g).map(npR)})},\"gr:\"+g)):null,npCx&&foot" \
     "].filter(Boolean);" \
     /* A tool of someone else's with nothing of ours to offer gets no page at all. */ \
     "if(!npBody.length)return null;" \

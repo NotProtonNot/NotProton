@@ -440,6 +440,35 @@ for (const form of Object.keys(FORMS)) {
          .find(x => x.props.label === 'Mode').props.indentLevel === 2,
        'a sub-option of a sub-option indents twice');
 
+  const GROUPED = JSON.stringify([
+    { k: 'NOTPROTON_LOOSE', l: 'Loose', on: '1', off: '', dep: '', d: '' },
+    { k: 'NOTPROTON_Z1', l: 'Z one', on: '1', off: '', dep: '', d: '', gr: 'Zeta' },
+    { k: 'NOTPROTON_A1', l: 'A one', on: '1', off: '', dep: '', d: '', gr: 'Alpha pack' },
+    { k: 'NOTPROTON_A1_SUB', l: 'A sub', on: '1', off: '', dep: 'NOTPROTON_A1', d: '' },
+    { k: 'NOTPROTON_Z2', l: 'Z two', on: '1', off: '', dep: '', d: '', gr: 'Zeta' },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PG } = panel(emit, form, undefined, { feats: GROUPED });
+  const gsections = opts => walk(PG({ details: details(opts) })).filter(x => x.type === 'Section');
+  const gunder = (opts, label) => {
+    const s = gsections(opts).find(x => x.props.label === label);
+    return s ? walk(s).filter(x => x.type === 'ToggleField').map(x => x.props.label) : [];
+  };
+  t.ok(gsections('').map(x => x.props.label).filter(l => ['Developer', 'Alpha pack', 'Zeta'].includes(l))
+         .join(',') === 'Developer,Alpha pack,Zeta',
+       'each group gets its own section after Developer, sorted by name');
+  t.ok(gunder('', 'Developer').join(',') === 'Loose',
+       'a row without a group stays under Developer');
+  t.ok(gunder('', 'Zeta').join(',') === 'Z one,Z two',
+       'a group keeps its rows in file order');
+  t.ok(gunder('NOTPROTON_A1=1 %command%', 'Alpha pack').join(',') === 'A one,A sub',
+       'a row that depends on a grouped one sits in its parent\'s group');
+  const ONLY = JSON.stringify([{ k: 'NOTPROTON_Z1', l: 'Z one', on: '1', off: '', dep: '', d: '', gr: 'Zeta' }])
+    .replace(/"(\w+)":/g, '$1:');
+  const { render: PO } = panel(emit, form, undefined, { feats: ONLY });
+  t.ok(!walk(PO({ details: details('') })).some(x => x.type === 'Section' && x.props.label === 'Developer')
+       && walk(PO({ details: details('') })).some(x => x.type === 'Section' && x.props.label === 'Zeta'),
+       'with every plugin in a group there is no empty Developer section');
+
   const { render: PF } = panel(emit, form, undefined,
                               { ready: '{"NOTPROTON_ALPHA":0}', feats: FEATS });
   const fnodes = opts => walk(PF({ details: details(opts) }));

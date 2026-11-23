@@ -22,7 +22,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "min", 1, 0 },
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
-    { "patch", 16, 0 },    { "variants", 8, 0 },
+    { "patch", 16, 0 },    { "variants", 8, 0 },    { "group", 1, 0 },
     { NULL, 0, 0 }
 };
 
@@ -163,6 +163,14 @@ static int conf_app_ok(const char *v) {
     return strtoull(v, NULL, 10) <= 4294967295ULL;
 }
 
+static int conf_group_ok(const char *v) {
+    size_t n = strlen(v);
+    if (!n || n > 64) return 0;
+    for (size_t i = 0; i < n; i++)
+        if ((unsigned char)v[i] < 0x20 || v[i] == 0x7f) return 0;
+    return 1;
+}
+
 static int conf_env_ok(const char *v) {
     const char *eq = strchr(v, '=');
     if (!eq || eq == v) return 0;
@@ -299,6 +307,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "variants") == 0 && !conf_id_ok(NP_CONF_VARIANT, v)) {
             *detail = "variants";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "group") == 0 && !conf_group_ok(v)) {
+            *detail = "group";
             return NP_CONF_BAD_VALUE;
         }
     }
