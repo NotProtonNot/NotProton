@@ -194,8 +194,8 @@ enum SupportedRunners {
             ],
             patchedNtdll: [
                 .x86_64Windows: "fa8cd8fe7c4c19effade92d55b00fa946b630ab13cbb6721076848238c1dcf6a",
-                .i386Windows: "e799ea02418294588ee353a90b967358be316a3044ff9515b28aa1ce07e63981",
-                .aarch64Windows: "f40810193a5ef2520774288f354a8604f5ba91828315f643b3ee6688b873dc3f",
+                .i386Windows: "a52b4d9a992cef82a4eaa1acf05f5d9413921f5c108d942842d7912747513ee0",
+                .aarch64Windows: "5a93b5a009fcc4f60bf35010a2940bf37b18f93229b000456f093b9529a55956",
             ],
             tools: [
                 CompatTool(name: "notproton-fex", flavor: .fex, display: "CrossOver 2026 08 21-ARM64 - FEX"),

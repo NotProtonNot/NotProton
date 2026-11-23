@@ -33,7 +33,7 @@ PINNED = {
     '09474795d6f306163cebab6429819999fcff50e07dbc4b067a90ec4f74a3a7d7':
         {'hookRVA': 0x2ee12, 'stolen': '8b4514a802', 'caveRVA': 0x6b2fe, 'caveSize': 3330,
          'resume': 0x2ee17, 'wm': 'esi', 'load_path': -0x3c,
-         'payload': 'b4c697ba396ecb59125c505666ad3465d1208b8a1e3e53a0c457657b341376b9',
+         'payload': '708cbed90780e1590bb3b0bead7e71e4c207c656096f08ccdab50a5996792047',
          'exports': {'LdrGetDllHandle': 0x7bc2a6b0, 'LdrLoadDll': 0x7bc286d0,
                      'NtProtectVirtualMemory': 0x7bc4d020, 'NtOpenFile': 0x7bc4ce50,
                      'NtReadFile': 0x7bc4cb80, 'NtClose': 0x7bc4cc10}},
@@ -62,8 +62,9 @@ PINNED = {
          # guest loader the exported LdrLoadDll takes a lock it does not hold, and the
          # exported NtProtectVirtualMemory is a syscall thunk whose dispatcher is null.
          'guest': {'LdrLoadDll': 0x9f698, 'LdrGetDllHandle': 0x9f698,
-                   'NtProtectVirtualMemory': 0xea8cc},
-         'payload': '68a458ec9c32041c79fdd622d18e91cfbe825a5292cae362d310930e34dd598e',
+                   'NtProtectVirtualMemory': 0xea8cc,
+                   'NtQueryVirtualMemory': 0xec884},
+         'payload': 'ff63cfe86205232669eccb4b2bc80d0722c374fea3f8c0783ab8ee0155d68e4f',
          'exports': {'LdrGetDllHandle': 0x180043328, 'LdrLoadDll': 0x180040e94,
                      'NtProtectVirtualMemory': 0x180065db0}},
     '5b388fd48823e905616432fba627eb48f68dc14383963bb213d55db3f691b1b9':

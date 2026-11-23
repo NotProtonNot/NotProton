@@ -140,7 +140,7 @@ enum NtdllPatcher {
             NtdllPatch(
                 arch: .i386Windows,
                 payloadResource: "detour32-fex",
-                payloadSHA256: "b4c697ba396ecb59125c505666ad3465d1208b8a1e3e53a0c457657b341376b9",
+                payloadSHA256: "708cbed90780e1590bb3b0bead7e71e4c207c656096f08ccdab50a5996792047",
                 caveRVA: 0x6b2fe,
                 payloadRVA: 0x6b300,
                 hooks: [
@@ -155,7 +155,7 @@ enum NtdllPatcher {
             NtdllPatch(
                 arch: .aarch64Windows,
                 payloadResource: "detour64-fex",
-                payloadSHA256: "68a458ec9c32041c79fdd622d18e91cfbe825a5292cae362d310930e34dd598e",
+                payloadSHA256: "ff63cfe86205232669eccb4b2bc80d0722c374fea3f8c0783ab8ee0155d68e4f",
                 caveRVA: 0xf1185,
                 payloadRVA: 0xf1190,
                 hooks: [
