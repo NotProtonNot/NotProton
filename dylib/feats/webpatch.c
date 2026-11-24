@@ -1815,6 +1815,33 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "Object.defineProperty(globalThis.MSCXUI||(globalThis.MSCXUI={}),\"" K "\",{get:()=>" N \
     ",configurable:!0,enumerable:!0})"
 
+// The window Steam opens its own launch picker over.
+#define NP_LAUNCH_OWNER "globalThis.SteamUIStore?.ActiveWindowInstance?.BrowserWindow"
+
+// Hands a shortcut's plugin launch choices to Steam as its launch options, and sends Play
+// through Steam's picker. Anything unexpected falls through to Steam.
+#define NP_PLUGIN_LAUNCH_JS \
+    "(()=>{const A=globalThis.SteamClient?.Apps;if(!A||A.MSCXRunGame)return;" \
+    "const run=A.RunGame,opts=A.GetLaunchOptionsForApp;A.MSCXRunGame=run;" \
+    /* Details may still be loading when Play is pressed. */ \
+    "const det=id=>new Promise(res=>{const S=globalThis.appDetailsStore;if(!S)return res(null);" \
+    "let h,done=0;const end=d=>{if(done)return;done=1;clearTimeout(t);queueMicrotask(()=>h?.unregister());res(d)}," \
+    "t=setTimeout(()=>end(null),3000);h=S.RegisterForAppData(id,d=>d&&end(d))});" \
+    /* A row is on when its KEY=value is before %command%. */ \
+    "const on=(o,k,v)=>{const c=o.search(/%command%/i);return(c<0?o:o.slice(0,c)).split(/\\s+/)" \
+    ".some(w=>w===k+\"=\"+v||w===k+\"='\"+v+\"'\"||w===k+'=\"'+v+'\"')};" \
+    /* null with fewer than two choices. */ \
+    "const pick=id=>id<2**31||typeof globalThis.MSCXRoute!==\"function\"?Promise.resolve(null):" \
+    "Promise.all([det(id),globalThis.MSCXRoute(\"NotProton.PluginLaunch#1\",id)]).then(([d,j])=>{" \
+    "const o=d?.strLaunchOptions||\"\",es=d?JSON.parse(j||\"[]\").filter(e=>on(o,e.k,e.on)):[];" \
+    "return es.length<2?null:es}).catch(e=>(console.error(\"NotProton: no plugin launch choices\",e),null));" \
+    "const list=es=>es.map((e,i)=>({nIndex:i,strDescription:e.l,strGameName:\"\",eType:0}));" \
+    "A.GetLaunchOptionsForApp=function(id,...r){return pick(id).then(es=>es?list(es):opts.call(A,id,...r))};" \
+    "A.RunGame=function(g,x,n,...r){let id=0;try{id=Number(BigInt(g)>>32n)}catch(e){}" \
+    "const go=a=>run.call(A,g,a,n,...r),L=globalThis.MSCXLaunchOptions;" \
+    "if(id<2**31||x||n!==-1||typeof L!==\"function\")return go(x);" \
+    "pick(id).then(es=>es?L({appid:id,continue:i=>go(es[i]?.a||\"\"),onCancel:()=>{}},list(es)):go(x))}})();"
+
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \
     "o=>{const T=/(?:[^\\s\"'\\\\]|\\\\[^]|\"(?:[^\"\\\\]|\\\\[^])*\"|'[^']*')+/g," \
@@ -2100,6 +2127,31 @@ static const np_gate_t g_fixes[] = {
       1, 0 },
     { "this.m_bServicesInitialized=!0,SteamClient.UI.NotifyAppInitialized()",
       "this.m_bServicesInitialized=!0," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1, 0 },
+    // Steam's launch option picker
+    { "async function " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "." NP_C6
+      ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(\"showing launch options\",",
+      "globalThis.MSCXLaunchOptions=(t,l)=>" NP_C1 "({ownerWindow:" NP_LAUNCH_OWNER ",...t},l);"
+      NP_PLUGIN_LAUNCH_JS "async function  " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "."
+      NP_C6 ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(\"showing launch options\",", 1, 0 },
+    { "async function " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "." NP_C6
+      ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(`showing launch options`,",
+      "globalThis.MSCXLaunchOptions=(t,l)=>" NP_C1 "({ownerWindow:" NP_LAUNCH_OWNER ",...t},l);"
+      NP_PLUGIN_LAUNCH_JS "async function  " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "."
+      NP_C6 ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(`showing launch options`,", 1, 0 },
+    // Steam's default launch option setting, shown on the shortcut page too
+    { "function " NP_C1 "(" NP_C2 "){const{details:" NP_C3 "}=" NP_C2 ",[" NP_C4 "," NP_C5 "]="
+      NP_C6 ".useState()," NP_C7 "=(0," NP_C8 "." NP_C9 ")(" NP_C3 ".unAppID," NP_C4 "),",
+      NP_UI_REG("DefaultLaunchOption", "(d=>" NP_C6 ".createElement(" NP_C1 ",{details:d}))")
+      ";function  " NP_C1 "(" NP_C2 "){const{details:" NP_C3 "}=" NP_C2 ",[" NP_C4 "," NP_C5 "]="
+      NP_C6 ".useState()," NP_C7 "=(0," NP_C8 "." NP_C9 ")(" NP_C3 ".unAppID," NP_C4 "),", 1, 0 },
+    { ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title:(0," NP_C4 "." NP_C5 ")(\"#AppProperties_LaunchOptionsSection\")}),",
+      ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title: (0," NP_C4 "." NP_C5 ")(\"#AppProperties_LaunchOptionsSection\")}),globalThis.MSCXUI?.DefaultLaunchOption?.(" NP_C1 ")??null,", 1, 0 },
+    { ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title:(0," NP_C4 "." NP_C5 ")(`#AppProperties_LaunchOptionsSection`)}),",
+      ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title: (0," NP_C4 "." NP_C5 ")(`#AppProperties_LaunchOptionsSection`)}),globalThis.MSCXUI?.DefaultLaunchOption?.(" NP_C1 ")??null,", 1, 0 },
     { "(\"small_mode\")," NP_C1 "=!" NP_C2 "||" NP_C3 "," NP_C4 "=" NP_C1 "," NP_C5 "=200,",
       "(\"small_mode\")," NP_C1 "=!" NP_C2 "||" NP_C3 "," NP_C4 "=!!0," NP_C5 "=200,", 1, 0 },
     { "function " NP_C1 "(" NP_C2 "){let{label:" NP_C3 ",className:" NP_C4 ",children:" NP_C5 ",..." NP_C6

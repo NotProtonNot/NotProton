@@ -210,6 +210,11 @@ int np_log_first_hit(const void *anchor, unsigned long tag) {
 }
 
 static const char *stub_live_json;
+char *np_pluginlaunch_json(uint32_t appid) {
+    (void)appid;
+    return strdup("[]");
+}
+
 static size_t live_tool_count;
 static const char *live_tool, *live_build, *live_arch;
 size_t np_compat_tool_builds(const char **names, const char **builds, const char **archs,

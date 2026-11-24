@@ -53,6 +53,7 @@ SRCS := \
 	dylib/feats/usershortcuts.c \
 	dylib/feats/conf.c \
 	dylib/feats/webpatch.c \
+	dylib/feats/pluginlaunch.c \
 	dylib/feats/nativeplatform.c \
 	dylib/feats/input_access.c \
 	vendor/cJSON.c
@@ -407,11 +408,20 @@ webpatch-fixtures:
 		out=$$($(GATECHECK) --library-literal "$$f" $$tmp/$$(basename $$f .js).literal.out.js 2>&1) || { echo "$$out"; fail=1; }; \
 	done; \
 	out=$$($(GATECHECK) --older-filter $$tmp/library.older.out.js 2>&1) || { echo "$$out"; fail=1; }; \
+	for f in $(WEBPATCH_FIXTURES)/launch.*.js; do \
+		b=$$(basename $$f .js); \
+		sed -e 's/"showing launch options"/`showing launch options`/' \
+		    -e 's/"#AppProperties_LaunchOptionsSection"/`#AppProperties_LaunchOptionsSection`/' $$f > $$tmp/$$b.literal.js; \
+		for src in $$f $$tmp/$$b.literal.js; do \
+			out=$$($(GATECHECK) --launch "$$src" $$tmp/launch-out.$$(basename $$src) 2>&1) || { echo "$$out"; fail=1; }; \
+		done; \
+	done; \
 	if [ $$fail -eq 0 ]; then \
 		if command -v node >/dev/null 2>&1; then \
 			node dylib/tests/library-filter/behavior.js $$tmp/library.*.out.js || fail=1; \
-		elif [ -n "$$CI" ]; then echo "FAIL: library filter needs node in CI"; fail=1; \
-		else echo "==> library filter: node not found, skipped"; fi; \
+			node dylib/tests/launch-picker/behavior.js $$tmp/launch-out.*.js || fail=1; \
+		elif [ -n "$$CI" ]; then echo "FAIL: library filter and launch picker need node in CI"; fail=1; \
+		else echo "==> library filter and launch picker: node not found, skipped"; fi; \
 	fi; \
 	rm -rf $$tmp; \
 	$(MAKE) -s $(NATIVEPLATFORMCHECK) && $(NATIVEPLATFORMCHECK) || fail=1; \

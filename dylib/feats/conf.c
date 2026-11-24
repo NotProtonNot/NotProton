@@ -24,6 +24,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
     { "patch", 16, 0 },    { "variants", 8, 0 },    { "group", 1, 0 },
     { "improves", 16, 0 },  { "needed_for", 16, 0 }, { "launcher", 1, 0 },
+    { "launch", 16, 0 },
     { NULL, 0, 0 }
 };
 
@@ -202,6 +203,25 @@ static int conf_group_ok(const char *v) {
     return 1;
 }
 
+// "label = file [= arguments]", with the file below the shortcut's folder.
+static int conf_launch_ok(const char *v) {
+    const char *eq = strchr(v, '=');
+    if (!eq) return 0;
+    const char *l = v;
+    while (l < eq && conf_space(*l)) l++;
+    if (l == eq) return 0;
+
+    const char *f = eq + 1;
+    while (*f && conf_space(*f)) f++;
+    const char *end = strchr(f, '=');
+    if (!end) end = f + strlen(f);
+    while (end > f && conf_space(end[-1])) end--;
+    if (end == f || *f == '/') return 0;
+    for (const char *p = f; p + 1 < end; p++)
+        if (p[0] == '.' && p[1] == '.') return 0;
+    return 1;
+}
+
 static int conf_env_ok(const char *v) {
     const char *eq = strchr(v, '=');
     if (!eq || eq == v) return 0;
@@ -342,6 +362,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "needed_for") == 0 && conf_has_app(rec, "improves", v)) {
             *detail = "needed_for";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "launch") == 0 && !conf_launch_ok(v)) {
+            *detail = "launch";
             return NP_CONF_BAD_VALUE;
         }
         if (strcmp(n, "hide_crossover") == 0 && strcmp(v, "1") != 0) {
