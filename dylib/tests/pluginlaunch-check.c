@@ -72,7 +72,14 @@ static void make_home(void) {
              "label = T\n"
              "launch = Launcher = launcher.exe =\n"
              "launch = Game = games/g.exe = --game=g \"two words\"\n"
-             "launch = Missing = games/none.exe = --game=none\n");
+             "launch = Missing = games/none.exe = --game=none\n"
+             "[NOTPROTON_ANY_GAME]\n"
+             "label = Any game\n"
+             "present = */g.exe\n"
+             "[NOTPROTON_THIS_GAME]\n"
+             "label = This game\n"
+             "present = nothing.exe\n"
+             "present = g.exe\n");
 }
 
 static char *cmd_for(const char *exe, const char *tail) {
@@ -109,6 +116,17 @@ int main(void) {
     free(json);
     json = np_pluginlaunch_json(220240);
     check(json && strcmp(json, "[]") == 0, "a Steam game offers nothing");
+    free(json);
+
+    printf("== rows show where one of their files is ==\n");
+    json = np_pluginlaunch_present_json(LAUNCHER);
+    check(json && strcmp(json, "[\"NOTPROTON_ANY_GAME\"]") == 0, "a wildcard matches a game a folder down");
+    free(json);
+    json = np_pluginlaunch_present_json(GAME);
+    check(json && strcmp(json, "[\"NOTPROTON_THIS_GAME\"]") == 0, "any one of a row's files is enough");
+    free(json);
+    json = np_pluginlaunch_present_json(220240);
+    check(json && strcmp(json, "[]") == 0, "a Steam game has none");
     free(json);
 
     printf("== a pick must be one of the shortcut's choices ==\n");

@@ -24,7 +24,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
     { "patch", 16, 0 },    { "variants", 8, 0 },    { "group", 1, 0 },
     { "improves", 16, 0 },  { "needed_for", 16, 0 }, { "launcher", 1, 0 },
-    { "launch", 16, 0 },
+    { "launch", 16, 0 },     { "present", 16, 0 },
     { NULL, 0, 0 }
 };
 
@@ -222,6 +222,15 @@ static int conf_launch_ok(const char *v) {
     return 1;
 }
 
+// A path below the shortcut's folder, where "*" may stand for one name.
+static int conf_present_ok(const char *v) {
+    size_t n = strlen(v);
+    if (!n || n > 255 || *v == '/' || strstr(v, "..")) return 0;
+    for (size_t i = 0; i < n; i++)
+        if ((unsigned char)v[i] < 0x20 || v[i] == 0x7f) return 0;
+    return 1;
+}
+
 static int conf_env_ok(const char *v) {
     const char *eq = strchr(v, '=');
     if (!eq || eq == v) return 0;
@@ -362,6 +371,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "needed_for") == 0 && conf_has_app(rec, "improves", v)) {
             *detail = "needed_for";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "present") == 0 && !conf_present_ok(v)) {
+            *detail = "present";
             return NP_CONF_BAD_VALUE;
         }
         if (strcmp(n, "launch") == 0 && !conf_launch_ok(v)) {

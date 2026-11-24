@@ -6,6 +6,7 @@
 #include "../util/log.h"
 
 #include <dirent.h>
+#include <glob.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -129,12 +130,13 @@ int np_pluginlaunch_shortcut_dir(const char *home, uint32_t appid, char *out, si
 typedef struct {
     np_conf_rec_t *list;
     int count;
+    const char *field;
 } launch_ctx_t;
 
 static const char *launch_take(const np_conf_rec_t *rec, void *ctx, const char **detail) {
     (void)detail;
     launch_ctx_t *lc = ctx;
-    if (np_conf_count(rec, "launch")) lc->list[lc->count++] = *rec;
+    if (np_conf_count(rec, lc->field)) lc->list[lc->count++] = *rec;
     return NULL;
 }
 
@@ -212,7 +214,7 @@ static int each_launch(uint32_t appid, launch_fn fn, void *ctx) {
     if (!list) return 0;
     char plugins[PATH_MAX];
     snprintf(plugins, sizeof plugins, "%s/Library/Application Support/notproton/plugins", home);
-    launch_ctx_t lc = { list, 0 };
+    launch_ctx_t lc = { list, 0, "launch" };
     const np_conf_sink_t sink = { launch_take, launch_refused, NULL };
     np_conf_read_dir(plugins, NULL, NP_CONF_PLUGIN, &sink, &lc);
 
@@ -326,4 +328,51 @@ char *np_pluginlaunch_take(const char *cmd) {
     if (!out) return NULL;
     snprintf(out, strlen(cmd) + strlen(args) + 2, "%.*s %s%s", (int)head, cmd, args, cmd + head);
     return out;
+}
+
+// Whether path, which may hold "*", names a file below dir.
+static int present_in(const char *dir, const char *path) {
+    char pattern[PATH_MAX];
+    glob_t g;
+    if (snprintf(pattern, sizeof pattern, "%s/%s", dir, path) >= (int)sizeof pattern) return 0;
+    if (glob(pattern, GLOB_NOSORT, NULL, &g) != 0) return 0;
+    int found = 0;
+    struct stat st;
+    for (size_t i = 0; i < g.gl_pathc && !found; i++)
+        found = stat(g.gl_pathv[i], &st) == 0 && S_ISREG(st.st_mode);
+    globfree(&g);
+    return found;
+}
+
+char *np_pluginlaunch_present_json(uint32_t appid) {
+    json_t j = { NULL, 0, 0, 1 };
+    json_put(&j, "[", 1);
+
+    const char *home = np_home_dir();
+    char dir[PATH_MAX];
+    np_conf_rec_t *list = calloc(NP_CONF_RECORDS_MAX, sizeof *list);
+    if (!list) { free(j.buf); return NULL; }
+    if (home && np_pluginlaunch_shortcut_dir(home, appid, dir, sizeof dir)) {
+        char plugins[PATH_MAX];
+        snprintf(plugins, sizeof plugins, "%s/Library/Application Support/notproton/plugins", home);
+        launch_ctx_t lc = { list, 0, "present" };
+        const np_conf_sink_t sink = { launch_take, launch_refused, NULL };
+        np_conf_read_dir(plugins, NULL, NP_CONF_PLUGIN, &sink, &lc);
+
+        int first = 1;
+        for (int r = 0; r < lc.count; r++) {
+            const char *name, *value;
+            int it = 0, found = 0;
+            while (!found && np_conf_next(&list[r], &it, &name, &value))
+                found = strcmp(name, "present") == 0 && present_in(dir, value);
+            if (!found) continue;
+            if (!first) json_put(&j, ",", 1);
+            json_str(&j, list[r].id, strlen(list[r].id));
+            first = 0;
+        }
+    }
+    free(list);
+    json_put(&j, "]", 1);
+    if (!j.ok) { free(j.buf); return NULL; }
+    return j.buf;
 }

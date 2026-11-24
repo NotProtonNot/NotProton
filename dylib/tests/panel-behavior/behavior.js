@@ -79,6 +79,30 @@ for (const form of Object.keys(FORMS)) {
     t.ok(labels(PL, 287700).includes('Forza only'), 'apps: show all, switched on this session');
   }
 
+  {
+    const PRESENT = JSON.stringify([
+      { k: 'NOTPROTON_HERE', l: 'Here only', on: '1', off: '', dep: '', d: '', pr: 1 },
+      { k: 'NOTPROTON_ANY', l: 'Any game', on: '1', off: '', dep: '', d: '' },
+    ]).replace(/"(\w+)":/g, '$1:');
+    const labels = (render, app) => walk(render({ details: details('', { unAppID: app }) }))
+      .filter(x => x.props && x.props.label).map(x => x.props.label);
+    const asked = [];
+    const g = { document: { documentElement: { lang: 'en' } }, dispatchEvent() {},
+                MSCXRoute: (r, a) => { asked.push([r, a]); return new Promise(() => {}); },
+                MSCXPresent: { 3000000001: { k: ['NOTPROTON_HERE'], t: Date.now() },
+                               3000000002: { k: [], t: Date.now() } } };
+    const { render: PR } = panel(emit, form, g, { feats: PRESENT });
+    t.ok(labels(PR, 3000000001).includes('Here only'), 'present: shown where its file is');
+    t.ok(!labels(PR, 3000000002).includes('Here only') && labels(PR, 3000000002).includes('Any game'),
+         'present: hidden where it isn\'t');
+    t.ok(!asked.length, 'present: a fresh answer isn\'t asked again');
+    t.ok(!labels(PR, 3000000003).includes('Here only')
+         && asked.some(([r, a]) => r === 'NotProton.PluginPresent#1' && a === 3000000003),
+         'present: hidden until NotProton says, and asked for');
+    const { render: PRS } = panel(emit, form, { ...g, MSCXShowAllPlugins: undefined }, { feats: PRESENT, showAll: 1 });
+    t.ok(labels(PRS, 3000000002).includes('Here only'), 'present: show all');
+  }
+
   // For a tool we did not install there is no run script of ours in the launch, so the
   // panel writes what that script would have exported: the dylib on the insert list and
   // the plugin's own env, in the form that carries a variable without our launch hook.

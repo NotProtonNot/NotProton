@@ -72,6 +72,8 @@ NOTPROTON_FH6	apps	4294967295
 NOTPROTON_FH6	launch	Launcher = launcher.exe =
 NOTPROTON_FH6	launch	A game = games/A Game/game.exe = --game=a two
 NOTPROTON_FH6	launch	No args = games/b.exe
+NOTPROTON_FH6	present	launcher.exe
+NOTPROTON_FH6	present	games/*/game.exe
 !	NOTPROTON_APP_ZERO	bad-value:apps
 !	NOTPROTON_APP_BIG	bad-value:apps
 !	NOTPROTON_APP_WORD	bad-value:apps
@@ -80,6 +82,8 @@ NOTPROTON_FH6	launch	No args = games/b.exe
 !	NOTPROTON_LAUNCH_NO_LABEL	bad-value:launch
 !	NOTPROTON_LAUNCH_ABSOLUTE	bad-value:launch
 !	NOTPROTON_LAUNCH_UP	bad-value:launch
+!	NOTPROTON_PRESENT_ABSOLUTE	bad-value:present
+!	NOTPROTON_PRESENT_UP	bad-value:present
 
 == plugins/38-improves.conf
 NOTPROTON_IMP	label	Improves
