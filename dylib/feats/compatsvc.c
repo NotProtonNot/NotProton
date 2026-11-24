@@ -41,6 +41,7 @@
 #define ROUTE_DISMISS_FIXES        "NotProton.DismissFixes#1"
 #define ROUTE_GET_PLUGINS          "NotProton.GetPlugins#1"
 #define ROUTE_PLUGIN_LAUNCH        "NotProton.PluginLaunch#1"
+#define ROUTE_PLUGIN_LAUNCH_PICK   "NotProton.PluginLaunchPick#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -395,6 +396,16 @@ static int plugin_launch(uintptr_t request, uintptr_t response) {
     return answer_long_json(response, "launch choices", json);
 }
 
+// The choice picked for a shortcut, kept until its launch command is built.
+static int plugin_launch_pick(uintptr_t request, uintptr_t response) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    uint32_t appid    = (has_bits & SPECIFY_HAS_APPID)
+                      ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
+    (void)response;
+    return np_pluginlaunch_pick(appid, string_field(request + SPECIFY_TOOL_NAME_OFF))
+        ? RESULT_OK : RESULT_FAIL;
+}
+
 static int get_plugins(uintptr_t request, uintptr_t response) {
     (void)request;
     const char *tools[NP_WEBPATCH_BUILDS_MAX], *builds[NP_WEBPATCH_BUILDS_MAX];
@@ -683,7 +694,9 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
         NP_WARN("compatsvc: the Compatibility page cannot rebuild prefixes");
     if (!np_webui_register_route(ROUTE_GET_PLUGINS, request, response, get_plugins))
         NP_WARN("compatsvc: the Compatibility page shows the plugins Steam started with");
-    if (!np_webui_register_route(ROUTE_PLUGIN_LAUNCH, request, response, plugin_launch))
+    if (!np_webui_register_route(ROUTE_PLUGIN_LAUNCH, request, response, plugin_launch)
+        || !np_webui_register_route(ROUTE_PLUGIN_LAUNCH_PICK, specify_request, specify_response,
+                                    plugin_launch_pick))
         NP_WARN("compatsvc: plugins can't offer launch choices for shortcuts");
 
     uintptr_t notification = np_rtti_vptr(mh, slide, text_base, text_size,

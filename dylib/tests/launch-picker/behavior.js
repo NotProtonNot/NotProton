@@ -30,10 +30,10 @@ const ENTRIES = [
   { k: 'NOTPROTON_HOYO', on: '1', l: 'Honkai: Star Rail', a: '--hoyo-game=hkrpg' },
 ];
 
-// A client with one shortcut, the details store, NotProton's route and Steam's picker.
+// A client with one shortcut, the details store, NotProton's routes and Steam's picker.
 function client(js, { opts = 'NOTPROTON_HOYO=1 %command%', json = JSON.stringify(ENTRIES), picker = true,
-                      route = true, details = 'now' } = {}) {
-  const c = { runs: [], shown: [], asked: [] };
+                      route = true, details = 'now', keep = 'yes' } = {}) {
+  const c = { runs: [], shown: [], asked: [], picks: [] };
   const d = { strLaunchOptions: opts };
   globalThis.SteamClient = { Apps: {
     RunGame(...a) { c.runs.push(a); },
@@ -45,6 +45,10 @@ function client(js, { opts = 'NOTPROTON_HOYO=1 %command%', json = JSON.stringify
     return { unregister() {} };
   } };
   globalThis.MSCXRoute = route ? () => Promise.resolve(json) : undefined;
+  globalThis.MSCXSpecifyRoute = keep === 'none' ? undefined : (r, id, a) => {
+    c.picks.push([r, id, a]);
+    return keep === 'no' ? Promise.reject('no transport') : Promise.resolve({ BSuccess: () => keep === 'yes', GetEResult: () => 2 });
+  };
   globalThis.MSCXLaunchOptions = picker ? (t, list) => c.shown.push({ t, list }) : undefined;
   (0, eval)(js);
   return c;
@@ -106,9 +110,25 @@ async function run(file) {
   ok(name, c.shown.length === 1 && c.runs.length === 0, 'Play opens Steam\'s picker and waits');
   ok(name, c.shown[0]?.t.appid === ID && same(c.shown[0]?.list, list), 'the picker gets the shortcut and its list');
   c.shown[0]?.t.continue(1);
-  ok(name, same(c.runs, [[GAME, '--hoyo-game=hkrpg', -1, 7]]), 'the pick starts with its arguments');
+  ok(name, c.runs.length === 0, 'nothing starts before NotProton has the pick');
+  await settle(5);
+  ok(name, same(c.picks, [['NotProton.PluginLaunchPick#1', ID, '--hoyo-game=hkrpg']]) &&
+           same(c.runs, [[GAME, '', -1, 7]]), 'the pick goes to NotProton, then the shortcut starts');
   c.shown[0]?.t.continue(0);
-  ok(name, same(c.runs[1], [GAME, '', -1, 7]), 'a choice without arguments starts plainly');
+  await settle(5);
+  ok(name, same(c.picks[1], ['NotProton.PluginLaunchPick#1', ID, '']) && same(c.runs[1], [GAME, '', -1, 7]),
+     'a choice without arguments clears any earlier pick and starts');
+
+  console.error = () => {};
+  for (const keep of ['no', 'refused']) {
+    c = client(js, { keep });
+    SteamClient.Apps.RunGame(GAME, '', -1, 7);
+    await settle(5);
+    c.shown[0]?.t.continue(1);
+    await settle(5);
+    ok(name, same(c.runs, [[GAME, '', -1, 7]]), `a pick NotProton ${keep === 'no' ? 'never got' : 'refused'} still starts the shortcut`);
+  }
+  console.error = quiet;
 
   c = client(js, { details: 'later' });
   SteamClient.Apps.RunGame(GAME, '', -1, 7);
@@ -152,6 +172,10 @@ async function run(file) {
   c = client(js, { picker: false });
   SteamClient.Apps.RunGame(GAME, '', -1, 7);
   ok(name, c.runs.length === 1, 'no picker to hand means a plain launch');
+
+  c = client(js, { keep: 'none' });
+  SteamClient.Apps.RunGame(GAME, '', -1, 7);
+  ok(name, c.runs.length === 1 && c.shown.length === 0, 'nowhere to hand the pick means a plain launch');
 
   c = client(js, { route: false });
   SteamClient.Apps.RunGame(GAME, '', -1, 7);

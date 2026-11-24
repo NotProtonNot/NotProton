@@ -1838,9 +1838,12 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const list=es=>es.map((e,i)=>({nIndex:i,strDescription:e.l,strGameName:\"\",eType:0}));" \
     "A.GetLaunchOptionsForApp=function(id,...r){return pick(id).then(es=>es?list(es):opts.call(A,id,...r))};" \
     "A.RunGame=function(g,x,n,...r){let id=0;try{id=Number(BigInt(g)>>32n)}catch(e){}" \
-    "const go=a=>run.call(A,g,a,n,...r),L=globalThis.MSCXLaunchOptions;" \
-    "if(id<2**31||x||n!==-1||typeof L!==\"function\")return go(x);" \
-    "pick(id).then(es=>es?L({appid:id,continue:i=>go(es[i]?.a||\"\"),onCancel:()=>{}},list(es)):go(x))}})();"
+    "const go=()=>run.call(A,g,x,n,...r),L=globalThis.MSCXLaunchOptions,P=globalThis.MSCXSpecifyRoute;" \
+    "if(id<2**31||x||n!==-1||typeof L!==\"function\"||typeof P!==\"function\")return go();" \
+    /* Steam can't pass a shortcut arguments, so NotProton adds them at launch. */ \
+    "const use=e=>P(\"NotProton.PluginLaunchPick#1\",id,e?.a||\"\").then(y=>y.BSuccess()||Promise.reject(y.GetEResult()))" \
+    ".catch(e=>console.error(\"NotProton: the launch choice was lost\",e)).then(go);" \
+    "pick(id).then(es=>es?L({appid:id,continue:i=>use(es[i]),onCancel:()=>{}},list(es)):go())}})();"
 
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \

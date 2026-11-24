@@ -7,11 +7,13 @@
 
 #include <dirent.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #define VDF_MAP    0x00
 #define VDF_STRING 0x01
@@ -87,7 +89,8 @@ static int shortcut_exe_in(const char *vdf, uint32_t appid, char *exe, size_t si
     return found;
 }
 
-int np_pluginlaunch_shortcut_dir(const char *home, uint32_t appid, char *out, size_t size) {
+// The shortcut's exe, unquoted.
+static int shortcut_exe(const char *home, uint32_t appid, char *out, size_t size) {
     char root[PATH_MAX];
     snprintf(root, sizeof root, "%s/Library/Application Support/Steam/userdata", home);
     DIR *d = opendir(root);
@@ -106,17 +109,21 @@ int np_pluginlaunch_shortcut_dir(const char *home, uint32_t appid, char *out, si
     closedir(d);
     if (!found) return 0;
 
-    // Steam keeps the path quoted.
     char *path = exe;
     size_t n = strlen(path);
     if (n >= 2 && path[0] == '"' && path[n - 1] == '"') {
         path[n - 1] = 0;
         path++;
     }
-    char *slash = strrchr(path, '/');
-    if (!slash || slash == path) return 0;
-    *slash = 0;
     return snprintf(out, size, "%s", path) < (int)size;
+}
+
+int np_pluginlaunch_shortcut_dir(const char *home, uint32_t appid, char *out, size_t size) {
+    if (!shortcut_exe(home, appid, out, size)) return 0;
+    char *slash = strrchr(out, '/');
+    if (!slash || slash == out) return 0;
+    *slash = 0;
+    return 1;
 }
 
 typedef struct {
@@ -192,49 +199,152 @@ static int launch_exists(const char *dir, const char *path, size_t plen) {
     return stat(full, &st) == 0 && S_ISREG(st.st_mode);
 }
 
-char *np_pluginlaunch_json(uint32_t appid) {
-    json_t j = { NULL, 0, 0, 1 };
-    json_put(&j, "[", 1);
+typedef void (*launch_fn)(const np_conf_rec_t *rec, const char *on, const char *label,
+                          size_t llen, const char *args, size_t alen, void *ctx);
 
+// Calls fn for each launch entry a shortcut offers. Returns 0 if out of memory.
+static int each_launch(uint32_t appid, launch_fn fn, void *ctx) {
     const char *home = np_home_dir();
     char dir[PATH_MAX];
+    if (!home || !np_pluginlaunch_shortcut_dir(home, appid, dir, sizeof dir)) return 1;
+
     np_conf_rec_t *list = calloc(NP_CONF_RECORDS_MAX, sizeof *list);
-    if (!list) { free(j.buf); return NULL; }
+    if (!list) return 0;
+    char plugins[PATH_MAX];
+    snprintf(plugins, sizeof plugins, "%s/Library/Application Support/notproton/plugins", home);
+    launch_ctx_t lc = { list, 0 };
+    const np_conf_sink_t sink = { launch_take, launch_refused, NULL };
+    np_conf_read_dir(plugins, NULL, NP_CONF_PLUGIN, &sink, &lc);
 
-    int first = 1;
-    if (home && np_pluginlaunch_shortcut_dir(home, appid, dir, sizeof dir)) {
-        char plugins[PATH_MAX];
-        snprintf(plugins, sizeof plugins, "%s/Library/Application Support/notproton/plugins", home);
-        launch_ctx_t lc = { list, 0 };
-        const np_conf_sink_t sink = { launch_take, launch_refused, NULL };
-        np_conf_read_dir(plugins, NULL, NP_CONF_PLUGIN, &sink, &lc);
-
-        for (int r = 0; r < lc.count; r++) {
-            const char *on = np_conf_get(&list[r], "on");
-            const char *name, *value;
-            int it = 0;
-            while (np_conf_next(&list[r], &it, &name, &value)) {
-                const char *label, *path, *args;
-                size_t llen, plen, alen;
-                if (strcmp(name, "launch") != 0) continue;
-                if (!launch_split(value, &label, &llen, &path, &plen, &args, &alen)) continue;
-                if (!launch_exists(dir, path, plen)) continue;
-
-                json_put(&j, first ? "{\"k\":" : ",{\"k\":", first ? 5 : 6);
-                json_str(&j, list[r].id, strlen(list[r].id));
-                json_put(&j, ",\"on\":", 6);
-                json_str(&j, on ? on : "1", strlen(on ? on : "1"));
-                json_put(&j, ",\"l\":", 5);
-                json_str(&j, label, llen);
-                json_put(&j, ",\"a\":", 5);
-                json_str(&j, args, alen);
-                json_put(&j, "}", 1);
-                first = 0;
-            }
+    for (int r = 0; r < lc.count; r++) {
+        const char *on = np_conf_get(&list[r], "on");
+        const char *name, *value;
+        int it = 0;
+        while (np_conf_next(&list[r], &it, &name, &value)) {
+            const char *label, *path, *args;
+            size_t llen, plen, alen;
+            if (strcmp(name, "launch") != 0) continue;
+            if (!launch_split(value, &label, &llen, &path, &plen, &args, &alen)) continue;
+            if (!launch_exists(dir, path, plen)) continue;
+            fn(&list[r], on ? on : "1", label, llen, args, alen, ctx);
         }
     }
     free(list);
-    json_put(&j, "]", 1);
-    if (!j.ok) { free(j.buf); return NULL; }
-    return j.buf;
+    return 1;
+}
+
+typedef struct { json_t j; int first; } json_ctx_t;
+
+static void json_entry(const np_conf_rec_t *rec, const char *on, const char *label,
+                       size_t llen, const char *args, size_t alen, void *ctx) {
+    json_ctx_t *c = ctx;
+    json_put(&c->j, c->first ? "{\"k\":" : ",{\"k\":", c->first ? 5 : 6);
+    json_str(&c->j, rec->id, strlen(rec->id));
+    json_put(&c->j, ",\"on\":", 6);
+    json_str(&c->j, on, strlen(on));
+    json_put(&c->j, ",\"l\":", 5);
+    json_str(&c->j, label, llen);
+    json_put(&c->j, ",\"a\":", 5);
+    json_str(&c->j, args, alen);
+    json_put(&c->j, "}", 1);
+    c->first = 0;
+}
+
+char *np_pluginlaunch_json(uint32_t appid) {
+    json_ctx_t c = { { NULL, 0, 0, 1 }, 1 };
+    json_put(&c.j, "[", 1);
+    int ok = each_launch(appid, json_entry, &c);
+    json_put(&c.j, "]", 1);
+    if (!ok || !c.j.ok) { free(c.j.buf); return NULL; }
+    return c.j.buf;
+}
+
+// Steam can't pass a shortcut arguments, so a pick waits here for its launch command.
+#define PICK_TTL_SECONDS 120
+
+static pthread_mutex_t g_pick_lock = PTHREAD_MUTEX_INITIALIZER;
+static char g_pick_exe[PATH_MAX + 2];  // quoted, as in the launch command
+static char g_pick_args[1024];
+static time_t g_pick_at;
+
+static time_t now_seconds(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec;
+}
+
+typedef struct { const char *want; int found; } match_ctx_t;
+
+static void match_entry(const np_conf_rec_t *rec, const char *on, const char *label,
+                        size_t llen, const char *args, size_t alen, void *ctx) {
+    (void)rec; (void)on; (void)label; (void)llen;
+    match_ctx_t *m = ctx;
+    if (alen && strlen(m->want) == alen && memcmp(m->want, args, alen) == 0) m->found = 1;
+}
+
+int np_pluginlaunch_pick(uint32_t appid, const char *args) {
+    pthread_mutex_lock(&g_pick_lock);
+    g_pick_exe[0] = 0;
+    pthread_mutex_unlock(&g_pick_lock);
+    if (!args || !*args) return 1;
+
+    // Only arguments a plugin declared for this shortcut
+    match_ctx_t m = { args, 0 };
+    char exe[PATH_MAX];
+    const char *home = np_home_dir();
+    if (!each_launch(appid, match_entry, &m) || !m.found || strlen(args) >= sizeof g_pick_args
+        || !home || !shortcut_exe(home, appid, exe, sizeof exe)) {
+        NP_ERR("pluginlaunch: app %u has no launch choice with arguments %s", appid, args);
+        return 0;
+    }
+    pthread_mutex_lock(&g_pick_lock);
+    snprintf(g_pick_exe, sizeof g_pick_exe, "\"%s\"", exe);
+    snprintf(g_pick_args, sizeof g_pick_args, "%s", args);
+    g_pick_at = now_seconds();
+    pthread_mutex_unlock(&g_pick_lock);
+    NP_LOG("pluginlaunch: app %u starts next with %s", appid, args);
+    return 1;
+}
+
+// Appends s to out as one single-quoted shell word.
+static size_t put_quoted(char *out, const char *s, size_t n) {
+    size_t w = 0;
+    out[w++] = ' ';
+    out[w++] = '\'';
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] == '\'') { memcpy(out + w, "'\\''", 4); w += 4; }
+        else out[w++] = s[i];
+    }
+    out[w++] = '\'';
+    return w;
+}
+
+char *np_pluginlaunch_take(const char *cmd) {
+    char args[sizeof g_pick_args];
+    const char *exe = NULL;
+    size_t exe_len = 0;
+    pthread_mutex_lock(&g_pick_lock);
+    int fresh = g_pick_exe[0] && now_seconds() - g_pick_at <= PICK_TTL_SECONDS;
+    if (fresh && (exe = strstr(cmd, g_pick_exe))) {
+        exe_len = strlen(g_pick_exe);
+        snprintf(args, sizeof args, "%s", g_pick_args);
+    }
+    if (exe || !fresh) g_pick_exe[0] = 0;
+    pthread_mutex_unlock(&g_pick_lock);
+    if (!exe) return NULL;
+
+    // Right after the exe, one quoted word each
+    size_t head = (size_t)(exe - cmd) + exe_len, len = head;
+    char *out = malloc(strlen(cmd) + 7 * strlen(args) + 1);
+    if (!out) return NULL;
+    memcpy(out, cmd, head);
+    for (const char *p = args; *p;) {
+        while (*p == ' ' || *p == '\t') p++;
+        const char *e = p;
+        while (*e && *e != ' ' && *e != '\t') e++;
+        if (e > p) len += put_quoted(out + len, p, (size_t)(e - p));
+        p = e;
+    }
+    strcpy(out + len, cmd + head);
+    return out;
 }

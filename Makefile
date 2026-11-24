@@ -80,7 +80,7 @@ DEPS := $(OBJS:.o=.d)
         plugin-host plugin-host-install plugin-host-tests patchcheck npload \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
-        compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
+        compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell pluginlaunch-check activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -435,6 +435,14 @@ launch-shell:
 	mkdir -p $(OUT_DIR) && \
 	$(TEST_CC) -O1 -o $(LAUNCH_SHELL) dylib/tests/launch-shell.c && \
 	$(LAUNCH_SHELL)
+
+PLUGINLAUNCH_CHECK := $(OUT_DIR)/pluginlaunch-check
+
+pluginlaunch-check:
+	@if [ ! -f dylib/tests/pluginlaunch-check.c ]; then $(call SKIP,pluginlaunch-check,dylib/tests/pluginlaunch-check.c); exit 0; fi; \
+	mkdir -p $(OUT_DIR) && \
+	$(TEST_CC) -O1 -o $(PLUGINLAUNCH_CHECK) dylib/tests/pluginlaunch-check.c dylib/feats/conf.c dylib/util/file.c && \
+	$(PLUGINLAUNCH_CHECK)
 
 ACTIVATECHECK := $(OUT_DIR)/activatecheck
 

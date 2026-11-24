@@ -2,6 +2,7 @@
 #include "hooks.h"
 #include "../core/macho.h"
 #include "../feats/compat.h"
+#include "../feats/pluginlaunch.h"
 #include "../util/log.h"
 
 #include <dlfcn.h>
@@ -61,12 +62,19 @@ static char *np_launch_shell(const char *cmd, const char *shell, int max, const 
 static int np_hook_parse_shell(const char *cmd, void *argv, int max, const char **rest) {
     const char *shell   = getenv("STEAM_GAME_LAUNCH_SHELL");
     char       *wrapped = np_launch_shell(cmd, shell, max, rest);
+    // Arguments of a choice picked in Steam's launch picker
+    char       *picked  = wrapped ? np_pluginlaunch_take(cmd) : NULL;
 
+    if (picked) {
+        free(wrapped);
+        wrapped = np_launch_shell(picked, shell, max, rest);
+    }
     if (wrapped)
-        NP_LOG("[launch] handed to %s: %s", shell ? shell : "/bin/sh -c", cmd);
+        NP_LOG("[launch] handed to %s: %s", shell ? shell : "/bin/sh -c", picked ? picked : cmd);
 
     int rc = orig_parse_shell(wrapped ? wrapped : cmd, argv, max, rest);
     free(wrapped);
+    free(picked);
     return rc;
 }
 
