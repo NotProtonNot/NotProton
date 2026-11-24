@@ -296,6 +296,20 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   gm('NOTPROTON_GAME_MODE=0 WINEMSYNC=1').props.onChange(false);
   t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning the Game Mode row off removes it (${last()})`);
+  {
+    const ext = (o, id) => walk(P({ details: details(o + ' %command%', { unAppID: id }) }))
+      .find(x => x.props && x.props.label === 'Assign External Drives a Drive Letter (Some game launchers will not install to a drive that does not have a drive letter)');
+    t.ok(!ext('', 287700), 'a Steam game has no external drive row');
+    t.ok(ext('', 3420702832) && ext('', 3420702832).props.checked === true,
+         'a non-Steam game has the row, on by default');
+    t.ok(ext('NOTPROTON_EXTERNAL_DRIVES=0', 3420702832).props.checked === false, 'the row reads the opt-out');
+    written.length = 0;
+    ext('', 3420702832).props.onChange(false);
+    t.ok(last().trim() === 'NOTPROTON_EXTERNAL_DRIVES=0 %command%', `turning it off writes the opt-out (${last()})`);
+    written.length = 0;
+    ext('NOTPROTON_EXTERNAL_DRIVES=0 WINEMSYNC=1', 3420702832).props.onChange(true);
+    t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning it back on removes it (${last()})`);
+  }
   written.length = 0;
   raw('').props.onChange(true);
   t.ok(last().trim() === 'NOTPROTON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);
