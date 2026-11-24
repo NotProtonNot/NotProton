@@ -24,6 +24,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
     { "patch", 16, 0 },    { "variants", 8, 0 },    { "group", 1, 0 },
     { "improves", 16, 0 },  { "needed_for", 16, 0 }, { "launcher", 1, 0 },
+    { "launch", 16, 0 },
     { NULL, 0, 0 }
 };
 
@@ -202,6 +203,33 @@ static int conf_group_ok(const char *v) {
     return 1;
 }
 
+int np_conf_home_path(char *out, size_t size, const char *home, const char *rel) {
+    if (!rel || !*rel) return 0;
+    if (*rel == '/') return snprintf(out, size, "%s", rel) < (int)size;
+    if (strncmp(rel, "~/", 2) == 0) rel += 2;
+    else if (strncmp(rel, "$HOME/", 6) == 0) rel += 6;
+    return snprintf(out, size, "%s/%s", home, rel) < (int)size;
+}
+
+int np_conf_launch(const char *v, np_conf_launch_t *out) {
+    const char *eq = strchr(v, '=');
+    if (!eq) return 0;
+    const char *end = eq;
+    while (end > v && conf_space(end[-1])) end--;
+    out->label_len = (size_t)(end - v);
+
+    const char *f = eq + 1;
+    while (conf_space(*f)) f++;
+    eq = strchr(f, '=');
+    end = eq ? eq : f + strlen(f);
+    out->args = eq ? eq + 1 : end;
+    while (conf_space(*out->args)) out->args++;
+    while (end > f && conf_space(end[-1])) end--;
+    out->file = f;
+    out->file_len = (size_t)(end - f);
+    return out->label_len && out->file_len && *f != '/' && !memmem(f, out->file_len, "..", 2);
+}
+
 static int conf_env_ok(const char *v) {
     const char *eq = strchr(v, '=');
     if (!eq || eq == v) return 0;
@@ -342,6 +370,10 @@ static const char *conf_schema(const np_conf_rec_t *rec, np_conf_kind kind,
         }
         if (strcmp(n, "needed_for") == 0 && conf_has_app(rec, "improves", v)) {
             *detail = "needed_for";
+            return NP_CONF_BAD_VALUE;
+        }
+        if (strcmp(n, "launch") == 0 && !np_conf_launch(v, &(np_conf_launch_t){0})) {
+            *detail = "launch";
             return NP_CONF_BAD_VALUE;
         }
         if (strcmp(n, "hide_crossover") == 0 && strcmp(v, "1") != 0) {

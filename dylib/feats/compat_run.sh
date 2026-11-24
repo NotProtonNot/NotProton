@@ -412,6 +412,14 @@ NP_CONF_NAMES
     sub(/^ +/, "", t)
     return length(t) <= 200 && t !~ /[\001-\037\177]/
   }
+  function launchok(s,   eq, f) {
+    eq = index(s, "=")
+    if (!eq || trim(substr(s, 1, eq - 1)) == "") return 0
+    f = substr(s, eq + 1)
+    if (index(f, "=")) f = substr(f, 1, index(f, "=") - 1)
+    f = trim(f)
+    return f != "" && substr(f, 1, 1) != "/" && !index(f, "..")
+  }
   function envok(s,   eq) {
     eq = index(s, "=")
     return eq > 1 && substr(s, 1, eq - 1) ~ /^[A-Z_][A-Z0-9_]*$/
@@ -463,6 +471,7 @@ NP_CONF_NAMES
       if (names[i] == "improves" && (!forok(vals[i]) || ("type" in cnt))) { detail = "improves"; return "bad-value" }
       if (names[i] == "needed_for" && (!forok(vals[i]) || ("type" in cnt))) { detail = "needed_for"; return "bad-value" }
       if (names[i] == "improves") rcs[forapp(vals[i])] = 1
+      if (names[i] == "launch" && !launchok(vals[i])) { detail = "launch"; return "bad-value" }
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
       if (names[i] == "patch" && !patchok(vals[i])) { detail = "patch"; return "bad-value" }
       if (names[i] == "variants" && !varidok(vals[i])) { detail = "variants"; return "bad-value" }
@@ -525,8 +534,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for launcher", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16 1", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for launcher launch", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16 1 16", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove apps", f, " ")
@@ -589,8 +598,7 @@ np_conf_ids() {
 np_conf_has() {
   printf '%s\n' "$1" | awk -F'\t' -v i="$2" '$1 "" == i "" { found = 1 } END { exit !found }'
 }
-# A path a descriptor names: absolute, or under $HOME however it is written, as
-# resolve_home_path in webpatch.c reads it.
+# Keep in sync with np_conf_home_path in conf.c.
 np_home_path() {
   # shellcheck disable=SC2088,SC2016
   case "$1" in

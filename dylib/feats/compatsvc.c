@@ -18,6 +18,7 @@
 #include "prefixstate.h"
 #include "webui.h"
 #include "webpatch.h"
+#include "pluginlaunch.h"
 #include "../resolver/anchor.h"
 #include "../util/file.h"
 #include "../util/log.h"
@@ -39,6 +40,8 @@
 #define ROUTE_SET_SHOW_ALL         "NotProton.SetShowAllPlugins#1"
 #define ROUTE_DISMISS_FIXES        "NotProton.DismissFixes#1"
 #define ROUTE_GET_PLUGINS          "NotProton.GetPlugins#1"
+#define ROUTE_PLUGIN_LAUNCH        "NotProton.PluginLaunch#1"
+#define ROUTE_PLUGIN_LAUNCH_PICK   "NotProton.PluginLaunchPick#1"
 
 // Mangled RTTI names of the message types. A client that builds the CompatManager
 // page compiles these without registering the service, so the vtables are there to
@@ -369,6 +372,39 @@ static int prefix_state(uintptr_t request, uintptr_t response) {
     return answer_json(response, appid, json);
 }
 
+// answer_json for strings longer than STATE_JSON_MAX.
+static int answer_long_json(uintptr_t response, const char *what, char *json) {
+    size_t len = strlen(json);
+    uint8_t *body = malloc(len + 16);
+    int result = RESULT_FAIL;
+    if (body) {
+        np_pb_t w = { body, len + 16, 0, 1 };
+        pb_string(&w, RESP_DEFAULT, json);
+        if (w.ok && np_webui_parse_into(response, body, (uint32_t)w.len)) result = RESULT_OK;
+        else NP_ERR("compatsvc: the client rejected the %zu byte %s", len, what);
+    }
+    free(body);
+    free(json);
+    return result;
+}
+
+static int plugin_launch(uintptr_t request, uintptr_t response) {
+    uint32_t appid = request_appid(request);
+    char *json = np_pluginlaunch_json(appid);
+    if (!json) return RESULT_FAIL;
+    NP_DBG("compatsvc: app %u launch choices %s", appid, json);
+    return answer_long_json(response, "launch choices", json);
+}
+
+static int plugin_launch_pick(uintptr_t request, uintptr_t response) {
+    uint32_t has_bits = *(const uint32_t *)(request + REQ_HAS_BITS_OFF);
+    uint32_t appid    = (has_bits & SPECIFY_HAS_APPID)
+                      ? *(const uint32_t *)(request + SPECIFY_APPID_OFF) : 0;
+    (void)response;
+    return np_pluginlaunch_pick(appid, string_field(request + SPECIFY_TOOL_NAME_OFF))
+        ? RESULT_OK : RESULT_FAIL;
+}
+
 static int get_plugins(uintptr_t request, uintptr_t response) {
     (void)request;
     const char *tools[NP_WEBPATCH_BUILDS_MAX], *builds[NP_WEBPATCH_BUILDS_MAX];
@@ -379,18 +415,7 @@ static int get_plugins(uintptr_t request, uintptr_t response) {
         NP_ERR("compatsvc: the plugin list could not be read");
         return RESULT_FAIL;
     }
-    size_t len = strlen(json);
-    uint8_t *body = malloc(len + 16);
-    int result = RESULT_FAIL;
-    if (body) {
-        np_pb_t w = { body, len + 16, 0, 1 };
-        pb_string(&w, RESP_DEFAULT, json);
-        if (w.ok && np_webui_parse_into(response, body, (uint32_t)w.len)) result = RESULT_OK;
-        else NP_ERR("compatsvc: the client rejected the %zu byte plugin list", len);
-    }
-    free(body);
-    free(json);
-    return result;
+    return answer_long_json(response, "plugin list", json);
 }
 
 // Runs argv with nothing of Steam's environment, so neither the insert nor Steam's own
@@ -668,6 +693,10 @@ void np_compatsvc_register(const struct mach_header_64 *mh, intptr_t slide,
         NP_WARN("compatsvc: the Compatibility page cannot rebuild prefixes");
     if (!np_webui_register_route(ROUTE_GET_PLUGINS, request, response, get_plugins))
         NP_WARN("compatsvc: the Compatibility page shows the plugins Steam started with");
+    if (!np_webui_register_route(ROUTE_PLUGIN_LAUNCH, request, response, plugin_launch)
+        || !np_webui_register_route(ROUTE_PLUGIN_LAUNCH_PICK, specify_request, specify_response,
+                                    plugin_launch_pick))
+        NP_WARN("compatsvc: plugins can't offer launch choices for shortcuts");
 
     uintptr_t notification = np_rtti_vptr(mh, slide, text_base, text_size,
                                           TYPE_STATE_CHANGED);

@@ -664,6 +664,110 @@ static void check_library(const char *path, const char *out_path, int literal_ve
     free(buf);
 }
 
+// The plugin launch choice fixes: the picker, the setting and the shortcut page.
+static const char *const g_launch_marks[] = {
+    "globalThis.MSCXLaunchOptions=",
+    "\"DefaultLaunchOption\",{get:",
+    "globalThis.MSCXUI?.DefaultLaunchOption?.(",
+};
+#define NP_LAUNCH_PARTS (sizeof g_launch_marks / sizeof g_launch_marks[0])
+
+static int launch_part(const np_gate_t *g) {
+    for (size_t m = 0; m < NP_LAUNCH_PARTS; m++)
+        if (strstr(g->replace, g_launch_marks[m])) return (int)m;
+    return -1;
+}
+
+static size_t count_text(const char *s, size_t len, const char *want) {
+    size_t n = 0, w = strlen(want);
+    for (const char *at = s; (at = memmem(at, len - (size_t)(at - s), want, w)); at += w) n++;
+    return n;
+}
+
+static int extract_launch(const char *chunk, const char *out_path) {
+    size_t len = 0;
+    uint8_t *buf = slurp(chunk, &len);
+    if (!buf) { fprintf(stderr, "cannot read %s\n", chunk); return 1; }
+    FILE *o = fopen(out_path, "wb");
+    if (!o) { fprintf(stderr, "cannot write %s\n", out_path); free(buf); return 1; }
+
+    const size_t pad = 160;
+    np_cap_t caps[NP_CAP_MAX];
+    size_t hits[NP_LAUNCH_PARTS] = {0};
+    for (size_t f = 0; f < NP_FIX_COUNT; f++) {
+        int part = launch_part(&g_fixes[f]);
+        if (part < 0) continue;
+        for (size_t i = 0; i < len; ) {
+            size_t used = match_at((const char *)buf, len, i, g_fixes[f].find, caps);
+            if (!used) { i++; continue; }
+            size_t from = i > pad ? i - pad : 0;
+            size_t to   = i + used + pad < len ? i + used + pad : len;
+            fwrite(buf + from, 1, to - from, o);
+            fputs("\n", o);
+            hits[part]++;
+            i += used;
+        }
+    }
+    fclose(o);
+    free(buf);
+    for (size_t m = 0; m < NP_LAUNCH_PARTS; m++) {
+        if (hits[m] == 1) continue;
+        fprintf(stderr, "launch part %zu found %zu times in %s\n", m, hits[m], chunk);
+        return 1;
+    }
+    printf("extracted fixture to %s\n", out_path);
+    return 0;
+}
+
+static void check_launch(const char *path, const char *out_path) {
+    size_t len = 0;
+    uint8_t *buf = slurp(path, &len);
+    if (!buf) { wrong("cannot read %s", path); return; }
+
+    size_t out_len = 0;
+    char *out = library_transform((const char *)buf, len, &out_len);
+    if (!out) {
+        wrong("%s was not patched", path);
+        free(buf);
+        return;
+    }
+    for (size_t m = 0; m < NP_LAUNCH_PARTS; m++)
+        if (count_text(out, out_len, g_launch_marks[m]) != 1)
+            wrong("launch part %zu is not in %s exactly once", m, path);
+    for (size_t f = 0; f < NP_FIX_COUNT; f++)
+        if (launch_part(&g_fixes[f]) >= 0 && count_matches(out, out_len, g_fixes[f].find))
+            wrong("launch fix %zu survived in %s", f, path);
+    if (out_path && !write_file(out_path, out, out_len)) wrong("cannot write %s", out_path);
+    free(out);
+
+    // Each part must drift on its own.
+    np_cap_t caps[NP_CAP_MAX];
+    for (size_t f = 0; f < NP_FIX_COUNT; f++) {
+        int part = launch_part(&g_fixes[f]);
+        if (part < 0 || count_matches((const char *)buf, len, g_fixes[f].find) != 1) continue;
+        char *copy = malloc(len + 1);
+        if (!copy) { wrong("out of memory"); break; }
+        memcpy(copy, buf, len + 1);
+        for (size_t i = 0; i < len; ) {
+            size_t used = match_at(copy, len, i, g_fixes[f].find, caps);
+            if (!used) { i++; continue; }
+            copy[i + used - 1] = '\x01';
+            i += used;
+        }
+        out = library_transform(copy, len, &out_len);
+        for (size_t m = 0; m < NP_LAUNCH_PARTS; m++) {
+            size_t want = (int)m == part ? 0 : 1;
+            if (!out && want) { wrong("drift in launch fix %zu left %s unpatched", f, path); break; }
+            if (out && count_text(out, out_len, g_launch_marks[m]) != want)
+                wrong("drift in launch fix %zu of %s left part %zu %s", f, path, m,
+                      want ? "out" : "in");
+        }
+        free(out);
+        free(copy);
+    }
+    free(buf);
+}
+
 static void check_older_filter(const char *out_path) {
     static const char source[] =
         "function Y(e){return t=>{switch(t){case L.Pu:return!!(0,P.td)()||"
@@ -689,6 +793,12 @@ int main(int argc, char **argv) {
     if ((argc == 3 || argc == 4) &&
         (strcmp(argv[1], "--library") == 0 || strcmp(argv[1], "--library-literal") == 0)) {
         check_library(argv[2], argc == 4 ? argv[3] : NULL, strcmp(argv[1], "--library-literal") == 0);
+        return g_wrong;
+    }
+    if (argc == 4 && strcmp(argv[1], "--extract-launch") == 0)
+        return extract_launch(argv[2], argv[3]);
+    if ((argc == 3 || argc == 4) && strcmp(argv[1], "--launch") == 0) {
+        check_launch(argv[2], argc == 4 ? argv[3] : NULL);
         return g_wrong;
     }
     if ((argc == 2 || argc == 3) && strcmp(argv[1], "--older-filter") == 0) {

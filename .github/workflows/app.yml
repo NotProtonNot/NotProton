@@ -166,6 +166,7 @@ jobs:
           make -s defaults-drift
           make -s shortcutcheck
           make -s launch-shell
+          make -s pluginlaunch-check
           make -s envcheck
           make -s envpasscheck
           make -s featcheck

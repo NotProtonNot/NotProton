@@ -16,8 +16,11 @@ int np_rebind_import(const struct mach_header_64 *mh, intptr_t slide,
 int fake_parse_shell(const char *cmd, void *argv, int max, const char **rest)
     __asm__("_" NP_PARSE_SYM_POSIX);
 
+static char parsed[1024];
+
 int fake_parse_shell(const char *cmd, void *argv, int max, const char **rest) {
-    (void)cmd; (void)argv; (void)max; (void)rest;
+    (void)argv; (void)max; (void)rest;
+    snprintf(parsed, sizeof parsed, "%s", cmd);
     return 0;
 }
 
@@ -40,6 +43,16 @@ static int app_tool = 1;
 int np_compat_app_runs_tool(uint32_t appid) {
     (void)appid;
     return app_tool;
+}
+
+static const char *picked_args;
+
+char *np_pluginlaunch_take(const char *cmd) {
+    if (!picked_args) return NULL;
+    char *out = malloc(strlen(cmd) + strlen(picked_args) + 2);
+    sprintf(out, "%s %s", cmd, picked_args);
+    picked_args = NULL;
+    return out;
 }
 
 void *Plat_Realloc(void *p, size_t size) {
@@ -195,6 +208,28 @@ int main(void) {
         printf("  ok    a remainder request is left alone\n");
     }
     free(got);
+
+    printf("== a choice picked in Steam's launch picker joins the launch it was picked for ==\n");
+    orig_parse_shell = fake_parse_shell;
+    picked_args      = "--game=a";
+    np_hook_parse_shell("A=1 /g/launcher.exe", NULL, -1, NULL);
+    if (strcmp(parsed, "/bin/sh -c 'A=1 /g/launcher.exe --game=a'") != 0 || picked_args) {
+        printf("FAIL the pick did not reach the shell: %s\n", parsed);
+        failures++;
+    } else {
+        printf("  ok    the picked arguments reach the shell with the command\n");
+    }
+    compat_tool = 0;
+    picked_args = "--game=a";
+    np_hook_parse_shell("'/g/Game.app'", NULL, -1, NULL);
+    if (strcmp(parsed, "'/g/Game.app'") != 0 || !picked_args) {
+        printf("FAIL a native launch used up the pick: %s\n", parsed);
+        failures++;
+    } else {
+        printf("  ok    a native launch leaves the pick for its own launch\n");
+    }
+    compat_tool = 1;
+    picked_args = NULL;
 
     printf("== an app's own arguments reach the game with their backslashes ==\n");
     orig_vr_support  = (void *)fake_vr_support;

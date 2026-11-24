@@ -28,6 +28,18 @@ int np_conf_num(const char *v);
 // The length of a choice's value, and its label, or NULL when it names none.
 size_t np_conf_choice(const char *v, const char **label);
 
+// Keep in sync with np_home_path in compat_run.sh.
+int np_conf_home_path(char *out, size_t size, const char *home, const char *rel);
+
+typedef struct {
+    size_t      label_len;
+    const char *file;
+    size_t      file_len;
+    const char *args;  // "" when it has none
+} np_conf_launch_t;
+// Returns 0 unless it has a label and a file below the shortcut's folder.
+int np_conf_launch(const char *v, np_conf_launch_t *out);
+
 typedef struct {
     // A record that passed the grammar, its own schema, and the directory's rules (a
     // repeated id, the record limit). Returning a code refuses it all the same.

@@ -11,6 +11,10 @@
 int np_usershortcuts_bind(const struct mach_header_64 *mh, intptr_t slide,
                           uintptr_t set_shortcut_exe);
 
+// Quoted if it was picked with Browse. NULL if there's no such shortcut, or it's from
+// Remote Play.
+const char *np_usershortcuts_exe(const void *user, uint32_t appid);
+
 // True for a shortcut to a Windows .exe that isn't from Steam Remote Play.
 // Linux Steam runs these with the default compatibility tool.
 bool np_usershortcuts_runs_exe(const void *user, uint32_t appid);

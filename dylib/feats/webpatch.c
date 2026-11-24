@@ -269,18 +269,10 @@ static int has_suffix(const char *s, const char *suf);
 // read by conf.c and applied at launch by compat_run.sh.
 #define NP_FEAT_DIR  "Library/Application Support/notproton/plugins"
 
-static int resolve_home_path(char *out, size_t size, const char *home, const char *rel) {
-    if (!rel || !*rel) return 0;
-    if (*rel == '/') return snprintf(out, size, "%s", rel) < (int)size;
-    if (strncmp(rel, "~/", 2) == 0) rel += 2;
-    else if (strncmp(rel, "$HOME/", 6) == 0) rel += 6;
-    return snprintf(out, size, "%s/%s", home, rel) < (int)size;
-}
-
 static int feat_exists(const char *home, const char *rel) {
     char path[2048];
     struct stat st;
-    if (!resolve_home_path(path, sizeof(path), home, rel)) return 0;
+    if (!np_conf_home_path(path, sizeof(path), home, rel)) return 0;
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
@@ -584,7 +576,7 @@ static int feat_rows(const char *home, char **ready_out, char **rows_out) {
             if (ok || !feat_exists(home, fv)) continue;
             // The first that exists is the one a page without our run script inserts.
             ok = 1;
-            if (!resolve_home_path(resolved, sizeof(resolved), home, fv)) resolved[0] = 0;
+            if (!np_conf_home_path(resolved, sizeof(resolved), home, fv)) resolved[0] = 0;
         }
         if (!nreq) ok = 1;
         len = snprintf(item, sizeof(item), "%s\"%s\":%d", i ? "," : "", rec->id, ok);
@@ -1010,7 +1002,7 @@ static const char *var_take(const np_conf_rec_t *rec, void *ctx, const char **de
         if (strcmp(n, "label") == 0) snprintf(v->label, sizeof(v->label), "%s", val);
         else if (strcmp(n, "variant") == 0) snprintf(v->variant, sizeof(v->variant), "%s", val);
         else if (strcmp(n, "src") == 0) {
-            if (!resolve_home_path(v->src, sizeof(v->src), vc->home, val)) return NP_CONF_LIMIT;
+            if (!np_conf_home_path(v->src, sizeof(v->src), vc->home, val)) return NP_CONF_LIMIT;
         } else if (strcmp(n, "dst") == 0) snprintf(v->dst, sizeof(v->dst), "%s", val);
         else if (strcmp(n, "build") == 0) {
             memcpy(v->builds + nb, val, strlen(val) + 1);
@@ -1817,6 +1809,31 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "Object.defineProperty(globalThis.MSCXUI||(globalThis.MSCXUI={}),\"" K "\",{get:()=>" N \
     ",configurable:!0,enumerable:!0})"
 
+#define NP_LAUNCH_OWNER "globalThis.SteamUIStore?.ActiveWindowInstance?.BrowserWindow"
+
+#define NP_PLUGIN_LAUNCH_JS \
+    "(()=>{const A=globalThis.SteamClient?.Apps;if(!A||A.MSCXRunGame)return;" \
+    "const run=A.RunGame,opts=A.GetLaunchOptionsForApp;A.MSCXRunGame=run;" \
+    /* Details may still be loading when Play is pressed. */ \
+    "const det=id=>new Promise(res=>{const S=globalThis.appDetailsStore;if(!S)return res(null);" \
+    "let h,done=0;const end=d=>{if(done)return;done=1;clearTimeout(t);queueMicrotask(()=>h?.unregister());res(d)}," \
+    "t=setTimeout(()=>end(null),3000);h=S.RegisterForAppData(id,d=>d&&end(d))});" \
+    /* A row is on when its KEY=value is before %command%. */ \
+    "const on=(o,k,v)=>{const c=o.search(/%command%/i);return(c<0?o:o.slice(0,c)).split(/\\s+/)" \
+    ".some(w=>w===k+\"=\"+v||w===k+\"='\"+v+\"'\"||w===k+'=\"'+v+'\"')};" \
+    "const pick=id=>id<2**31||typeof globalThis.MSCXRoute!==\"function\"?Promise.resolve(null):" \
+    "Promise.all([det(id),globalThis.MSCXRoute(\"NotProton.PluginLaunch#1\",id)]).then(([d,j])=>{" \
+    "const o=d?.strLaunchOptions||\"\",es=d?JSON.parse(j||\"[]\").filter(e=>on(o,e.k,e.on)):[];" \
+    "return es.length<2?null:es}).catch(e=>(console.error(\"NotProton: no plugin launch choices\",e),null));" \
+    "const list=es=>es.map((e,i)=>({nIndex:i,strDescription:e.l,strGameName:\"\",eType:0}));" \
+    "A.GetLaunchOptionsForApp=function(id,...r){return pick(id).then(es=>es?list(es):opts.call(A,id,...r))};" \
+    "A.RunGame=function(g,x,n,...r){let id=0;try{id=Number(BigInt(g)>>32n)}catch(e){}" \
+    "const go=()=>run.call(A,g,x,n,...r),L=globalThis.MSCXLaunchOptions,P=globalThis.MSCXSpecifyRoute;" \
+    "if(id<2**31||x||n!==-1||typeof L!==\"function\"||typeof P!==\"function\")return go();" \
+    "const use=e=>P(\"NotProton.PluginLaunchPick#1\",id,e?.a||\"\").then(y=>y.BSuccess()||Promise.reject(y.GetEResult()))" \
+    ".catch(e=>console.error(\"NotProton: the launch choice was lost\",e)).then(go);" \
+    "pick(id).then(es=>es?L({appid:id,continue:i=>use(es[i]),onCancel:()=>{}},list(es)):go())}})();"
+
 // 1.0.x saved CrossOver settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \
     "o=>{const T=/(?:[^\\s\"'\\\\]|\\\\[^]|\"(?:[^\"\\\\]|\\\\[^])*\"|'[^']*')+/g," \
@@ -2102,6 +2119,31 @@ static const np_gate_t g_fixes[] = {
       1, 0 },
     { "this.m_bServicesInitialized=!0,SteamClient.UI.NotifyAppInitialized()",
       "this.m_bServicesInitialized=!0," NP_LAUNCH_MIGRATION ",SteamClient.UI.NotifyAppInitialized()", 1, 0 },
+    // Steam's launch option picker
+    { "async function " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "." NP_C6
+      ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(\"showing launch options\",",
+      "globalThis.MSCXLaunchOptions=(t,l)=>" NP_C1 "({ownerWindow:" NP_LAUNCH_OWNER ",...t},l);"
+      NP_PLUGIN_LAUNCH_JS "async function  " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "."
+      NP_C6 ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(\"showing launch options\",", 1, 0 },
+    { "async function " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "." NP_C6
+      ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(`showing launch options`,",
+      "globalThis.MSCXLaunchOptions=(t,l)=>" NP_C1 "({ownerWindow:" NP_LAUNCH_OWNER ",...t},l);"
+      NP_PLUGIN_LAUNCH_JS "async function  " NP_C1 "(" NP_C2 "," NP_C3 "){const " NP_C4 "=" NP_C5 "."
+      NP_C6 ".GetAppOverviewByAppID(" NP_C2 ".appid);if(console.log(`showing launch options`,", 1, 0 },
+    // Steam's default launch option setting, shown on the shortcut page too
+    { "function " NP_C1 "(" NP_C2 "){const{details:" NP_C3 "}=" NP_C2 ",[" NP_C4 "," NP_C5 "]="
+      NP_C6 ".useState()," NP_C7 "=(0," NP_C8 "." NP_C9 ")(" NP_C3 ".unAppID," NP_C4 "),",
+      NP_UI_REG("DefaultLaunchOption", "(d=>" NP_C6 ".createElement(" NP_C1 ",{details:d}))")
+      ";function  " NP_C1 "(" NP_C2 "){const{details:" NP_C3 "}=" NP_C2 ",[" NP_C4 "," NP_C5 "]="
+      NP_C6 ".useState()," NP_C7 "=(0," NP_C8 "." NP_C9 ")(" NP_C3 ".unAppID," NP_C4 "),", 1, 0 },
+    { ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title:(0," NP_C4 "." NP_C5 ")(\"#AppProperties_LaunchOptionsSection\")}),",
+      ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title: (0," NP_C4 "." NP_C5 ")(\"#AppProperties_LaunchOptionsSection\")}),globalThis.MSCXUI?.DefaultLaunchOption?.(" NP_C1 ")??null,", 1, 0 },
+    { ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title:(0," NP_C4 "." NP_C5 ")(`#AppProperties_LaunchOptionsSection`)}),",
+      ",value:" NP_C1 ".strLaunchOptions,setValue:" NP_C2 "=>SteamClient.Apps.SetShortcutLaunchOptions("
+      NP_C3 "," NP_C2 "),title: (0," NP_C4 "." NP_C5 ")(`#AppProperties_LaunchOptionsSection`)}),globalThis.MSCXUI?.DefaultLaunchOption?.(" NP_C1 ")??null,", 1, 0 },
     { "(\"small_mode\")," NP_C1 "=!" NP_C2 "||" NP_C3 "," NP_C4 "=" NP_C1 "," NP_C5 "=200,",
       "(\"small_mode\")," NP_C1 "=!" NP_C2 "||" NP_C3 "," NP_C4 "=!!0," NP_C5 "=200,", 1, 0 },
     { "function " NP_C1 "(" NP_C2 "){let{label:" NP_C3 ",className:" NP_C4 ",children:" NP_C5 ",..." NP_C6

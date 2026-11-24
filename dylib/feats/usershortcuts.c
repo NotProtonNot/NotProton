@@ -211,27 +211,30 @@ static const uint8_t *find_shortcut(const uint8_t *shortcuts, uint32_t appid) {
     return NULL;
 }
 
-bool np_usershortcuts_runs_exe(const void *user, uint32_t appid) {
+const char *np_usershortcuts_exe(const void *user, uint32_t appid) {
     if (!(appid & SHORTCUT_APPID_BIT) || !g_have_layout || !g_vptr)
-        return false;
+        return NULL;
 
     const uint8_t *shortcuts = user_shortcuts(user);
-    if (!shortcuts) return false;
+    if (!shortcuts) return NULL;
 
     const uint8_t *shortcut = find_shortcut(shortcuts, appid);
-    if (!shortcut) return false;
+    if (!shortcut) return NULL;
 
-    if (*(const uint64_t *)(shortcut + g_layout.remote) != 0) return false;
+    if (*(const uint64_t *)(shortcut + g_layout.remote) != 0) return NULL;
 
     const char *exe = *(const char *const *)(shortcut + g_layout.exe);
-    if (!exe) return false;
+    if (!exe) return NULL;
     if (!np_plausible_addr((uint64_t)(uintptr_t)exe)) {
         bad_table("exe string", (uint64_t)(uintptr_t)exe);
-        return false;
+        return NULL;
     }
-    if (!*exe) return false;
+    return *exe ? exe : NULL;
+}
 
+bool np_usershortcuts_runs_exe(const void *user, uint32_t appid) {
     // Steam quotes a path picked with Browse.
-    const char *dot = strrchr(exe, '.');
+    const char *exe = np_usershortcuts_exe(user, appid);
+    const char *dot = exe ? strrchr(exe, '.') : NULL;
     return dot && (strcasecmp(dot + 1, "exe") == 0 || strcasecmp(dot + 1, "exe\"") == 0);
 }
