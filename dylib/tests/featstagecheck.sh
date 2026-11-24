@@ -344,6 +344,42 @@ out=$(run np_tool_name=notproton-fex-rosetta NOTPROTON_PICKY=1 NOTPROTON_ANY=1)
 ok "and does on a tool its pattern matches" "$(line "$out" 1)" \
    "steamclient=n;lsteamclient=b;picky=n;any=n"
 
+# Plugin launchers: the first one found wins.
+launcher() {
+  # shellcheck disable=SC2016 # expanded by the inner shell
+  env -i PATH="$PATH" HOME="$work" np_support="$work/Library/Application Support/notproton" \
+    log="$work/log" WINEPREFIX="$work/pfx" "$@" \
+    sh -c 'set -e; . "$1/block.sh"; printf "%s|%s" "$np_feat_launcher" "$np_feat_launcher_key"' \
+    sh "$work"
+}
+printf 'exe\n' > "$work/lib/first.exe"
+printf 'exe\n' > "$work/lib/second.exe"
+reset
+conf 10-first.conf <<EOF
+[NOTPROTON_FIRST]
+label = First
+launcher = lib/first.exe
+EOF
+conf 20-second.conf <<EOF
+[NOTPROTON_SECOND]
+label = Second
+launcher = $work/lib/second.exe
+EOF
+ok "a launcher is resolved from the home folder" "$(launcher NOTPROTON_FIRST=1)" \
+  "$work/lib/first.exe|NOTPROTON_FIRST"
+ok "an absolute launcher is taken as it is" "$(launcher NOTPROTON_SECOND=1)" \
+  "$work/lib/second.exe|NOTPROTON_SECOND"
+ok "the first file's launcher wins over a later one" \
+  "$(launcher NOTPROTON_FIRST=1 NOTPROTON_SECOND=1)" "$work/lib/first.exe|NOTPROTON_FIRST"
+ok "a launcher switched off is not used" "$(launcher)" "|"
+reset
+conf 10-gone.conf <<EOF
+[NOTPROTON_GONE]
+label = Gone
+launcher = lib/missing.exe
+EOF
+ok "a launcher that isn't there is skipped" "$(launcher NOTPROTON_GONE=1)" "|"
+
 # shellcheck disable=SC2016 # expanded by the inner shell
 dyld=$(env -i HOME="$work" STEAM_DYLD_INSERT_LIBRARIES=/o.dylib NOTPROTON_FEATURE_DYLIBS=/f.dylib \
   sh -c 'eval "$1"; printf "%s|%s" "$DYLD_INSERT_LIBRARIES" "${NOTPROTON_OVERLAY_SHIM:+shim}"' sh "$inject")

@@ -23,7 +23,7 @@ static const np_conf_spec_t kPlugin[] = {
     { "max", 1, 0 },       { "step", 1, 0 },        { "default", 1, 0 },
     { "suffix", 1, 0 },    { "hide_crossover", 1, 0 }, { "apps", 16, 0 },
     { "patch", 16, 0 },    { "variants", 8, 0 },    { "group", 1, 0 },
-    { "improves", 16, 0 },  { "needed_for", 16, 0 },
+    { "improves", 16, 0 },  { "needed_for", 16, 0 }, { "launcher", 1, 0 },
     { NULL, 0, 0 }
 };
 
