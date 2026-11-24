@@ -101,6 +101,41 @@ struct RunnerInstallerTests {
         ))
     }
 
+    @Test("Cloning places CrossOver's Dock icon mask where Wine looks for it and refreshes it")
+    func clonePlacesIconMask() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let (install, build) = try makeSupportedInstall(in: runners.appending(path: "src"))
+        let resources = install.bundle.appending(path: "Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        try Data("mask".utf8).write(to: resources.appending(path: RunnerInstaller.iconMask))
+
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+
+        let cxRoot = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        let looked = cxRoot.deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Resources/\(RunnerInstaller.iconMask)")
+        #expect(try Data(contentsOf: looked) == Data("mask".utf8))
+
+        try Data("newer mask".utf8).write(to: resources.appending(path: RunnerInstaller.iconMask))
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+        #expect(try Data(contentsOf: looked) == Data("newer mask".utf8))
+    }
+
+    @Test("A CrossOver without the mask still clones and leaves no Resources folder")
+    func cloneWithoutIconMask() throws {
+        let runners = try makeRunners()
+        defer { try? FileManager.default.removeItem(at: runners) }
+        let (install, build) = try makeSupportedInstall(in: runners.appending(path: "src"))
+
+        _ = try RunnerInstaller.clone(from: install, runners: runners)
+
+        #expect(RunnerInstaller.hasClone(forBuild: build.id, runners: runners))
+        #expect(!FileManager.default.fileExists(
+            atPath: runners.appending(path: "Resources").path(percentEncoded: false)
+        ))
+    }
+
     @Test("Cloning another build leaves the first clone in place")
     func cloneKeepsOtherBuilds() throws {
         let runners = try makeRunners()

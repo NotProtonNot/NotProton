@@ -19,6 +19,36 @@ enum RunnerInstaller {
             )
         }
 
+        try copyRunner(build, from: install, replacingExisting: replacingExisting, runners: runners)
+        placeIconMask(from: install.bundle, runners: runners)
+        return build
+    }
+
+    // winemac.drv loads this from $CX_ROOT/../../Resources. Without it, the dock icon is not put into squircle jail.
+    static let iconMask = "app-icon-roundrect-mask.png"
+
+    static func placeIconMask(from bundle: URL, runners: URL = SupportPaths.runners) {
+        let fm = FileManager.default
+        let source = bundle.appending(path: "Contents/Resources/\(iconMask)")
+        let folder = runners.appending(path: "Resources")
+        let target = folder.appending(path: iconMask)
+        guard fm.fileExists(atPath: source.path(percentEncoded: false)),
+              !fm.contentsEqual(atPath: source.path(percentEncoded: false), andPath: target.path(percentEncoded: false))
+        else { return }
+        let staging = folder.appending(path: ".\(iconMask).\(UUID().uuidString)")
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try fm.copyItem(at: source, to: staging)
+            _ = try fm.replaceItemAt(target, withItemAt: staging)
+        } catch {
+            // Not fatal, but icons are not put in squircle jail without it.
+            try? fm.removeItem(at: staging)
+        }
+    }
+
+    private static func copyRunner(
+        _ build: RunnerBuild, from install: CrossOverInstall, replacingExisting: Bool, runners: URL
+    ) throws {
         let fm = FileManager.default
         let target = SupportPaths.runnerRoot(forBuild: build.id, runners: runners)
 
@@ -34,7 +64,7 @@ enum RunnerInstaller {
             try verifyClone(build: build, root: staging.appending(path: "CrossOver"))
             guard occupied else {
                 try fm.moveItem(at: staging, to: target)
-                return build
+                return
             }
             // Deleting in place can fail part way and leave half a runner. A fresh name each time
             // keeps a leftover that would not delete from blocking the next repair.
@@ -49,13 +79,11 @@ enum RunnerInstaller {
                 throw error
             }
             try? fm.removeItem(at: trash)
-            return build
+            return
         }
 
         let cloned = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
         try verifyClone(build: build, root: cloned)
-
-        return build
     }
 
     static let removeStep = String(localized: "Remove build")
