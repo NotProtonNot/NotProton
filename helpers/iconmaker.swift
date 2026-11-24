@@ -1,5 +1,5 @@
 // Reads an image and produces a macOS .icns masked to the continuous rounded
-// rect (squircle) that native app icons use. Input is scaled to fill 1024x1024
+// rect (squircle) that native app icons use. Input is scaled to fill 824x824
 // and clipped. Output covers 16x16 through 512x512@2x.
 // Usage: iconmaker <input-image|input.exe> <output.icns>
 //        iconmaker --shortcuts <appid> <icon.icns> <stock.icns>
@@ -64,9 +64,10 @@ guard let srcImage = loadImage(inputPath), hasArea(srcImage) else {
     exit(1)
 }
 
-// The Apple icon grid puts the squircle corner radius at ~22.37% of the
-// icon side. NSBezierPath.init(roundedRect:xRadius:yRadius:) draws a
-// continuous rounded rect on macOS 14+, which is the shape Finder uses.
+// The Apple icon grid puts the squircle 100pt in from each edge, with the corner
+// radius at ~22.37% of the squircle side. NSBezierPath.init(roundedRect:xRadius:yRadius:)
+// draws a continuous rounded rect on macOS 14+, which is the shape Finder uses.
+let maskInset: CGFloat = 100.0 / 1024.0
 let maskRadius: CGFloat = 0.2237
 
 let sizes: [(side: Int, scale: Int, name: String)] = [
@@ -94,7 +95,8 @@ try fm.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
 
 for entry in sizes {
     let px = entry.side * entry.scale
-    let s = CGFloat(px)
+    let inset = CGFloat(px) * maskInset
+    let s = CGFloat(px) - 2 * inset
     let r = s * maskRadius
 
     let rep = NSBitmapImageRep(
@@ -108,7 +110,7 @@ for entry in sizes {
     NSGraphicsContext.current = ctx
 
     // Clip to the squircle, then draw the source image scaled to fill.
-    let rect = NSRect(x: 0, y: 0, width: s, height: s)
+    let rect = NSRect(x: inset, y: inset, width: s, height: s)
     let path = NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r)
     path.addClip()
 
@@ -119,7 +121,7 @@ for entry in sizes {
     let drawW = srcSize.width * scale
     let drawH = srcSize.height * scale
     let drawRect = NSRect(
-        x: (s - drawW) / 2, y: (s - drawH) / 2,
+        x: inset + (s - drawW) / 2, y: inset + (s - drawH) / 2,
         width: drawW, height: drawH
     )
     srcImage.draw(in: drawRect)
