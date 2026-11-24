@@ -2688,6 +2688,118 @@ unmap_game_drive() {
   restart_for_drive
 }
 
+np_disk_info() {
+  /usr/sbin/diskutil info -plist "$1" 2>/dev/null
+}
+
+np_disk_value() {
+  printf '%s' "$1" | /usr/bin/plutil -extract "$2" raw -o - - 2>/dev/null
+}
+
+np_external_disk() {
+  [ -d "$1" ] && [ ! -L "$1" ] || return 1
+  np_disk=$(np_disk_info "$1") || return 1
+  [ "$(np_disk_value "$np_disk" MountPoint)" = "$1" ] || return 1
+  [ "$(np_disk_value "$np_disk" Internal)" = false ] || return 1
+  [ "$(np_disk_value "$np_disk" RemovableMedia)" = false ] || return 1
+  [ "$(np_disk_value "$np_disk" BusProtocol)" != "Disk Image" ] || return 1
+  np_disk_uuid=$(np_disk_value "$np_disk" VolumeUUID) || return 1
+  case "$np_disk_uuid" in (''|*[!0-9A-Fa-f-]*) return 1 ;; esac
+  printf '%s\n' "$np_disk_uuid"
+}
+
+np_volume_paths() {
+  for np_vol in /Volumes/*; do
+    [ -d "$np_vol" ] && printf '%s\n' "$np_vol"
+  done
+}
+
+# Assigns drive letters to external hdds/ssds to make picky game launchers happy
+map_external_drives() {
+  case "$app_id" in (''|*[!0-9]*) return 0 ;; esac
+  [ "${#app_id}" -le 10 ] && [ "$app_id" -ge 2147483648 ] || return 0
+  dosdev="$WINEPREFIX/dosdevices"
+  [ -d "$dosdev" ] && [ ! -L "$dosdev" ] || return 0
+  record="$STEAM_COMPAT_DATA_PATH/notproton-drive-letters"
+  [ ! -L "$record" ] || return 0
+  tab=$(printf '\t')
+  kept=$(grep -E "^[0-9A-Fa-f-]+${tab}[e-y]${tab}/" "$record" 2>/dev/null || true)
+  present=""
+  if [ "${NOTPROTON_EXTERNAL_DRIVES:-1}" != 0 ]; then
+    while IFS= read -r np_vol; do
+      [ -n "$np_vol" ] || continue
+      np_uuid=$(np_external_disk "$np_vol") || continue
+      present="$present$np_uuid$tab$np_vol
+"
+    done <<NP_VOLUMES
+$(np_volume_paths)
+NP_VOLUMES
+  fi
+
+  changed=0
+  fresh=""
+  while IFS="$tab" read -r np_uuid np_letter np_path; do
+    [ -n "$np_uuid" ] || continue
+    np_link="$dosdev/$np_letter:"
+    np_now=$(printf '%s' "$present" | awk -F'\t' -v u="$np_uuid" '$1 == u { print $2; exit }')
+    np_ours=0
+    [ -L "$np_link" ] && [ "$(readlink "$np_link")" = "$np_path" ] && np_ours=1
+    if [ -z "$np_now" ]; then
+      if [ "$np_ours" = 1 ] && rm -f "$np_link"; then
+        changed=1
+        echo "=== removed drive $np_letter:, $np_path is not connected ===" >> "$log" 2>&1 || true
+      fi
+    elif [ "$np_ours" = 1 ] && [ "$np_now" = "$np_path" ]; then
+      :
+    elif [ "$np_ours" = 0 ] && { [ -L "$np_link" ] || [ -e "$np_link" ]; }; then
+      echo "=== drive $np_letter: is not ours, left in place for $np_now ===" >> "$log" 2>&1 || true
+    else
+      rm -f "$np_link"
+      if ln -s "$np_now" "$np_link" 2>> "$log"; then
+        np_path=$np_now
+        changed=1
+        echo "=== mapped drive $np_letter: to $np_now ===" >> "$log" 2>&1 || true
+      fi
+    fi
+    fresh="$fresh$np_uuid$tab$np_letter$tab$np_path
+"
+  done <<NP_KEPT
+$kept
+NP_KEPT
+
+  while IFS="$tab" read -r np_uuid np_vol; do
+    [ -n "$np_uuid" ] || continue
+    printf '%s' "$fresh" | grep -q "^$np_uuid$tab" && continue
+    np_letter=""
+    for np_try in e f g h i j k l m n o p q r t u v w x y; do
+      printf '%s' "$fresh" | grep -q "^[^$tab]*$tab$np_try$tab" && continue
+      if [ -L "$dosdev/$np_try:" ] || [ -e "$dosdev/$np_try:" ]; then continue; fi
+      np_letter=$np_try
+      break
+    done
+    if [ -z "$np_letter" ]; then
+      echo "=== no drive letter left for $np_vol ===" >> "$log" 2>&1 || true
+      continue
+    fi
+    ln -s "$np_vol" "$dosdev/$np_letter:" 2>> "$log" || continue
+    changed=1
+    echo "=== mapped drive $np_letter: to $np_vol ===" >> "$log" 2>&1 || true
+    fresh="$fresh$np_uuid$tab$np_letter$tab$np_vol
+"
+  done <<NP_PRESENT
+$present
+NP_PRESENT
+
+  np_was=$kept
+  [ -z "$kept" ] || np_was="$kept
+"
+  if [ "$fresh" != "$np_was" ]; then
+    { printf '%s' "$fresh" > "$record.new" && mv -f "$record.new" "$record"; } 2>/dev/null \
+      || rm -f "$record.new" 2>/dev/null || true
+  fi
+  [ "$changed" = 0 ] || restart_for_drive
+}
+
 # Like Proton, the game's Steam library gets drive S: so the game does not run from Z:.
 map_game_drive() {
   drive="$WINEPREFIX/dosdevices/s:"
@@ -2819,6 +2931,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   [ "$verb" != waitforexitandrun ] || echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
   stage_step="game drive"
   map_game_drive
+  map_external_drives
   stage_step="prefix settings"
   import_prefix_settings
   stage_step="fonts"
@@ -2828,6 +2941,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   # A prefix that Wine built just now only has dosdevices from this point on.
   stage_step="game drive"
   map_game_drive
+  map_external_drives
 fi
 
 bridge_src="$np_support/bridge"
