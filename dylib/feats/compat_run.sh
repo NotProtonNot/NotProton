@@ -525,8 +525,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for launcher", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16 1", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove apps", f, " ")
@@ -3466,6 +3466,7 @@ stage_step="plugins"
 np_feat_dylibs=""
 np_feat_envs=""
 np_feat_patches=""
+np_feat_launcher=""
 while IFS= read -r np_feat_key; do
   [ -n "$np_feat_key" ] || continue
   if ! np_feat_installed "$np_feat_key"; then
@@ -3523,6 +3524,19 @@ while IFS= read -r np_feat_key; do
           np_feat_log "$np_feat_key failed to copy $(basename "$np_feat_src") into system32"
         fi
       done
+    fi
+  fi
+
+  np_feat_exe=$(np_feat_first "$np_feat_key" launcher)
+  if [ -n "$np_feat_exe" ] && [ "$verb" = waitforexitandrun ]; then
+    np_feat_exe=$(np_home_path "$np_feat_exe")
+    if [ -n "$np_feat_launcher" ]; then
+      np_feat_log "$np_feat_key's launcher is skipped as the game already starts through $np_feat_launcher"
+    elif [ ! -f "$np_feat_exe" ]; then
+      np_feat_log "$np_feat_key's launcher is skipped as $np_feat_exe doesn't exist"
+    else
+      np_feat_launcher=$np_feat_exe
+      np_feat_log "$np_feat_key starts the game through $np_feat_exe"
     fi
   fi
 
@@ -3624,6 +3638,12 @@ $np_feat_envs"
     np_feat_log "plugin dylibs and patches are not loaded, the plugin loader isn't staged"
   fi
   np_feat_dylibs=""
+fi
+
+# If the launcher exits before the game, Steam thinks the game quit and kills it.
+if [ -n "$np_feat_launcher" ]; then
+  set -- "$np_feat_launcher" "$@"
+  printf '=== launching through a plugin launcher: %s ===\n' "$*" >> "$log" 2>&1 || true
 fi
 
 game_cwd="$(pwd)"

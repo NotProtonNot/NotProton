@@ -388,6 +388,11 @@ int main(void) {
     ok(strcmp(feats_json(), "[]") == 0,
        "a star anywhere but the end is refused, since the two readers would disagree");
 
+    puts("== a launcher");
+    clear_descs();
+    write_desc("10-l.conf", "[NOTPROTON_L]\nlabel = L\nsection = dev\nlauncher = lib/l.exe\n");
+    ok(strstr(feats_json(), ",rn:1") != NULL, "is only offered where the run script starts the game");
+
     puts("== a row with no type, or one that does not exist");
     clear_descs();
     write_desc("10-t.conf", "[NOTPROTON_T]\nlabel = T\nsection = dev\n");

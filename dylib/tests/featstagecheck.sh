@@ -344,6 +344,37 @@ out=$(run np_tool_name=notproton-fex-rosetta NOTPROTON_PICKY=1 NOTPROTON_ANY=1)
 ok "and does on a tool its pattern matches" "$(line "$out" 1)" \
    "steamclient=n;lsteamclient=b;picky=n;any=n"
 
+launcher() {
+  # shellcheck disable=SC2016 # expanded by the inner shell
+  env -i PATH="$PATH" HOME="$work" np_support="$work/Library/Application Support/notproton" \
+    log="$work/log" WINEPREFIX="$work/pfx" verb=waitforexitandrun "$@" \
+    sh -c 'set -e; . "$1/block.sh"; printf "%s" "$np_feat_launcher"' sh "$work"
+}
+printf 'exe\n' > "$work/lib/first.exe"
+printf 'exe\n' > "$work/lib/second.exe"
+reset
+conf 10-first.conf <<EOF
+[NOTPROTON_FIRST]
+label = First
+launcher = lib/first.exe
+EOF
+conf 20-second.conf <<EOF
+[NOTPROTON_SECOND]
+label = Second
+launcher = lib/second.exe
+EOF
+conf 30-gone.conf <<EOF
+[NOTPROTON_GONE]
+label = Gone
+launcher = lib/missing.exe
+EOF
+ok "a launcher is resolved from the home folder" "$(launcher NOTPROTON_SECOND=1)" "$work/lib/second.exe"
+: > "$work/log"
+ok "the first file's launcher wins" "$(launcher NOTPROTON_FIRST=1 NOTPROTON_SECOND=1)" "$work/lib/first.exe"
+ok "and the log names the one that lost" "$(grep -c "NOTPROTON_SECOND's launcher is skipped" "$work/log")" "1"
+ok "a launcher that isn't there is skipped" "$(launcher NOTPROTON_GONE=1)" ""
+ok "a launcher is only used to start the game" "$(launcher NOTPROTON_FIRST=1 verb=run)" ""
+
 # shellcheck disable=SC2016 # expanded by the inner shell
 dyld=$(env -i HOME="$work" STEAM_DYLD_INSERT_LIBRARIES=/o.dylib NOTPROTON_FEATURE_DYLIBS=/f.dylib \
   sh -c 'eval "$1"; printf "%s|%s" "$DYLD_INSERT_LIBRARIES" "${NOTPROTON_OVERLAY_SHIM:+shim}"' sh "$inject")
