@@ -89,6 +89,10 @@ extension PrefixTools {
         let carry = Carry(from: prefix.pfx, to: fresh)
         carry.userData()
         carry.strayFolders()
+        if prefix.isShortcut {
+            carry.installedPrograms()
+            carry.machineSoftware()
+        }
 
         if let first = carry.lost.first {
             AppLog.note("rebuild \(prefix.appID) refused, did not carry: \(carry.lost.joined(separator: ", "))")
@@ -231,16 +235,103 @@ private final class Carry {
     }
 
     func strayFolders() {
-        let source = old.appending(path: "drive_c")
-        let destination = fresh.appending(path: "drive_c")
+        strays(in: "drive_c")
+    }
+
+    func installedPrograms() {
+        for folder in ["Program Files", "Program Files (x86)", "ProgramData"] {
+            let source = old.appending(path: "drive_c/\(folder)")
+            let destination = fresh.appending(path: "drive_c/\(folder)")
+            if directoryExists(destination) { fill(destination, from: source) }
+        }
+    }
+
+    private func fill(_ destination: URL, from source: URL) {
+        guard directoryExists(source) else { return }
+        var have: [String: URL] = [:]
+        for entry in (try? fm.contentsOfDirectory(
+            at: destination, includingPropertiesForKeys: nil, options: [])) ?? []
+        {
+            have[entry.lastPathComponent.lowercased()] = entry
+        }
+        var entries: [URL] = []
+        attempt(source) {
+            entries = try fm.contentsOfDirectory(
+                at: source, includingPropertiesForKeys: [.isSymbolicLinkKey], options: [])
+        }
+        for entry in entries {
+            guard let landing = have[entry.lastPathComponent.lowercased()] else {
+                attempt(entry) {
+                    try fm.copyItem(at: entry, to: destination.appending(path: entry.lastPathComponent))
+                }
+                continue
+            }
+            let link = (try? entry.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+            let freshLink = (try? landing.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+            if !link, !freshLink, directoryExists(entry), directoryExists(landing) {
+                fill(landing, from: entry)
+            }
+        }
+    }
+
+    func machineSoftware() {
+        let source = old.appending(path: "system.reg")
+        let landing = fresh.appending(path: "system.reg")
+        guard fm.fileExists(atPath: source.path(percentEncoded: false)) else { return }
+        var was = "", now = ""
+        attempt(source) { was = try String(contentsOf: source, encoding: .isoLatin1) }
+        attempt(landing) { now = try String(contentsOf: landing, encoding: .isoLatin1) }
+        guard lost.isEmpty else { return }
+
+        let have = Set(Self.registryKeys(now).compactMap { Self.vendor(of: $0.name) })
+        let missing = Self.registryKeys(was).filter { key in
+            Self.vendor(of: key.name).map { !have.contains($0) } ?? false
+        }
+        guard !missing.isEmpty else { return }
+        let text = (now.hasSuffix("\n") ? now : now + "\n") + "\n"
+            + missing.map(\.text).joined(separator: "\n") + "\n"
+        attempt(landing) { try text.write(to: landing, atomically: true, encoding: .isoLatin1) }
+    }
+
+    static func registryKeys(_ text: String) -> [(name: String, text: String)] {
+        var keys: [(name: String, lines: [Substring])] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("["), let close = line.lastIndex(of: "]") {
+                keys.append((String(line[line.index(after: line.startIndex)..<close]), [line]))
+            } else if !keys.isEmpty {
+                keys[keys.count - 1].lines.append(line)
+            }
+        }
+        return keys.map { key in
+            var lines = key.lines
+            while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+                lines.removeLast()
+            }
+            return (key.name, lines.joined(separator: "\n"))
+        }
+    }
+
+    static func vendor(of key: String) -> String? {
+        let parts = key.lowercased().components(separatedBy: "\\\\")
+        guard parts.count >= 2, parts[0] == "software" else { return nil }
+        if parts[1] == "wow6432node" {
+            return parts.count >= 3 ? parts[0...2].joined(separator: "\\") : nil
+        }
+        return parts[0...1].joined(separator: "\\")
+    }
+
+    private func strays(in folder: String) {
+        let source = old.appending(path: folder)
+        let destination = fresh.appending(path: folder)
         guard directoryExists(source) else { return }
         let template = Set(
-            (try? fm.contentsOfDirectory(atPath: destination.path(percentEncoded: false))) ?? [])
+            ((try? fm.contentsOfDirectory(atPath: destination.path(percentEncoded: false))) ?? [])
+                .map { $0.lowercased() })
         var names: [String] = []
         attempt(source) {
             names = try fm.contentsOfDirectory(atPath: source.path(percentEncoded: false))
         }
-        for name in names where !template.contains(name) {
+        for name in names where !template.contains(name.lowercased()) {
             let stray = source.appending(path: name)
             attempt(stray) {
                 try fm.copyItem(at: stray, to: destination.appending(path: name))
