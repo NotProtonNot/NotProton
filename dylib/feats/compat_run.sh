@@ -412,6 +412,7 @@ NP_CONF_NAMES
     sub(/^ +/, "", t)
     return length(t) <= 200 && t !~ /[\001-\037\177]/
   }
+  function presentok(s) { return s != "" && length(s) <= 255 && substr(s, 1, 1) != "/" && !index(s, "..") && s !~ /[\001-\037\177]/ }
   function launchok(s,   eq, f) {
     eq = index(s, "=")
     if (!eq || trim(substr(s, 1, eq - 1)) == "") return 0
@@ -471,6 +472,7 @@ NP_CONF_NAMES
       if (names[i] == "improves" && (!forok(vals[i]) || ("type" in cnt))) { detail = "improves"; return "bad-value" }
       if (names[i] == "needed_for" && (!forok(vals[i]) || ("type" in cnt))) { detail = "needed_for"; return "bad-value" }
       if (names[i] == "improves") rcs[forapp(vals[i])] = 1
+      if (names[i] == "present" && !presentok(vals[i])) { detail = "present"; return "bad-value" }
       if (names[i] == "launch" && !launchok(vals[i])) { detail = "launch"; return "bad-value" }
       if (names[i] == "hide_crossover" && vals[i] != "1") { detail = "hide_crossover"; return "bad-value" }
       if (names[i] == "patch" && !patchok(vals[i])) { detail = "patch"; return "bad-value" }
@@ -534,8 +536,8 @@ NP_CONF_NAMES
   BEGIN {
     nkv = 0; records = 0; id = ""; code = ""; detail = ""
     if (kind == "plugin") {
-      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for launcher launch", f, " ")
-      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16 1 16", m, " ")
+      split("label description description_on section on off depends requires inject env overrides stage tools type choice min max step default suffix hide_crossover apps patch variants group improves needed_for launcher launch present", f, " ")
+      split("1 1 16 1 1 1 1 4 1 16 1 1 8 1 16 1 1 1 1 1 1 16 16 8 1 16 16 1 16 16", m, " ")
       split("label", req, " "); nreq = 1
     } else {
       split("label variant src dst build remove apps", f, " ")
@@ -598,6 +600,21 @@ np_conf_ids() {
 np_conf_has() {
   printf '%s\n' "$1" | awk -F'\t' -v i="$2" '$1 "" == i "" { found = 1 } END { exit !found }'
 }
+# Steam gives every non-Steam shortcut a game ID ending in 0x02000000.
+shortcut_game_id() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#1}" -le 20 ] || return 1
+  high=0
+  low="$1"
+  if [ "${#1}" -gt 10 ]; then
+    high="${1%??????????}"
+    low="${1#"$high"}"
+  fi
+  high="${high#"${high%%[!0]*}"}"
+  low="${low#"${low%%[!0]*}"}"
+  [ $(( (${high:-0} % 4294967296 * 1410065408 + ${low:-0}) % 4294967296 )) = 33554432 ]
+}
+
 # Keep in sync with np_conf_home_path in conf.c.
 np_home_path() {
   # shellcheck disable=SC2088,SC2016
@@ -1275,8 +1292,26 @@ np_feat_active() {
   np_feat_for_tool "$1" || return 1
   np_feat_switched "$1" || return 1
   np_feat_installed "$1" || return 1
+  np_feat_present "$1" || return 1
   np_feat_adep=$(np_feat_first "$1" depends)
   [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
+}
+
+np_feat_game_dir=$(dirname "${1:-.}")
+np_feat_present() {
+  np_feat_pl=$(np_conf_values "$np_conf_feat_table" "$1" present)
+  [ -n "$np_feat_pl" ] || return 0
+  shortcut_game_id "${SteamGameId-}" || return 1
+  np_feat_ifs=$IFS
+  IFS='
+'
+  for np_feat_pp in $np_feat_pl; do
+    for np_feat_pf in "$np_feat_game_dir"/$np_feat_pp; do
+      [ -f "$np_feat_pf" ] && { IFS=$np_feat_ifs; return 0; }
+    done
+  done
+  IFS=$np_feat_ifs
+  return 1
 }
 
 np_feat_skipped=""
@@ -1535,21 +1570,6 @@ case "$app_id" in ''|0) app_id="$SteamAppId" ;; esac
 case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null) ;; esac
 case "$app_id" in ''|*[!0-9]*) app_id=0 ;; esac
 echo "app_id=$app_id (STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID)" >> "$log" 2>&1 || true
-
-# Steam gives every non-Steam shortcut a game ID ending in 0x02000000.
-shortcut_game_id() {
-  case "$1" in ''|*[!0-9]*) return 1 ;; esac
-  [ "${#1}" -le 20 ] || return 1
-  high=0
-  low="$1"
-  if [ "${#1}" -gt 10 ]; then
-    high="${1%??????????}"
-    low="${1#"$high"}"
-  fi
-  high="${high#"${high%%[!0]*}"}"
-  low="${low#"${low%%[!0]*}"}"
-  [ $(( (${high:-0} % 4294967296 * 1410065408 + ${low:-0}) % 4294967296 )) = 33554432 ]
-}
 
 # Steam does not set SteamAppId or SteamGameId for helpers like the install-script
 # evaluator. If they are set, SteamAPI_Init registers the helper as the running game so the

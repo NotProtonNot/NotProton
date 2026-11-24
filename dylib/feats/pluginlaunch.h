@@ -8,6 +8,9 @@
 // [{k: row id, on: row value, l: label, a: arguments}]. NULL if out of memory.
 char *np_pluginlaunch_json(uint32_t appid);
 
+// ["ROW_ID", ...]. NULL if out of memory.
+char *np_pluginlaunch_present_json(uint32_t appid);
+
 int np_pluginlaunch_pick(uint32_t appid, const char *args);
 
 // Caller frees.

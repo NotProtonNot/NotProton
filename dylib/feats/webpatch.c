@@ -608,6 +608,7 @@ static int feat_rows(const char *home, char **ready_out, char **rows_out) {
              || np_conf_get(rec, "variants") || np_conf_get(rec, "launcher"))
             && !out_put(&rows, ",rn:1", 5)) goto done;
         if (np_conf_get(rec, "hide_crossover") && !out_put(&rows, ",hc:1", 5)) goto done;
+        if (np_conf_count(rec, "present") && !out_put(&rows, ",pr:1", 5)) goto done;
         if (type) {
             if (!out_put(&rows, ",ty:", 4) || !out_jsstr(&rows, type)) goto done;
         }
@@ -1428,7 +1429,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "npTool=tool||\"\"," \
     "npFor=p=>\"*\"===p.slice(-1)?npTool.startsWith(p.slice(0,-1)):p===npTool," \
     "npLv=globalThis.MSCXLive,MSCXReady=npLv?npLv.r:" NP_READY ",MSCXFeat=(npLv?npLv.f:" NP_FEATS ").filter(f=>(!f.tl||f.tl.some(npFor))" \
-    "&&(!f.ap||!app||" NP_CX_SHOW_ALL "||f.ap.includes(String(app))))," \
+    "&&(!f.ap||!app||" NP_CX_SHOW_ALL "||f.ap.includes(String(app)))" \
+    "&&(!f.pr||" NP_CX_SHOW_ALL "||(app&&" NP_CX_PRESENT "(app).includes(f.k))))," \
     "npCx=ours&&!MSCXFeat.some(f=>f.hc),MSCXVar=npLv?npLv.v:" NP_VARS "," \
     "npRd=k=>{const f=MSCXFeat.find(x=>x.k===k);" \
     "return MSCXReady[k]!==0&&!(f&&f.va&&f.va.some(x=>!MSCXVar.some(v=>v.k===x&&v.t.indexOf(npTool)>=0)))}," \
@@ -1771,6 +1773,14 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "return null}})()"
 #define NP_CX_CAPTURE(BODY, RT, BARREL) \
     "((npReact,npUI)=>" BODY("npReact()", "npUI()") ")(()=>" RT ",()=>" BARREL ")"
+
+#define NP_CX_PRESENT \
+    "(a=>{const g=globalThis,c=g.MSCXPresent||(g.MSCXPresent={}),e=c[a]||(c[a]={k:[],t:0});" \
+    "if(!e.b&&Date.now()-e.t>5000&&typeof g.MSCXRoute===\"function\"){e.b=1;" \
+    "g.MSCXRoute(\"NotProton.PluginPresent#1\",a).then(j=>{const k=JSON.parse(j||\"[]\");" \
+    "e.t=Date.now();if(JSON.stringify(k)!==JSON.stringify(e.k)){e.k=k;g.dispatchEvent?.(new CustomEvent(\"mscxplugins\"))}})" \
+    ".catch(x=>{e.t=Date.now();console.error(\"NotProton: present rows were not read\",x)}).finally(()=>{e.b=0})}" \
+    "return e.k})"
 
 #define NP_CX_LIVE_FETCH \
     "(()=>{const g=globalThis;if(g.MSCXLiveBusy||typeof g.MSCXRoute!==\"function\")return;g.MSCXLiveBusy=1;" \

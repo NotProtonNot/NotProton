@@ -6,6 +6,7 @@
 #include "../util/file.h"
 #include "../util/log.h"
 
+#include <glob.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -49,13 +50,52 @@ static int rec_usable(const np_conf_rec_t *rec, const char *home, const char *to
     return (!tools || tool_ok) && (!reqs || req_ok);
 }
 
-typedef struct { np_conf_rec_t *list; int count; } recs_t;
+// A row with no present lines is for every shortcut.
+static int present_ok(const np_conf_rec_t *rec, const char *dir) {
+    char pattern[PATH_MAX * 2];
+    const char *name, *v;
+    int named = 0, found = 0;
+    size_t n = 0;
+    // Escaped, so a folder like "Game [GOG]" isn't read as a pattern.
+    for (; *dir && n + 2 < PATH_MAX; dir++) {
+        if (strchr("*?[\\", *dir)) pattern[n++] = '\\';
+        pattern[n++] = *dir;
+    }
+    if (*dir) return 0;
+    for (int it = 0; !found && np_conf_next(rec, &it, &name, &v);) {
+        glob_t g;
+        struct stat st;
+        if (strcmp(name, "present") != 0) continue;
+        named = 1;
+        if (snprintf(pattern + n, sizeof pattern - n, "/%s", v) >= (int)(sizeof pattern - n))
+            continue;
+        if (glob(pattern, GLOB_NOSORT, NULL, &g) == 0)
+            for (size_t i = 0; i < g.gl_pathc && !found; i++)
+                found = stat(g.gl_pathv[i], &st) == 0 && S_ISREG(st.st_mode);
+        globfree(&g);
+    }
+    return found || !named;
+}
+
+typedef struct { np_conf_rec_t *list; int count; const char *field; } recs_t;
 
 static const char *rec_take(const np_conf_rec_t *rec, void *ctx, const char **detail) {
     (void)detail;
     recs_t *recs = ctx;
-    if (np_conf_count(rec, "launch")) recs->list[recs->count++] = *rec;
+    if (np_conf_count(rec, recs->field)) recs->list[recs->count++] = *rec;
     return NULL;
+}
+
+// Caller frees.
+static np_conf_rec_t *read_recs(const char *home, const char *field, int *count) {
+    char plugins[PATH_MAX];
+    recs_t recs = { calloc(NP_CONF_RECORDS_MAX, sizeof(np_conf_rec_t)), 0, field };
+    const np_conf_sink_t sink = { rec_take, NULL, NULL };
+    if (!recs.list) return NULL;
+    np_support_path(plugins, sizeof plugins, home, "plugins");
+    np_conf_read_dir(plugins, NULL, NP_CONF_PLUGIN, &sink, &recs);
+    *count = recs.count;
+    return recs.list;
 }
 
 static void json_str(FILE *f, const char *s, size_t n) {
@@ -71,22 +111,18 @@ static void json_str(FILE *f, const char *s, size_t n) {
 
 static int launch_entries(uint32_t appid, FILE *json, const char *want) {
     const char *home = np_home_dir(), *tool = np_compat_app_tool_dir(appid);
-    char dir[PATH_MAX], plugins[PATH_MAX];
+    char dir[PATH_MAX];
     np_conf_rec_t *list;
-    int found = 0, written = 0;
+    int count = 0, found = 0, written = 0;
 
     if (!home || !tool || !shortcut_dir(appid, dir, sizeof dir)
-        || !(list = calloc(NP_CONF_RECORDS_MAX, sizeof *list))) return 0;
-    recs_t recs = { list, 0 };
-    const np_conf_sink_t sink = { rec_take, NULL, NULL };
-    np_support_path(plugins, sizeof plugins, home, "plugins");
-    np_conf_read_dir(plugins, NULL, NP_CONF_PLUGIN, &sink, &recs);
+        || !(list = read_recs(home, "launch", &count))) return 0;
 
     if (strrchr(tool, '/')) tool = strrchr(tool, '/') + 1;
-    for (int r = 0; r < recs.count; r++) {
+    for (int r = 0; r < count; r++) {
         const char *on = np_conf_get(&list[r], "on"), *name, *value;
         if (!on) on = "1";
-        if (!rec_usable(&list[r], home, tool)) continue;
+        if (!rec_usable(&list[r], home, tool) || !present_ok(&list[r], dir)) continue;
         for (int it = 0; np_conf_next(&list[r], &it, &name, &value);) {
             np_conf_launch_t l;
             char path[PATH_MAX];
@@ -112,13 +148,30 @@ static int launch_entries(uint32_t appid, FILE *json, const char *want) {
     return found;
 }
 
-char *np_pluginlaunch_json(uint32_t appid) {
+static void present_rows(uint32_t appid, FILE *json) {
+    const char *home = np_home_dir();
+    char dir[PATH_MAX];
+    np_conf_rec_t *list;
+    int count = 0, written = 0;
+
+    if (!home || !shortcut_dir(appid, dir, sizeof dir)
+        || !(list = read_recs(home, "present", &count))) return;
+    for (int r = 0; r < count; r++) {
+        if (!present_ok(&list[r], dir)) continue;
+        if (written++) fputc(',', json);
+        json_str(json, list[r].id, strlen(list[r].id));
+    }
+    free(list);
+}
+
+static char *json_array(uint32_t appid, int present) {
     char *buf = NULL;
     size_t len = 0;
     FILE *f = open_memstream(&buf, &len);
     if (!f) return NULL;
     fputc('[', f);
-    launch_entries(appid, f, NULL);
+    if (present) present_rows(appid, f);
+    else launch_entries(appid, f, NULL);
     fputc(']', f);
     int failed = ferror(f);
     if (fclose(f) != 0 || failed) {
@@ -127,6 +180,9 @@ char *np_pluginlaunch_json(uint32_t appid) {
     }
     return buf;
 }
+
+char *np_pluginlaunch_json(uint32_t appid) { return json_array(appid, 0); }
+char *np_pluginlaunch_present_json(uint32_t appid) { return json_array(appid, 1); }
 
 // Steam's RunGame can't take arguments.
 #define PICK_TTL_SECONDS 120

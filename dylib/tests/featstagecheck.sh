@@ -9,7 +9,7 @@ conf=$(awk '/^np_conf_normalise\(\) \(/ { f = 1 }
             f { print }
             /^np_conf_log\(\) \{/ { g = 1 }
             g && /^}$/ { exit }' "$SRC")
-block=$(sed -n '/^np_feat_dir=/,/^np_feat_list=/p; /^np_env_reserved() {/,/^}$/p
+block=$(sed -n '/^shortcut_game_id() {/,/^}$/p; /^np_feat_dir=/,/^np_feat_list=/p; /^np_env_reserved() {/,/^}$/p
                 /^stage_step="plugins"$/,/^NP_FEAT_LIST$/p; /^np_plugin_host=/,/^game_cwd=/p' "$SRC")
 case "$conf$block" in
   *np_conf_normalise*np_env_reserved*np_feat_stage*np_feat_over*np_plugin_host*) ;;
@@ -374,6 +374,30 @@ ok "the first file's launcher wins" "$(launcher NOTPROTON_FIRST=1 NOTPROTON_SECO
 ok "and the log names the one that lost" "$(grep -c "NOTPROTON_SECOND's launcher is skipped" "$work/log")" "1"
 ok "a launcher that isn't there is skipped" "$(launcher NOTPROTON_GONE=1)" ""
 ok "a launcher is only used to start the game" "$(launcher NOTPROTON_FIRST=1 verb=run)" ""
+
+present() {
+  # shellcheck disable=SC2016 # expanded by the inner shell
+  env -i PATH="$PATH" HOME="$work" np_support="$work/Library/Application Support/notproton" \
+    log="$work/log" WINEPREFIX="$work/pfx" NOTPROTON_HERE=1 SteamGameId="$1" \
+    sh -c 'set -e; b=$1; shift; . "$b/block.sh"; printf "%s" "$np_feat_envs"' sh "$work" "$2"
+}
+mkdir -p "$work/hub/games/A Game"
+printf 'exe\n' > "$work/hub/launcher.exe"
+printf 'exe\n' > "$work/hub/games/A Game/game.exe"
+reset
+conf 10-here.conf <<EOF
+[NOTPROTON_HERE]
+label = Here
+present = games/*/game.exe
+env = HERE=1
+EOF
+shortcut=12884901892328521728
+ok "a shortcut with the file gets the row" \
+  "$(present "$shortcut" "$work/hub/launcher.exe" | grep -c '^HERE=1$')" 1
+ok "a shortcut without it doesn't" \
+  "$(present "$shortcut" "$work/lib/first.exe" | grep -c '^HERE=1$')" 0
+ok "neither does a Steam game, file or not" \
+  "$(present 220240 "$work/hub/launcher.exe" | grep -c '^HERE=1$')" 0
 
 # shellcheck disable=SC2016 # expanded by the inner shell
 dyld=$(env -i HOME="$work" STEAM_DYLD_INSERT_LIBRARIES=/o.dylib NOTPROTON_FEATURE_DYLIBS=/f.dylib \

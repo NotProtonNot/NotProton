@@ -75,7 +75,7 @@ route run '/c/My Helper/helper.exe' '--opt=a b'
 is "quoting survives the shim" "$shim /c/My Helper/helper.exe --opt=a b" "$(calls)"
 
 echo "== only the game itself is given an app id"
-ids=$(sed -n '/^app_id="\$STEAM_COMPAT_APP_ID"$/,/^esac$/p' "$SRC")
+ids=$(sed -n '/^shortcut_game_id() {/,/^}$/p; /^app_id="\$STEAM_COMPAT_APP_ID"$/,/^esac$/p' "$SRC")
 [ -n "$ids" ] || { echo "FAIL: the app id block not found in $SRC"; exit 1; }
 gameid() {
 	env -u SteamAppId -u SteamGameId verb="$1" STEAM_COMPAT_APP_ID=1222670 \

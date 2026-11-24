@@ -215,6 +215,11 @@ char *np_pluginlaunch_json(uint32_t appid) {
     return strdup("[]");
 }
 
+char *np_pluginlaunch_present_json(uint32_t appid) {
+    (void)appid;
+    return strdup("[]");
+}
+
 int np_pluginlaunch_pick(uint32_t appid, const char *args) {
     (void)appid; (void)args;
     return 1;

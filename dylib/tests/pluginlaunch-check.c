@@ -46,7 +46,14 @@ static void make_conf(void) {
              "label = T\n"
              "launch = Launcher = launcher.exe =\n"
              "launch = Game = games/g.exe = --game=g \"two words\"\n"
-             "launch = Missing = games/none.exe = --game=none\n");
+             "launch = Missing = games/none.exe = --game=none\n"
+             "[NOTPROTON_ANY_GAME]\n"
+             "label = Any game\n"
+             "present = */g.exe\n"
+             "[NOTPROTON_THIS_GAME]\n"
+             "label = This game\n"
+             "present = nothing.exe\n"
+             "present = g.exe\n");
 }
 
 static void make_home(void) {
@@ -96,6 +103,31 @@ int main(void) {
     json = np_pluginlaunch_json(220240);
     check(json && strcmp(json, "[]") == 0, "a Steam game offers nothing");
     free(json);
+
+    printf("== rows show where one of their files is ==\n");
+    json = np_pluginlaunch_present_json(LAUNCHER);
+    check(json && strcmp(json, "[\"NOTPROTON_ANY_GAME\"]") == 0, "a wildcard matches a game a folder down");
+    free(json);
+    json = np_pluginlaunch_present_json(GAME);
+    check(json && strcmp(json, "[\"NOTPROTON_THIS_GAME\"]") == 0, "any one of a row's files is enough");
+    free(json);
+    json = np_pluginlaunch_present_json(220240);
+    check(json && strcmp(json, "[]") == 0, "a Steam game has none");
+    free(json);
+    put_file("hub [x]/games/g.exe", "");
+    snprintf(launcher_exe, sizeof launcher_exe, "\"%s/hub [x]/launcher.exe\"", home);
+    json = np_pluginlaunch_present_json(LAUNCHER);
+    check(json && strcmp(json, "[\"NOTPROTON_ANY_GAME\"]") == 0, "the shortcut's own folder is not a pattern");
+    free(json);
+    snprintf(launcher_exe, sizeof launcher_exe, "\"%s/hub/launcher.exe\"", home);
+
+    printf("== a row's files gate its launch choices too ==\n");
+    put_file("Library/Application Support/notproton/plugins/t.conf",
+             "[NOTPROTON_T]\nlabel = T\npresent = elsewhere.exe\nlaunch = Launcher = launcher.exe =\n");
+    json = np_pluginlaunch_json(LAUNCHER);
+    check(json && strcmp(json, "[]") == 0, "none of them there, nothing offered");
+    free(json);
+    make_conf();
 
     printf("== a plugin that can't run offers nothing ==\n");
     tool_dir = NULL;
