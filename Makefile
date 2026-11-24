@@ -78,7 +78,7 @@ DEPS := $(OBJS:.o=.d)
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
         appinfo helpers-install ntdll-resolve bridge runcheck compatcheck envpasscheck \
-        compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
+        compatsvc-check prefixstate-check defaults-check compatpage-check defaults-drift shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck extdrivecheck launchercheck bundlecheck launch-shell activatecheck FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
 
@@ -148,6 +148,10 @@ runnervariantcheck:
 gamedrivecheck:
 	@if [ ! -f dylib/tests/gamedrivecheck.sh ]; then $(call SKIP,gamedrivecheck,dylib/tests/gamedrivecheck.sh); exit 0; fi; \
 	sh dylib/tests/gamedrivecheck.sh dylib/feats/compat_run.sh
+
+extdrivecheck:
+	@if [ ! -f dylib/tests/extdrivecheck.sh ]; then $(call SKIP,extdrivecheck,dylib/tests/extdrivecheck.sh); exit 0; fi; \
+	sh dylib/tests/extdrivecheck.sh dylib/feats/compat_run.sh
 
 launchercheck:
 	@if [ ! -f dylib/tests/launchercheck.sh ]; then $(call SKIP,launchercheck,dylib/tests/launchercheck.sh); exit 0; fi; \

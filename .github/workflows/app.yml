@@ -138,6 +138,7 @@ jobs:
           make -s routecheck
           make -s bridgecheck
           make -s gamedrivecheck
+          make -s extdrivecheck
           make -s launchercheck
           make -s seedcheck
           make -s bundlecheck
