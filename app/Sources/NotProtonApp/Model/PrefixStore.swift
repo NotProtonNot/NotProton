@@ -43,6 +43,8 @@ struct WinePrefix: Sendable, Hashable, Identifiable {
     var id: String { "\(library.root.path(percentEncoded: false))#\(appID)" }
 
     var title: String { name ?? String(localized: "App \(appID)") }
+
+    var isShortcut: Bool { UInt32(appID).map { $0 & 0x8000_0000 != 0 } ?? false }
 }
 
 struct PrefixUsage: Sendable {

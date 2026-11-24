@@ -607,9 +607,9 @@ struct PrefixToolsTests {
         return (dir, try fakeRunner(in: dir, home: home), try usedPrefix(in: dir, home: home))
     }
 
-    private func usedPrefix(in dir: URL, home: URL) throws -> WinePrefix {
+    private func usedPrefix(in dir: URL, home: URL, appID: String = "1574480") throws -> WinePrefix {
         let library = SteamLibrary(root: dir)
-        let pfx = library.compatdata.appending(path: "1574480/pfx")
+        let pfx = library.compatdata.appending(path: "\(appID)/pfx")
         let fm = FileManager.default
         for path in ["drive_c/windows/system32", "drive_c/users/crossover/AppData/Roaming/game",
                      "drive_c/Program Files/redist"] {
@@ -624,7 +624,7 @@ struct PrefixToolsTests {
         try Data("stale system".utf8).write(to: pfx.appending(path: "system.reg"))
         try fm.createSymbolicLink(
             at: pfx.appending(path: "drive_c/users/crossover/Documents"), withDestinationURL: home)
-        try Data("0".utf8).write(to: library.compatdata.appending(path: "1574480/notproton-msync"))
+        try Data("0".utf8).write(to: library.compatdata.appending(path: "\(appID)/notproton-msync"))
         return try #require(PrefixStore.all(libraries: [library]).first)
     }
 
@@ -1016,6 +1016,137 @@ struct PrefixToolsTests {
         // A name the template does make is the template's, arch and all.
         #expect(!fm.fileExists(
             atPath: driveC.appending(path: "Program Files/redist/thing.dll").path(percentEncoded: false)))
+    }
+
+    @Test("A shortcut's rebuild keeps the programs installed into it")
+    func shortcutRebuildKeepsInstalledPrograms() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appending(path: "np-shortcut-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: dir) }
+        let home = dir.appending(path: "home")
+        try fm.createDirectory(at: home, withIntermediateDirectories: true)
+        let prefix = try usedPrefix(in: dir, home: home, appID: "3123456789")
+        #expect(prefix.isShortcut)
+        let driveC = prefix.pfx.appending(path: "drive_c")
+        for (path, body) in [("Program Files/HoYoPlay/launcher.exe", "launcher"),
+                             ("Program Files (x86)/Old Game/game.exe", "game"),
+                             ("ProgramData/HoYoPlay/state.json", "state"),
+                             ("Program Files/common files/wine.dll", "stale"),
+                             ("Program Files/common files/HoYoverse/sdk.dll", "sdk"),
+                             ("ProgramData/Microsoft/Windows/Start Menu/Programs/HoYoPlay/HoYoPlay.lnk", "lnk"),
+                             ("Games/hoyoverse/game.exe", "root")] {
+            let file = driveC.appending(path: path)
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(body.utf8).write(to: file)
+        }
+        let runner = try fakeRunner(
+            in: dir, home: home,
+            extra: """
+                mkdir -p "$WINEPREFIX/drive_c/Program Files/Common Files" \\
+                  "$WINEPREFIX/drive_c/ProgramData/Microsoft/Windows/Start Menu/Programs"
+                printf fresh > "$WINEPREFIX/drive_c/Program Files/Common Files/wine.dll"
+                """)
+
+        try PrefixTools.recreate(prefix, runner: runner)
+
+        func text(_ path: String) -> String? {
+            try? String(contentsOf: driveC.appending(path: path), encoding: .utf8)
+        }
+        #expect(text("Program Files/HoYoPlay/launcher.exe") == "launcher")
+        #expect(text("Program Files (x86)/Old Game/game.exe") == "game")
+        #expect(text("ProgramData/HoYoPlay/state.json") == "state")
+        #expect(text("Program Files/redist/thing.dll") == "installed")
+        #expect(text("Program Files/Common Files/wine.dll") == "fresh")
+        #expect(text("Program Files/Common Files/HoYoverse/sdk.dll") == "sdk")
+        #expect(text("ProgramData/Microsoft/Windows/Start Menu/Programs/HoYoPlay/HoYoPlay.lnk") == "lnk")
+        #expect(text("Games/hoyoverse/game.exe") == "root")
+        #expect(text("windows/system32/ntdll.dll") == "fresh")
+    }
+
+    @Test("A shortcut's rebuild keeps the machine keys of software the fresh prefix lacks")
+    func shortcutRebuildKeepsVendorKeys() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appending(path: "np-shortcut-reg-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: dir) }
+        let home = dir.appending(path: "home")
+        try fm.createDirectory(at: home, withIntermediateDirectories: true)
+        let freshReg = #"""
+            WINE REGISTRY Version 2
+            ;; All keys relative to \\\\Machine
+
+            #arch=win64
+
+            [Software\\Classes\\CLSID] 1
+            #time=1
+
+            [Software\\Microsoft\\Windows] 1
+            "Fresh"="1"
+
+            [Software\\Wow6432Node\\Microsoft] 1
+
+            """#
+        let oldReg = #"""
+            WINE REGISTRY Version 2
+            ;; All keys relative to \\\\Machine
+
+            #arch=win64
+
+            [Software\\Classes\\CLSID\\{1}] 2
+            @="old class"
+
+            [Software\\HoYoverse\\HoYoPlay] 2
+            #time=2
+            "InstallPath"="C:\\Program Files\\HoYoPlay"
+            "Blob"=hex:01,02,\
+              03,04
+
+            [Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\HoYoPlay] 2
+            "DisplayName"="HoYoPlay"
+
+            [Software\\Wow6432Node\\miHoYo\\Game] 2
+            "Lang"="en"
+
+            [System\\CurrentControlSet\\Services\\Old] 2
+            "Start"=dword:00000002
+
+            """#
+        let prefix = try usedPrefix(in: dir, home: home, appID: "3123456789")
+        try Data(oldReg.utf8).write(to: prefix.pfx.appending(path: "system.reg"))
+        let template = dir.appending(path: "fresh.reg")
+        try Data(freshReg.utf8).write(to: template)
+        let runner = try fakeRunner(
+            in: dir, home: home,
+            extra: "cp '\(template.path(percentEncoded: false))' \"$WINEPREFIX/system.reg\"")
+
+        try PrefixTools.recreate(prefix, runner: runner)
+
+        let reg = try String(contentsOf: prefix.pfx.appending(path: "system.reg"), encoding: .utf8)
+        #expect(reg.hasPrefix(freshReg))
+        #expect(reg.contains(#"[Software\\HoYoverse\\HoYoPlay] 2"#))
+        #expect(reg.contains("\"Blob\"=hex:01,02,\\\n  03,04"))
+        #expect(reg.contains(#"[Software\\Wow6432Node\\miHoYo\\Game] 2"#))
+        #expect(!reg.contains("old class"))
+        #expect(!reg.contains("Uninstall"))
+        #expect(!reg.contains("CurrentControlSet"))
+    }
+
+    @Test("A Steam game's rebuild keeps neither installed programs nor machine keys")
+    func steamRebuildDropsInstalledPrograms() throws {
+        let (dir, runner, prefix) = try usedPrefixAndRunner()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(!prefix.isShortcut)
+        let file = prefix.pfx.appending(path: "drive_c/Program Files/HoYoPlay/launcher.exe")
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("launcher".utf8).write(to: file)
+        try Data("[Software\\\\HoYoverse] 2\n".utf8)
+            .write(to: prefix.pfx.appending(path: "system.reg"))
+
+        try PrefixTools.recreate(prefix, runner: runner)
+
+        #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
+        #expect(try String(contentsOf: prefix.pfx.appending(path: "system.reg"), encoding: .utf8)
+            == "fresh system")
     }
 
     // Emptying the prefix first meant a wineboot that failed left the game with nothing at
