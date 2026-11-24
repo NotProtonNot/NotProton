@@ -98,7 +98,7 @@ resolve_icon() {
   fi
   icon_source=""
   if [ -n "$art" ]; then
-    icon_source="$art $(stat -f %m "$art" 2>/dev/null || echo 0)"
+    icon_source="margin $art $(stat -f %m "$art" 2>/dev/null || echo 0)"
   fi
   icon_cache="$icon_root/game.icns"
   icon_status=1
