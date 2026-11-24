@@ -54,8 +54,8 @@ static void make_home(void) {
     uint8_t vdf[4096];
     size_t n = 0;
     n += (size_t)sprintf((char *)vdf, "%cshortcuts", 0) + 1;
-    n += vdf_shortcut(vdf + n, 0, LAUNCHER, "hyp/launcher.exe");
-    n += vdf_shortcut(vdf + n, 1, GAME, "hyp/games/g.exe");
+    n += vdf_shortcut(vdf + n, 0, LAUNCHER, "hub/launcher.exe");
+    n += vdf_shortcut(vdf + n, 1, GAME, "hub/games/g.exe");
     vdf[n++] = 0x08;
     vdf[n++] = 0x08;
     put_file("Library/Application Support/Steam/userdata/1/config/shortcuts.vdf", "");
@@ -65,8 +65,8 @@ static void make_home(void) {
     fwrite(vdf, 1, n, f);
     fclose(f);
 
-    put_file("hyp/launcher.exe", "");
-    put_file("hyp/games/g.exe", "");
+    put_file("hub/launcher.exe", "");
+    put_file("hub/games/g.exe", "");
     put_file("Library/Application Support/notproton/plugins/t.conf",
              "[NOTPROTON_T]\n"
              "label = T\n"
@@ -117,28 +117,28 @@ int main(void) {
     check(!np_pluginlaunch_pick(GAME, "--game=g it's"), "another shortcut's choice is refused");
     check(!np_pluginlaunch_pick(220240, "--game=g it's"), "a Steam game can't be picked for");
     check(np_pluginlaunch_pick(LAUNCHER, ""), "an empty pick is fine");
-    check(took(cmd_for("hyp/launcher.exe", ""), NULL), "and adds nothing");
+    check(took(cmd_for("hub/launcher.exe", ""), NULL), "and adds nothing");
 
     printf("== the pick reaches that shortcut's next launch, once ==\n");
     check(np_pluginlaunch_pick(LAUNCHER, "--game=g it's"), "the game's choice is taken");
-    check(took(cmd_for("hyp/games/g.exe", ""), NULL), "another shortcut's launch is left alone");
+    check(took(cmd_for("hub/games/g.exe", ""), NULL), "another shortcut's launch is left alone");
     char want[PATH_MAX * 2];
-    snprintf(want, sizeof want, "A=1 '/t/.'/run waitforexitandrun \"%s/hyp/launcher.exe\""
+    snprintf(want, sizeof want, "A=1 '/t/.'/run waitforexitandrun \"%s/hub/launcher.exe\""
              " '--game=g' 'it'\\''s' | tee /tmp/log", home);
-    check(took(cmd_for("hyp/launcher.exe", " | tee /tmp/log"), want),
+    check(took(cmd_for("hub/launcher.exe", " | tee /tmp/log"), want),
           "each word lands quoted right after the exe, ahead of the rest of the line");
-    check(took(cmd_for("hyp/launcher.exe", ""), NULL), "the next launch is plain again");
+    check(took(cmd_for("hub/launcher.exe", ""), NULL), "the next launch is plain again");
 
     printf("== a pick that isn't used goes away ==\n");
     np_pluginlaunch_pick(LAUNCHER, "--game=g it's");
     np_pluginlaunch_pick(LAUNCHER, "");
-    check(took(cmd_for("hyp/launcher.exe", ""), NULL), "picking the plain choice forgets it");
+    check(took(cmd_for("hub/launcher.exe", ""), NULL), "picking the plain choice forgets it");
     np_pluginlaunch_pick(LAUNCHER, "--game=g it's");
     np_pluginlaunch_pick(LAUNCHER, "--game=none");
-    check(took(cmd_for("hyp/launcher.exe", ""), NULL), "so does a refused pick");
+    check(took(cmd_for("hub/launcher.exe", ""), NULL), "so does a refused pick");
     np_pluginlaunch_pick(LAUNCHER, "--game=g it's");
     g_pick_at -= PICK_TTL_SECONDS + 1;
-    check(took(cmd_for("hyp/launcher.exe", ""), NULL), "and one that's too old");
+    check(took(cmd_for("hub/launcher.exe", ""), NULL), "and one that's too old");
 
     char rm[PATH_MAX + 16];
     snprintf(rm, sizeof rm, "rm -rf '%s'", home);

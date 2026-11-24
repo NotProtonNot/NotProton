@@ -26,12 +26,12 @@ function wrapper(src) {
 const ID = 2189718462;
 const GAME = ((BigInt(ID) << 32n) | 0x02000000n).toString();
 const ENTRIES = [
-  { k: 'NOTPROTON_HOYO', on: '1', l: 'HoYoPlay', a: '' },
-  { k: 'NOTPROTON_HOYO', on: '1', l: 'Honkai: Star Rail', a: '--hoyo-game=hkrpg' },
+  { k: 'NOTPROTON_HUB', on: '1', l: 'Launcher', a: '' },
+  { k: 'NOTPROTON_HUB', on: '1', l: 'A game', a: '--game=a' },
 ];
 
 // A client with one shortcut, the details store, NotProton's routes and Steam's picker.
-function client(js, { opts = 'NOTPROTON_HOYO=1 %command%', json = JSON.stringify(ENTRIES), picker = true,
+function client(js, { opts = 'NOTPROTON_HUB=1 %command%', json = JSON.stringify(ENTRIES), picker = true,
                       route = true, details = 'now', keep = 'yes' } = {}) {
   const c = { runs: [], shown: [], asked: [], picks: [] };
   const d = { strLaunchOptions: opts };
@@ -97,7 +97,7 @@ async function run(file) {
 
   let c = client(js);
   const list = await SteamClient.Apps.GetLaunchOptionsForApp(ID);
-  ok(name, same(list.map(o => [o.nIndex, o.strDescription]), [[0, 'HoYoPlay'], [1, 'Honkai: Star Rail']]),
+  ok(name, same(list.map(o => [o.nIndex, o.strDescription]), [[0, 'Launcher'], [1, 'A game']]),
      'a shortcut with its row on reports the choices as launch options');
   ok(name, same(await SteamClient.Apps.GetLaunchOptionsForApp(ID), list),
      'the same list each time, so the choice Steam remembers keeps its key');
@@ -112,7 +112,7 @@ async function run(file) {
   c.shown[0]?.t.continue(1);
   ok(name, c.runs.length === 0, 'nothing starts before NotProton has the pick');
   await settle(5);
-  ok(name, same(c.picks, [['NotProton.PluginLaunchPick#1', ID, '--hoyo-game=hkrpg']]) &&
+  ok(name, same(c.picks, [['NotProton.PluginLaunchPick#1', ID, '--game=a']]) &&
            same(c.runs, [[GAME, '', -1, 7]]), 'the pick goes to NotProton, then the shortcut starts');
   c.shown[0]?.t.continue(0);
   await settle(5);
@@ -151,12 +151,12 @@ async function run(file) {
            (await SteamClient.Apps.GetLaunchOptionsForApp(ID))[0].strDescription === 'client',
      'a row switched off changes nothing');
 
-  c = client(js, { opts: '%command% NOTPROTON_HOYO=1' });
+  c = client(js, { opts: '%command% NOTPROTON_HUB=1' });
   SteamClient.Apps.RunGame(GAME, '', -1, 7);
   await settle(5);
   ok(name, c.shown.length === 0, 'KEY=1 after %command% is an argument, not the row');
 
-  c = client(js, { opts: "NOTPROTON_HOYO='1' %command%", json: JSON.stringify([ENTRIES[0]]) });
+  c = client(js, { opts: "NOTPROTON_HUB='1' %command%", json: JSON.stringify([ENTRIES[0]]) });
   SteamClient.Apps.RunGame(GAME, '', -1, 7);
   await settle(5);
   ok(name, c.shown.length === 0 && c.runs.length === 1, 'a single choice is a plain launch');
