@@ -1567,7 +1567,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"Reduced x87 Precision (Reducing precision improves game performance, is enabled by default in CrossOver Preview)\")},\"fex\")," \
     "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Miscellaneous\",\"Miscellaneous\",\"Miscellaneous\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:npL(\"Disable macOS Game Mode\",\"Disable macOS Game Mode\",\"Disable macOS Game Mode\")," \
-    "checked:\"0\"===G(\"NOTPROTON_GAME_MODE\"),onChange:v=>s([[\"NOTPROTON_GAME_MODE\",w(\"NOTPROTON_GAME_MODE\",v?\"0\":\"1\",\"1\")]])},\"NOTPROTON_GAME_MODE\")" \
+    "checked:\"0\"===G(\"NOTPROTON_GAME_MODE\"),onChange:v=>s([[\"NOTPROTON_GAME_MODE\",w(\"NOTPROTON_GAME_MODE\",v?\"0\":\"1\",\"1\")]])},\"NOTPROTON_GAME_MODE\")," \
+    "app>=2147483648&&(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:npL(\"Assign External Drives a Drive Letter (Some game launchers will not install to a drive that does not have a drive letter)\",\"Assign External Drives a Drive Letter (Some game launchers will not install to a drive that does not have a drive letter)\",\"Assign External Drives a Drive Letter (Some game launchers will not install to a drive that does not have a drive letter)\")," \
+    "checked:\"0\"!==G(\"NOTPROTON_EXTERNAL_DRIVES\"),onChange:v=>s([[\"NOTPROTON_EXTERNAL_DRIVES\",v?\"\":\"0\"]])},\"NOTPROTON_EXTERNAL_DRIVES\")" \
     "]},\"misc\")," \
     "exe," \
     "dev&&(npRows.length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
