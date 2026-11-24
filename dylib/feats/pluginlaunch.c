@@ -306,19 +306,6 @@ int np_pluginlaunch_pick(uint32_t appid, const char *args) {
     return 1;
 }
 
-// Appends s to out as one single-quoted shell word.
-static size_t put_quoted(char *out, const char *s, size_t n) {
-    size_t w = 0;
-    out[w++] = ' ';
-    out[w++] = '\'';
-    for (size_t i = 0; i < n; i++) {
-        if (s[i] == '\'') { memcpy(out + w, "'\\''", 4); w += 4; }
-        else out[w++] = s[i];
-    }
-    out[w++] = '\'';
-    return w;
-}
-
 char *np_pluginlaunch_take(const char *cmd) {
     char args[sizeof g_pick_args];
     const char *exe = NULL;
@@ -333,18 +320,10 @@ char *np_pluginlaunch_take(const char *cmd) {
     pthread_mutex_unlock(&g_pick_lock);
     if (!exe) return NULL;
 
-    // Right after the exe, one quoted word each
-    size_t head = (size_t)(exe - cmd) + exe_len, len = head;
-    char *out = malloc(strlen(cmd) + 7 * strlen(args) + 1);
+    // Right after the exe, as shell words like the rest of the launch options
+    size_t head = (size_t)(exe - cmd) + exe_len;
+    char *out = malloc(strlen(cmd) + strlen(args) + 2);
     if (!out) return NULL;
-    memcpy(out, cmd, head);
-    for (const char *p = args; *p;) {
-        while (*p == ' ' || *p == '\t') p++;
-        const char *e = p;
-        while (*e && *e != ' ' && *e != '\t') e++;
-        if (e > p) len += put_quoted(out + len, p, (size_t)(e - p));
-        p = e;
-    }
-    strcpy(out + len, cmd + head);
+    snprintf(out, strlen(cmd) + strlen(args) + 2, "%.*s %s%s", (int)head, cmd, args, cmd + head);
     return out;
 }

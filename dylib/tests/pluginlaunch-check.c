@@ -71,7 +71,7 @@ static void make_home(void) {
              "[NOTPROTON_T]\n"
              "label = T\n"
              "launch = Launcher = launcher.exe =\n"
-             "launch = Game = games/g.exe = --game=g it's\n"
+             "launch = Game = games/g.exe = --game=g \"two words\"\n"
              "launch = Missing = games/none.exe = --game=none\n");
 }
 
@@ -101,7 +101,7 @@ int main(void) {
     printf("== a shortcut offers the choices whose files are next to its exe ==\n");
     char *json = np_pluginlaunch_json(LAUNCHER);
     check(json && strcmp(json, "[{\"k\":\"NOTPROTON_T\",\"on\":\"1\",\"l\":\"Launcher\",\"a\":\"\"},"
-                               "{\"k\":\"NOTPROTON_T\",\"on\":\"1\",\"l\":\"Game\",\"a\":\"--game=g it's\"}]") == 0,
+                               "{\"k\":\"NOTPROTON_T\",\"on\":\"1\",\"l\":\"Game\",\"a\":\"--game=g \\\"two words\\\"\"}]") == 0,
           "the launcher lists itself and the installed game, not the missing one");
     free(json);
     json = np_pluginlaunch_json(GAME);
@@ -114,29 +114,29 @@ int main(void) {
     printf("== a pick must be one of the shortcut's choices ==\n");
     check(!np_pluginlaunch_pick(LAUNCHER, "--game=none"), "a choice whose file is missing is refused");
     check(!np_pluginlaunch_pick(LAUNCHER, "; rm -rf ~"), "arguments no plugin declared are refused");
-    check(!np_pluginlaunch_pick(GAME, "--game=g it's"), "another shortcut's choice is refused");
-    check(!np_pluginlaunch_pick(220240, "--game=g it's"), "a Steam game can't be picked for");
+    check(!np_pluginlaunch_pick(GAME, "--game=g \"two words\""), "another shortcut's choice is refused");
+    check(!np_pluginlaunch_pick(220240, "--game=g \"two words\""), "a Steam game can't be picked for");
     check(np_pluginlaunch_pick(LAUNCHER, ""), "an empty pick is fine");
     check(took(cmd_for("hub/launcher.exe", ""), NULL), "and adds nothing");
 
     printf("== the pick reaches that shortcut's next launch, once ==\n");
-    check(np_pluginlaunch_pick(LAUNCHER, "--game=g it's"), "the game's choice is taken");
+    check(np_pluginlaunch_pick(LAUNCHER, "--game=g \"two words\""), "the game's choice is taken");
     check(took(cmd_for("hub/games/g.exe", ""), NULL), "another shortcut's launch is left alone");
     char want[PATH_MAX * 2];
     snprintf(want, sizeof want, "A=1 '/t/.'/run waitforexitandrun \"%s/hub/launcher.exe\""
-             " '--game=g' 'it'\\''s' | tee /tmp/log", home);
+             " --game=g \"two words\" | tee /tmp/log", home);
     check(took(cmd_for("hub/launcher.exe", " | tee /tmp/log"), want),
-          "each word lands quoted right after the exe, ahead of the rest of the line");
+          "they land as written right after the exe, ahead of the rest of the line");
     check(took(cmd_for("hub/launcher.exe", ""), NULL), "the next launch is plain again");
 
     printf("== a pick that isn't used goes away ==\n");
-    np_pluginlaunch_pick(LAUNCHER, "--game=g it's");
+    np_pluginlaunch_pick(LAUNCHER, "--game=g \"two words\"");
     np_pluginlaunch_pick(LAUNCHER, "");
     check(took(cmd_for("hub/launcher.exe", ""), NULL), "picking the plain choice forgets it");
-    np_pluginlaunch_pick(LAUNCHER, "--game=g it's");
+    np_pluginlaunch_pick(LAUNCHER, "--game=g \"two words\"");
     np_pluginlaunch_pick(LAUNCHER, "--game=none");
     check(took(cmd_for("hub/launcher.exe", ""), NULL), "so does a refused pick");
-    np_pluginlaunch_pick(LAUNCHER, "--game=g it's");
+    np_pluginlaunch_pick(LAUNCHER, "--game=g \"two words\"");
     g_pick_at -= PICK_TTL_SECONDS + 1;
     check(took(cmd_for("hub/launcher.exe", ""), NULL), "and one that's too old");
 
