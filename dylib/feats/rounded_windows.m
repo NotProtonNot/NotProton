@@ -100,7 +100,11 @@ static void update_corners(NSWindow *window) {
         window.backgroundColor = NSColor.clearColor;
         layer.opaque = NO;
         layer.cornerCurve = kCACornerCurveContinuous;
-        layer.cornerRadius = 11;
+        CGFloat radius = 11;
+        // The macOS 26 window design has larger corners.
+        if (@available(macOS 26.0, *))
+            radius = 17;
+        layer.cornerRadius = radius;
         layer.masksToBounds = YES;
     }
     [CATransaction commit];
