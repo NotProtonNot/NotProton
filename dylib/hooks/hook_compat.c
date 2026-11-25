@@ -23,7 +23,13 @@ static void *hook_CCompatManager_Init(void *self, void *arg1) {
     }
     void *ret = orig(self, arg1);
 
-    np_compat_force_enable(self);
+    // Some builds resolve this to a CLoadLocalToolListJob method. self is the job there.
+    static const char once = 0;
+    if (np_log_first_hit(&once, 0))
+        NP_LOG("hook_CCompatManager_Init: called on %s", np_compat_is_manager(self)
+               ? "the manager" : "something other than the manager, flag left alone");
+    if (np_compat_is_manager(self))
+        np_compat_force_enable(self);
 
     return ret;
 }

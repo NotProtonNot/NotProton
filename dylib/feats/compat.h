@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <mach-o/loader.h>
 
 #include "../util/buildid.h"
 
@@ -72,6 +73,11 @@ int  np_compat_adopt_tools(const char *tools_dir);
 // no longer in it.
 int  np_compat_ensure_tool_manifest(void);
 void np_compat_force_enable(void *compat_mgr);
+
+// Swaps vtable slot 0 (the enabled getter) so Steam can't read the flag while it's still 0.
+int  np_compat_bind_manager(const struct mach_header_64 *mh, intptr_t slide,
+                            uintptr_t bis_enabled);
+bool np_compat_is_manager(const void *obj);
 
 // Platform bitmask for an app. Reports 0 when the function was not resolved,
 // which reads as "cannot say" rather than as every platform at once.
