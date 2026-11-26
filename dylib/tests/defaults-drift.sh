@@ -35,7 +35,7 @@ for key in $panel; do
     # Neither of these is a setting with a default: variants are a game's own choice,
     # and the insert list is how a tool without our run script carries a plugin.
     # External drives is a per-shortcut opt-out; the row only exists for non-Steam games.
-    case "$key" in NOTPROTON_RUNNER_VARIANT|DYLD_INSERT_LIBRARIES|NOTPROTON_EXTERNAL_DRIVES) continue ;; esac
+    case "$key" in NOTPROTON_RUNNER_VARIANT|DYLD_INSERT_LIBRARIES|NOTPROTON_EXTERNAL_DRIVES|NOTPROTON_FEX_OVERLAY) continue ;; esac
     printf '%s\n' "$all" | grep -Fxq "$key" || no "$key is on the panel but not in g_settings"
 done
 for key in $all; do

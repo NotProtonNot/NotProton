@@ -461,6 +461,37 @@ ok "FEX, the patched ntdll gets the libraries" "$(line "$out" 3)" "NOTPROTON_PLU
 out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=0 wine_unix="$work/aarch64-unix" \
   prefix_steam="$work/steam")
 ok "FEX, no plugins, no libraries" "$(printf '%s' "$out" | grep -c NOTPROTON_PLUGIN_LIBS)" "0"
+shortcut=11221654761612771328
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=0 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam" STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib:$work/b.dylib" SteamGameId=$shortcut NOTPROTON_FEX_OVERLAY=1)
+ok "FEX shortcut, the overlay rides the plugin loader behind the shim" "$(line "$out" 3)" \
+   "NOTPROTON_PLUGIN_LIBS=$work/Library/Application Support/notproton/overlay-shim.dylib:$work/a.dylib:$work/b.dylib"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam" STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" SteamGameId=$shortcut NOTPROTON_FEX_OVERLAY=1)
+ok "FEX shortcut, plugins load after the overlay" "$(line "$out" 3)" \
+   "NOTPROTON_PLUGIN_LIBS=$work/Library/Application Support/notproton/overlay-shim.dylib:$work/a.dylib:$work/lib/feat.dylib"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam" STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" SteamGameId=730 NOTPROTON_FEX_OVERLAY=1)
+ok "FEX Steam game, the overlay is left to lsteamclient" "$(line "$out" 3)" \
+   "NOTPROTON_PLUGIN_LIBS=$work/lib/feat.dylib"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam" STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" SteamGameId=$shortcut)
+ok "FEX shortcut, the overlay stays out unless it is turned on" "$(line "$out" 3)" \
+   "NOTPROTON_PLUGIN_LIBS=$work/lib/feat.dylib"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=1 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam" STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" SteamGameId=$shortcut NOTPROTON_FEX_OVERLAY=0)
+ok "and a 0 keeps it out" "$(line "$out" 3)" "NOTPROTON_PLUGIN_LIBS=$work/lib/feat.dylib"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=0 wine_unix="$work/aarch64-unix" \
+  prefix_steam="$work/steam" STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" NOTPROTON_FEX_OVERLAY=1)
+ok "FEX, no game ID, no overlay libraries" "$(printf '%s' "$out" | grep -c NOTPROTON_PLUGIN_LIBS)" "0"
+: > "$work/log"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=0 wine_unix="$work/aarch64-unix" \
+  STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" SteamGameId=$shortcut NOTPROTON_FEX_OVERLAY=1)
+ok "FEX shortcut without the loader says the overlay is off" \
+   "$(printf '%s' "$out" | grep -c NOTPROTON_PLUGIN_LIBS)|$(grep -c "no overlay for this shortcut" "$work/log")" "0|1"
+out=$(run NOTPROTON_PATCHA=0 NOTPROTON_PATCHB=0 NOTPROTON_INJECTED=0 prefix_steam="$work/steam" \
+  STEAM_DYLD_INSERT_LIBRARIES="$work/a.dylib" SteamGameId=$shortcut NOTPROTON_FEX_OVERLAY=1)
+ok "Rosetta, the overlay stays on the insert list" "$(printf '%s' "$out" | grep -c NOTPROTON_PLUGIN_LIBS)" "0"
 
 reset
 conf 10-variant.conf <<EOF

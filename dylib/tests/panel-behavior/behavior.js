@@ -334,6 +334,23 @@ for (const form of Object.keys(FORMS)) {
     ext('NOTPROTON_EXTERNAL_DRIVES=0 WINEMSYNC=1', 3420702832).props.onChange(true);
     t.ok(last().trim() === 'WINEMSYNC=1 %command%', `turning it back on removes it (${last()})`);
   }
+  {
+    const { render: PF, written: fw } = panel(emit, form, undefined, { fexTools: ['notproton-fex'] });
+    const fl = () => (fw.length ? fw[fw.length - 1].opts : '');
+    const ovl = (o, id, tool, R = PF) => walk(R({ details: details(o + ' %command%', { unAppID: id, strCompatToolName: tool }) }))
+      .find(x => x.props && x.props.label === 'Enable Steam Overlay and Steam Input for non-Steam games');
+    t.ok(!ovl('', 287700, 'notproton-fex'), 'a Steam game on FEX has no overlay row');
+    t.ok(!ovl('', 3420702832, 'notproton-preview'), 'a non-Steam game on Rosetta has no overlay row');
+    t.ok(ovl('', 3420702832, 'notproton-fex') && ovl('', 3420702832, 'notproton-fex').props.checked === false,
+         'a non-Steam game on FEX has the row, off by default');
+    t.ok(ovl('NOTPROTON_FEX_OVERLAY=1', 3420702832, 'notproton-fex').props.checked === true, 'the row reads its flag');
+    fw.length = 0;
+    ovl('', 3420702832, 'notproton-fex').props.onChange(true);
+    t.ok(fl().trim() === 'NOTPROTON_FEX_OVERLAY=1 %command%', `turning it on writes the flag (${fl()})`);
+    fw.length = 0;
+    ovl('NOTPROTON_FEX_OVERLAY=1 WINEMSYNC=1', 3420702832, 'notproton-fex').props.onChange(false);
+    t.ok(fl().trim() === 'WINEMSYNC=1 %command%', `turning it off removes it (${fl()})`);
+  }
   written.length = 0;
   raw('').props.onChange(true);
   t.ok(last().trim() === 'NOTPROTON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);

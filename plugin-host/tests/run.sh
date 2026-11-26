@@ -30,6 +30,12 @@ for a in arm64 x86_64; do
   "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -o "$d/hostcheck" plugin-host/tests/hostcheck.c
   "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -o "$d/apicheck" plugin-host/tests/apicheck.c
   "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -dynamiclib -o "$d/sample.dylib" plugin-host/tests/sample.c
+  "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O2 -Wall -Wextra -dynamiclib -o "$d/npload.so" plugin-host/npload.c
+  "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -std=c17 -O1 -Wall -Wextra -o "$d/nploadcheck" plugin-host/tests/nploadcheck.c
+  for n in a b; do
+    "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -dynamiclib -DNAME="\"$n\"" -o "$d/load-$n.dylib" plugin-host/tests/loadfixture.c
+  done
+  "$plugin_cc" -arch "$a" -mmacosx-version-min="$min" -dynamiclib -DNAME='"shim"' -DSHIM -o "$d/load-shim.dylib" plugin-host/tests/loadfixture.c
   for v in xml:1.2.3 bin:4.5.6; do
     f="$d/${v%%:*}/Versions/A"
     mkdir -p "$f/Resources"
@@ -41,6 +47,7 @@ for a in arm64 x86_64; do
   step "$d/hostcheck" "$host" "$d" "$d"
   step "$d/apicheck" "$host" "$d/sample.dylib" "$d" "$d"
   step sh plugin-host/tests/patchcheck.sh "$tool" "$d"
+  step "$d/nploadcheck" "$d/npload.so" "$d"
 done
 
 if [ "$ran" -eq 0 ] && [ "$failed" -eq 0 ]; then

@@ -3658,12 +3658,21 @@ $np_feat_envs"
   fi
 fi
 # FEX's wine drops DYLD_INSERT_LIBRARIES, so the patched ntdll loads the plugin dylibs instead
-if [ "${wine_unix##*/}" != x86_64-unix ] && [ -n "$np_feat_dylibs" ]; then
-  if [ -f "${prefix_steam-}/npload.so" ]; then
-    np_feat_envs="NOTPROTON_PLUGIN_LIBS=$np_feat_dylibs
+if [ "${wine_unix##*/}" != x86_64-unix ]; then
+  np_fex_libs="$np_feat_dylibs"
+  np_fex_overlay=""
+  # Non-Steam games don't load lsteamclient, so an alternative mechanism is needed to bring the Steam Overlay/Steam Input in.
+  if [ "${NOTPROTON_FEX_OVERLAY-}" = 1 ] && [ -n "${STEAM_DYLD_INSERT_LIBRARIES-}" ] && shortcut_game_id "${SteamGameId-}"; then
+    np_fex_overlay="$STEAM_DYLD_INSERT_LIBRARIES"
+    np_fex_libs="$np_fex_overlay${np_fex_libs:+:$np_fex_libs}"
+    [ ! -f "$np_support/overlay-shim.dylib" ] || np_fex_libs="$np_support/overlay-shim.dylib:$np_fex_libs"
+  fi
+  if [ -n "$np_fex_libs" ] && [ -f "${prefix_steam-}/npload.so" ]; then
+    np_feat_envs="NOTPROTON_PLUGIN_LIBS=$np_fex_libs
 $np_feat_envs"
   else
-    np_feat_log "plugin dylibs and patches are not loaded, the plugin loader isn't staged"
+    [ -z "$np_feat_dylibs" ] || np_feat_log "plugin dylibs and patches are not loaded, the plugin loader isn't staged"
+    [ -z "$np_fex_overlay" ] || np_feat_log "no overlay for this shortcut, the plugin loader isn't staged"
   fi
   np_feat_dylibs=""
 fi

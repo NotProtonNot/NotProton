@@ -1639,6 +1639,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "typeof globalThis.MSCXSpecifyRoute==\"function\"&&(0," RT ".jsx)(" BARREL ".$n,{className:\"MSCXSetBtn\"," \
     "onClick:npDismiss,children:npL(\"Dismiss\",\"Dismiss\",\"Dismiss\")},\"dismiss\")]})},\"rec\")},\"recs\"):null," \
     "npBody=[npRecB,npCx&&head," \
+    "npCx&&app>=2147483648&&fex&&(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Steam Overlay\",\"Steam Overlay\",\"Steam Overlay\")," \
+    "children:(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:npL(\"Enable Steam Overlay and Steam Input for non-Steam games\",\"Enable Steam Overlay and Steam Input for non-Steam games\",\"Enable Steam Overlay and Steam Input for non-Steam games\")," \
+    "checked:\"1\"===G(\"NOTPROTON_FEX_OVERLAY\"),onChange:v=>s([[\"NOTPROTON_FEX_OVERLAY\",v?\"1\":\"\"]])},\"NOTPROTON_FEX_OVERLAY\")},\"ovl\")," \
     "npCx&&(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
     "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",w(\"CX_GRAPHICS_BACKEND\",v.data||\"auto\",\"auto\")]]" \

@@ -17,5 +17,10 @@ __attribute__((visibility("default"))) int __wine_unix_lib_init(void) {
         }
         p = end ? end + 1 : p + len;
     }
+    // dyld skips interposes on a dlopen.
+    const char *shim = getenv("NOTPROTON_OVERLAY_SHIM");
+    void *loaded = shim && *shim ? dlopen(shim, RTLD_NOW | RTLD_NOLOAD) : NULL;
+    void (*install)(void) = loaded ? (void (*)(void))dlsym(loaded, "np_overlay_shim_install") : NULL;
+    if (install) install();
     return 0;
 }
