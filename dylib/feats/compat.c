@@ -4,6 +4,8 @@
 #include "../util/file.h"
 #include "../util/a64.h"
 #include "../util/ptr.h"
+#include "../resolver/anchor.h"
+#include "../core/macho.h"
 
 #include <dirent.h>
 #include <mach/mach.h>
@@ -14,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -814,6 +817,81 @@ void np_compat_force_enable(void *compat_mgr) {
     if (!prev)
         NP_LOG("np_compat_force_enable: compat layer force-enabled (this+0x%X: 0 -> 1)",
                off);
+}
+
+#define MANAGER_TYPE "14CCompatManager"
+static uintptr_t g_manager_vptr;
+
+bool np_compat_is_manager(const void *obj) {
+    return obj && g_manager_vptr && *(const uintptr_t *)obj == g_manager_vptr;
+}
+
+static uint64_t enabled_getter(void *compat_mgr) {
+    static const char once = 0;
+    if (np_log_first_hit(&once, 0))
+        NP_LOG("np_compat_bind_manager: first enabled query, the flag was %u",
+               ((const uint8_t *)compat_mgr)[np_compat_enabled_off()]);
+    np_compat_force_enable(compat_mgr);
+    return 1;
+}
+
+// LDRB W0,[X0,#flag] then RET.
+static int is_enabled_getter(uintptr_t fn) {
+    const uint32_t *w = (const uint32_t *)fn;
+    return w[0] == (0x39400000u | (np_compat_enabled_off() << 10)) && w[1] == 0xD65F03C0u;
+}
+
+static int write_slot(uintptr_t *slot, uintptr_t value) {
+    vm_address_t addr = (vm_address_t)slot;
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+    if (vm_region_64(mach_task_self(), &addr, &size, VM_REGION_BASIC_INFO_64,
+                     (vm_region_info_t)&info, &count, &object) != KERN_SUCCESS)
+        return 0;
+    size_t page_size = (size_t)getpagesize();
+    void *page = (void *)((uintptr_t)slot & ~(uintptr_t)(page_size - 1));
+    if (mprotect(page, page_size, PROT_READ | PROT_WRITE) != 0)
+        return 0;
+    *slot = value;
+    if (!(info.protection & VM_PROT_WRITE))
+        mprotect(page, page_size, PROT_READ);
+    return 1;
+}
+
+int np_compat_bind_manager(const struct mach_header_64 *mh, intptr_t slide,
+                           uintptr_t bis_enabled) {
+    uintptr_t text = 0;
+    size_t text_sz = 0;
+    if (!mh || !bis_enabled ||
+        np_get_section_containing(mh, slide, bis_enabled, &text, &text_sz) != 0)
+        return 0;
+    uintptr_t vptr = np_rtti_vptr(mh, slide, text, text_sz, MANAGER_TYPE);
+    if (!vptr) {
+        NP_WARN("np_compat_bind_manager: no %s vtable", MANAGER_TYPE);
+        return 0;
+    }
+    g_manager_vptr = vptr;
+
+    // Post-logon calls slot 0 once and skips the compat pass on a 0.
+    uintptr_t *slot = (uintptr_t *)vptr;
+    uintptr_t fn = *slot;
+    if (fn < text || text_sz < 2 * sizeof(uint32_t) ||
+        fn - text > text_sz - 2 * sizeof(uint32_t) || !is_enabled_getter(fn)) {
+        NP_WARN("np_compat_bind_manager: the first virtual at 0x%lx does not read the "
+                "enabled flag at 0x%x, leaving it alone", (unsigned long)fn,
+                np_compat_enabled_off());
+        return 0;
+    }
+    if (!write_slot(slot, (uintptr_t)enabled_getter)) {
+        NP_WARN("np_compat_bind_manager: the vtable at 0x%lx cannot be written",
+                (unsigned long)vptr);
+        return 0;
+    }
+    NP_LOG("np_compat_bind_manager: enabled query answered here from now on "
+           "(vtable 0x%lx, flag 0x%x)", (unsigned long)vptr, np_compat_enabled_off());
+    return 1;
 }
 
 typedef uint32_t (*fn_GetValidPlatforms)(void *compat_mgr, uint32_t appid);

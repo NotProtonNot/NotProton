@@ -42,16 +42,22 @@ const char *np_home_dir(void) {
     return "/nonexistent";
 }
 
+static uintptr_t stub_text, stub_vptr;
+static size_t    stub_text_size;
+
 int np_get_section_containing(const struct mach_header_64 *mh, intptr_t slide,
                               uintptr_t addr, uintptr_t *out_base, size_t *out_size) {
-    (void)mh; (void)slide; (void)addr; (void)out_base; (void)out_size;
-    return -1;
+    (void)mh; (void)slide; (void)addr;
+    if (!stub_text) return -1;
+    *out_base = stub_text;
+    *out_size = stub_text_size;
+    return 0;
 }
 
 uintptr_t np_rtti_vptr(const struct mach_header_64 *mh, intptr_t slide,
                        uintptr_t text_base, size_t text_size, const char *type_name) {
     (void)mh; (void)slide; (void)text_base; (void)text_size; (void)type_name;
-    return 0;
+    return stub_vptr;
 }
 
 static int failures;
@@ -317,6 +323,40 @@ static void enabled_cases(void) {
           "a body that never parks this in a register is refused");
 
     check(np_compat_probe_enabled_off(0) == 0, "no function is refused");
+}
+
+static void getter_cases(void) {
+    static uintptr_t vtable[2];
+    static uint8_t manager[0x1000];
+    struct mach_header_64 mh = {0};
+    g_enabled_off = 0x7C0;
+    stub_text = (uintptr_t)code;
+    stub_text_size = sizeof code;
+    stub_vptr = (uintptr_t)vtable;
+
+    for (int i = 0; i < CODE_WORDS; i++) code[i] = NOP;
+    code[0] = ldrb(0, 0x7C8, 0);
+    code[1] = 0xD65F03C0u;
+    vtable[0] = (uintptr_t)code;
+    check(np_compat_bind_manager(&mh, 0, (uintptr_t)code) == 0 && vtable[0] == (uintptr_t)code,
+          "a first virtual reading some other byte is left alone");
+
+    vtable[0] = (uintptr_t)code + sizeof code;
+    check(np_compat_bind_manager(&mh, 0, (uintptr_t)code) == 0,
+          "a first virtual outside the code is left alone");
+
+    code[0] = ldrb(0, 0x7C0, 0);
+    vtable[0] = (uintptr_t)code;
+    check(np_compat_bind_manager(&mh, 0, (uintptr_t)code) == 1 && vtable[0] != (uintptr_t)code,
+          "the bare flag read is replaced");
+    memcpy(manager, &stub_vptr, sizeof stub_vptr);
+    check(np_compat_is_manager(manager) && !np_compat_is_manager(code),
+          "only an object with the manager's vtable counts as the manager");
+    check(((uint64_t (*)(void *))vtable[0])(manager) == 1 && manager[0x7C0] == 1,
+          "the replacement says yes and sets the flag");
+
+    stub_text = stub_vptr = 0;
+    g_enabled_off = COMPAT_MANAGER_ENABLED_OFF;
 }
 
 // A manager holding `count` entries, the one at `named_slot` carrying the tool name.
@@ -989,6 +1029,7 @@ int main(void) {
     head_shift_cases();
     unreadable_name_cases();
     enabled_cases();
+    getter_cases();
     manager_cases();
     registration_cases();
     tool_list_cases();

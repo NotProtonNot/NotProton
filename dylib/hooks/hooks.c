@@ -173,6 +173,8 @@ int np_hooks_install_all(const struct mach_header_64 *mh, intptr_t slide,
     np_compat_probe_head_shift(np_lookup_address(resolved, "CCompatManager::YldRegisterTool"));
     np_compat_probe_enabled_off(
         np_lookup_address(resolved, "CCompatManager::BIsCompatibilityToolEnabled"));
+    np_compat_bind_manager(mh, slide,
+        np_lookup_address(resolved, "CCompatManager::BIsCompatibilityToolEnabled"));
     np_compat_probe_windows_only_off(
         np_lookup_address(resolved, "CCompatManager::GetWildcardMapping"),
         np_lookup_address(resolved, "CCompatManager::WindowsOnlyLookup"));
