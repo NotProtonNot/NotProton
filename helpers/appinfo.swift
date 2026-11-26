@@ -1,6 +1,7 @@
 // Reads Steam's appinfo.vdf cache and prints key=value metadata for one app on
 // stdout. Usage: appinfo <appinfo.vdf> <appid>.
 // With --platforms instead of an appid it prints mac= and windows= appid lists.
+// With --shortcut <userdata> <appid> [login] it prints a non-Steam shortcut's name.
 //
 // common/icon is a 32x32 thumbnail. common/clienticon is the real multi-res
 // icon, and the two hashes differ for most apps, so the icon cannot be
@@ -45,6 +46,52 @@ if args.count == 4, args[1] == "--same-bundle" {
     } catch {
         exit(2)
     }
+}
+
+func userdataFolder(_ userdata: String, _ account: String) -> String? {
+    guard let text = try? String(contentsOfFile: "\(userdata)/../config/loginusers.vdf", encoding: .utf8) else { return nil }
+    var id: UInt64?
+    for line in text.split(whereSeparator: \.isNewline) {
+        let quoted = line.split(separator: "\"", omittingEmptySubsequences: false)
+        if quoted.count == 3, let key = UInt64(quoted[1]) { id = key }
+        if quoted.count == 5, quoted[1].lowercased() == "accountname", let id,
+           quoted[3].lowercased() == account.lowercased() {
+            return String(UInt32(truncatingIfNeeded: id))
+        }
+    }
+    return nil
+}
+
+func shortcutName(_ userdata: String, _ appID: UInt32, _ account: String?) -> String? {
+    let fm = FileManager.default
+    var folders = (try? fm.contentsOfDirectory(atPath: userdata)) ?? []
+    if let account, let mine = userdataFolder(userdata, account) { folders = [mine] }
+    let files = folders
+        .map { "\(userdata)/\($0)/config/shortcuts.vdf" }
+        .compactMap { path -> (String, Date)? in
+            guard let at = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return nil }
+            return (path, at)
+        }
+        .sorted { $0.1 > $1.1 }
+    for (path, _) in files {
+        guard let data = fm.contents(atPath: path) else { continue }
+        var c = Cursor(b: [UInt8](data), p: 0)
+        guard let root = try? readSection(&c, nil), case .section(let list)? = root["shortcuts"] else { continue }
+        for case .section(let entry) in list.values {
+            let keys = Dictionary(entry.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+            guard case .number(let id)? = keys["appid"], UInt32(truncatingIfNeeded: id) == appID,
+                  case .string(let name)? = keys["appname"], !name.isEmpty else { continue }
+            return name
+        }
+    }
+    return nil
+}
+
+if args.count == 4 || args.count == 5, args[1] == "--shortcut" {
+    guard let want = UInt32(args[3]),
+          let name = shortcutName(args[2], want, args.count == 5 ? args[4] : nil) else { exit(1) }
+    print("name=" + name.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " "))
+    exit(0)
 }
 
 let platforms = args.count == 3 && args[2] == "--platforms"

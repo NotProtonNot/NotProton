@@ -394,4 +394,158 @@ struct AppInfoToolTests {
         #expect(result.status != 0)
         #expect(result.stdout.isEmpty)
     }
+
+    private static let starRail: UInt32 = 2_612_745_101
+    private static let mine = "54303850"
+    private static let theirs = "678157147"
+
+    private static func shortcuts(
+        _ apps: [(UInt32, String)], idKey: String = "appid", nameKey: String = "AppName"
+    ) -> Data {
+        var f = Cache()
+        f.bytes.append(0x00)
+        f.cstring("shortcuts")
+        for (i, app) in apps.enumerated() {
+            f.bytes.append(0x00)
+            f.cstring(String(i))
+            f.bytes.append(0x02)
+            f.cstring(idKey)
+            f.u32(app.0)
+            f.bytes.append(0x01)
+            f.cstring(nameKey)
+            f.cstring(app.1)
+            f.bytes.append(0x01)
+            f.cstring("Exe")
+            f.cstring("\"/Volumes/Games/launcher.exe\"")
+            f.bytes.append(0x08)
+        }
+        f.bytes.append(contentsOf: [0x08, 0x08])
+        return Data(f.bytes)
+    }
+
+    private static func loginUsers(_ logins: [(String, String)]) -> String {
+        var text = "\"users\"\n{\n"
+        for (folder, login) in logins {
+            let id = 76_561_197_960_265_728 + UInt64(folder)!
+            text += "\t\"\(id)\"\n\t{\n\t\t\"AccountName\"\t\t\"\(login)\"\n"
+            text += "\t\t\"PersonaName\"\t\t\"\(login) in public\"\n\t\t\"timestamp\"\t\t\"1795719111\"\n\t}\n"
+        }
+        return text + "}\n"
+    }
+
+    private func shortcut(
+        accounts: [(String, Data)], logins: [(String, String)]? = nil, _ appID: UInt32 = starRail,
+        login: String? = nil
+    ) throws -> CommandResult {
+        let tool = try InstallPayload.locate().appinfo
+        let fm = FileManager.default
+        let root = URL.temporaryDirectory.appending(path: "np-shortcut-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let userdata = root.appending(path: "userdata")
+        try fm.createDirectory(at: userdata, withIntermediateDirectories: true)
+        for (i, account) in accounts.enumerated() {
+            let config = userdata.appending(path: "\(account.0)/config")
+            try fm.createDirectory(at: config, withIntermediateDirectories: true)
+            let file = config.appending(path: "shortcuts.vdf")
+            try account.1.write(to: file)
+            try fm.setAttributes(
+                [.modificationDate: Date(timeIntervalSince1970: 1_795_000_000 + Double(i) * 86400)],
+                ofItemAtPath: file.path(percentEncoded: false))
+        }
+        if let logins {
+            let config = root.appending(path: "config")
+            try fm.createDirectory(at: config, withIntermediateDirectories: true)
+            try Self.loginUsers(logins).write(
+                to: config.appending(path: "loginusers.vdf"), atomically: true, encoding: .utf8)
+        }
+        var arguments = ["--shortcut", userdata.path(percentEncoded: false), String(appID)]
+        if let login { arguments.append(login) }
+        let result = try Shell.run(tool.path(percentEncoded: false), arguments)
+        #expect(!result.outputLost)
+        return result
+    }
+
+    private static let twoAccounts = [
+        (mine, shortcuts([(4_054_248_690, "HoYoPlay"), (starRail, "Honkai Star Rail")])),
+        (theirs, shortcuts([(starRail, "Star Rail (theirs)")])),
+    ]
+    private static let twoLogins = [(mine, "first_login"), (theirs, "second_login")]
+
+    @Test("--shortcut names a non-Steam game from shortcuts.vdf")
+    func namesShortcut() throws {
+        let result = try shortcut(accounts: [Self.twoAccounts[0]])
+
+        #expect(result.status == 0)
+        #expect(result.stdout == "name=Honkai Star Rail\n")
+    }
+
+    @Test("--shortcut reads the keys in whatever case Steam wrote them",
+          arguments: [("appid", "AppName"), ("AppId", "appname"), ("APPID", "APPNAME")])
+    func namesShortcutInAnyKeyCase(_ keys: (String, String)) throws {
+        let file = Self.shortcuts([(Self.starRail, "Honkai Star Rail")], idKey: keys.0, nameKey: keys.1)
+        let result = try shortcut(accounts: [(Self.mine, file)])
+
+        #expect(values(result)["name"] == "Honkai Star Rail")
+    }
+
+    @Test("--shortcut with a login reads that account, not the newest file",
+          arguments: ["first_login", "FIRST_LOGIN"])
+    func namesShortcutFromLoggedInAccount(_ login: String) throws {
+        let result = try shortcut(accounts: Self.twoAccounts, logins: Self.twoLogins, login: login)
+
+        #expect(result.status == 0)
+        #expect(values(result)["name"] == "Honkai Star Rail")
+    }
+
+    @Test("--shortcut does not borrow a name from another account when the login is known")
+    func refusesOtherAccountsShortcut() throws {
+        let result = try shortcut(
+            accounts: Self.twoAccounts, logins: Self.twoLogins, 4_054_248_690, login: "second_login")
+
+        #expect(result.status != 0)
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test("--shortcut without a usable login takes the most recently written file",
+          arguments: [nil, "nobody"])
+    func namesShortcutFromNewestFile(_ login: String?) throws {
+        let result = try shortcut(accounts: Self.twoAccounts, logins: Self.twoLogins, login: login)
+
+        #expect(values(result)["name"] == "Star Rail (theirs)")
+    }
+
+    @Test("--shortcut falls back to the newest file when loginusers.vdf is missing")
+    func namesShortcutWithoutLoginUsers() throws {
+        let result = try shortcut(accounts: Self.twoAccounts, login: "first_login")
+
+        #expect(values(result)["name"] == "Star Rail (theirs)")
+    }
+
+    @Test("--shortcut skips a file it cannot parse and reads the next one")
+    func skipsUnparsableShortcuts() throws {
+        let cut = Self.twoAccounts[1].1.prefix(20)
+        let result = try shortcut(accounts: [Self.twoAccounts[0], (Self.theirs, Data(cut))])
+
+        #expect(values(result)["name"] == "Honkai Star Rail")
+    }
+
+    @Test("--shortcut prints a name with line breaks on one line")
+    func flattensShortcutName() throws {
+        let file = Self.shortcuts([(Self.starRail, "Star\nRail\r\nicon=x")])
+        let result = try shortcut(accounts: [(Self.mine, file)])
+
+        #expect(result.stdout == "name=Star Rail  icon=x\n")
+    }
+
+    @Test("--shortcut fails for an appid no shortcut has, an empty name, and a missing userdata folder")
+    func refusesUnknownShortcut() throws {
+        let unknown = try shortcut(accounts: Self.twoAccounts, 730)
+        let unnamed = try shortcut(accounts: [(Self.mine, Self.shortcuts([(Self.starRail, "")]))])
+        let missing = try shortcut(accounts: [])
+
+        for result in [unknown, unnamed, missing] {
+            #expect(result.status != 0)
+            #expect(result.stdout.isEmpty)
+        }
+    }
 }

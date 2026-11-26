@@ -112,6 +112,12 @@ for pair in '.hack//G.U. Last Recode|hackG.U. Last Recode' '...|Steam Game' '//|
   np_game_names
   is "name [${pair%%|*}]" "${pair#*|}" "$bundle_name"
 done
+game_name=$(printf '語%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 \
+  31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70)
+np_game_names
+is "a long name is cut on a character" "180" "$(printf '%s' "$bundle_name" | wc -c | tr -d ' ')"
+if mkdir "$T/$bundle_name.app" 2>/dev/null; then ok "and makes a folder"; else bad "and makes a folder" "created" "refused"; fi
+is "the Dock name stays whole" "$game_name" "$game_name_xml"
 
 echo "== first launch =="
 build "Game"
@@ -303,6 +309,21 @@ mkdir "$T/steam/appcache/appinfo"
 printf '#!/bin/sh\nprintf "name=%%s\\n" "$1"\n' > "$np_support/appinfo"
 read_app_meta
 is "shard folder without appinfo.vdf" "$T/steam/appcache/appinfo" "$meta_name"
+printf '#!/bin/sh\n[ "$1" = --shortcut ] && printf "name=%%s\\n" "$2"\n' > "$np_support/appinfo"
+app_id=2612745101
+read_app_meta
+is "a shortcut is named from userdata" "$T/steam/userdata" "$meta_name"
+app_id=100
+read_app_meta
+is "a Steam app never asks for a shortcut name" "" "$meta_name"
+printf '#!/bin/sh\n[ "$1" = --shortcut ] && printf "name=%%s\\n" "$#:${4-}"\n' > "$np_support/appinfo"
+app_id=2612745101
+SteamUser="some one" read_app_meta
+is "the logged-in account goes along" "4:some one" "$meta_name"
+unset SteamUser
+read_app_meta
+is "no login, no account argument" "3:" "$meta_name"
+app_id=100
 printf '#!/bin/sh\nprintf "icon=abc123\\n"\n' > "$np_support/appinfo"
 read_app_meta
 rm -f "$iconmaker" "$loader_res/game.icns"

@@ -42,6 +42,10 @@ read_app_meta() {
     case "$meta_icon" in *[!0-9a-f]*) meta_icon="" ;; esac
     case "$meta_clienticon" in *[!0-9a-f]*) meta_clienticon="" ;; esac
   fi
+  # appinfo has no entry for a non-Steam shortcut
+  if [ -z "$meta_name" ] && [ -x "$appinfo_tool" ] && [ "$app_id" -gt 2147483647 ] 2>/dev/null; then
+    meta_name=$("$appinfo_tool" --shortcut "$client_root/userdata" "$app_id" ${SteamUser:+"$SteamUser"} 2>> "$log" | sed -n 's/^name=//p') || meta_name=""
+  fi
 }
 
 resolve_icon() {
@@ -160,6 +164,9 @@ np_game_names() {
   # shellcheck disable=SC1003 # the pair deletes a literal backslash, not a quote
   bundle_name=$(printf '%s' "$game_name" | tr -d '/:"`$\\')
   bundle_name=${bundle_name#"${bundle_name%%[!.]*}"}
+  if np_short=$(printf '%s' "$bundle_name" | LC_ALL=en_US.UTF-8 cut -c1-60 2>/dev/null); then
+    bundle_name=$np_short
+  fi
   [ -n "$bundle_name" ] || bundle_name="Steam Game"
   game_name_xml=$(printf '%s' "$game_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
 }
