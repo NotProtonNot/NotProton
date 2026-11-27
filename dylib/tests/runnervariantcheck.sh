@@ -232,6 +232,51 @@ printf 'junk\n' > "$work/trees/one/aarch64-windows/.DS_Store"
 ok "an arch folder holding only .DS_Store does not satisfy that arch" \
   "$(resolve 'one' '' fex)" "$base"
 rmdir "$work/trees/one/aarch64-windows" 2>/dev/null || rm -rf "$work/trees/one/aarch64-windows"
+
+echo "== a FEX runner runs x86 where its own copy has no arm64 slot"
+# CrossOver's lib/dxvk ships i386 and x86_64 only, so a FEX runner loads those x86 DLLs
+# itself, and a DXVK build laid over them is one it reads.
+: > "$work/log"
+mkdir -p "$base/lib/dxvk/i386-windows" "$base/lib/dxvk/x86_64-windows" \
+         "$work/trees/dxvk/i386-windows" "$work/trees/dxvk/x86_64-windows"
+dll "$work/trees/dxvk/i386-windows/d3d9.dll" thirtytwo
+dll "$work/trees/dxvk/x86_64-windows/d3d9.dll" sixtyfour
+desc dxvkmac <<CONF
+label = Dxvkmac
+variant = DXVK
+src = trees/dxvk
+dst = lib/dxvk
+CONF
+got=$(resolve 'dxvkmac' '' fex)
+ok "an x86 tree is used where the runner has no arm64 slot" "$got" "$(newest dxvkmac)"
+ok "and its i386 DLL is laid down" \
+  "$(tr -d '\000' < "$got/lib/dxvk/i386-windows/d3d9.dll")" "Wine builtin DLLthirtytwo"
+# 32-bit Windows code is x86 on every runner, so i386 counts even beside an arm64 slot.
+: > "$work/log"
+mkdir -p "$work/trees/old/i386-windows"
+dll "$work/trees/old/i386-windows/d3d11.dll" old
+desc thirtytwo <<CONF
+label = Thirtytwo
+variant = Backend
+src = trees/old
+dst = lib/dxmt
+CONF
+mkdir -p "$base/lib/dxmt/i386-windows"
+ok "an i386 tree is used beside an arm64 slot" "$(resolve 'thirtytwo' '' fex)" "$(newest thirtytwo)"
+rmdir "$base/lib/dxmt/i386-windows"
+# The exception is for x86 on FEX only: Rosetta never runs arm64 files, slot or not.
+: > "$work/log"
+mkdir -p "$base/lib/armonly/aarch64-windows" "$work/trees/armonly/aarch64-windows"
+dll "$work/trees/armonly/aarch64-windows/d3d11.dll" arm
+desc armonly <<CONF
+label = Armonly
+variant = Backend
+src = trees/armonly
+dst = lib/armonly
+CONF
+ok "an arm64 tree is refused where Rosetta runs, even with no x86_64 slot" \
+  "$(resolve 'armonly' '' rosetta)" "$base"
+ok "and is used where arm64 Wine runs" "$(resolve 'armonly' '' fex)" "$(newest armonly)"
 # A tree naming no architecture is not filtered: dst may be a flat directory.
 : > "$work/log"
 mkdir -p "$work/trees/flat"

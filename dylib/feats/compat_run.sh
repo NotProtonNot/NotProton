@@ -603,13 +603,19 @@ np_variant_norm() {
 # var_fits in webpatch.c reads it: files there land in dst, and each folder lands where dst
 # has one of the same name. A folder named for an architecture only counts for the runner
 # that runs it, and a tree naming any architecture has to land one this runner runs, or
-# arm64 Wine would be handed x86_64 files and never read them.
+# arm64 Wine would be handed x86_64 files and never read them. i386 always runs, and FEX
+# runs x86_64 where dst has no arm64 folder of its own (CrossOver's lib/dxvk).
 np_variant_fits() {
   np_v_lands=0
   np_v_named=0
   np_v_fits=0
   np_v_want_arch=$(np_variant_arch)
   np_v_into="$np_support/runners/crossover-$np_build/CrossOver/$2"
+  np_v_own=0
+  for np_v_e in "$np_v_into"/*; do
+    [ -d "$np_v_e" ] || continue
+    [ "$(np_variant_dir_arch "${np_v_e##*/}")" != "$np_v_want_arch" ] || np_v_own=1
+  done
   for np_v_e in "$1"/*; do
     # The overlay copies regular files only, so a link never lands.
     [ ! -L "$np_v_e" ] || continue
@@ -627,7 +633,12 @@ np_variant_fits() {
     np_v_d_arch=$(np_variant_dir_arch "${np_v_e##*/}")
     [ -n "$np_v_d_arch" ] || continue
     np_v_named=1
-    if [ "$np_v_here" = 1 ] && [ "$np_v_d_arch" = "$np_v_want_arch" ]; then
+    case "$np_v_d_arch" in
+      ("$np_v_want_arch" | i386) np_v_runs=1 ;;
+      (x86_64) np_v_runs=$((1 - np_v_own)) ;;
+      (*) np_v_runs=0 ;;
+    esac
+    if [ "$np_v_here" = 1 ] && [ "$np_v_runs" = 1 ]; then
       np_v_fits=1
     fi
   done
