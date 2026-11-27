@@ -523,6 +523,21 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!walk(PO({ details: details('') })).some(x => x.type === 'Section' && x.props.label === 'Developer')
        && walk(PO({ details: details('') })).some(x => x.type === 'Section' && x.props.label === 'Zeta'),
        'with every plugin in a group there is no empty Developer section');
+  const SUB = JSON.stringify([
+    { k: 'NOTPROTON_SUB_B', l: 'B one', on: '1', off: '', dep: '', d: '', gr: 'Pack / Beta' },
+    { k: 'NOTPROTON_SUB_P', l: 'P one', on: '1', off: '', dep: '', d: '', gr: 'Pack' },
+    { k: 'NOTPROTON_SUB_A', l: 'A one', on: '1', off: '', dep: '', d: '', gr: 'Pack / Alpha' },
+    { k: 'NOTPROTON_SUB_G', l: 'G one', on: '1', off: '', dep: '', d: '', gr: 'Pack / Beta / Gamma' },
+    { k: 'NOTPROTON_SUB_E', l: 'E one', on: '1', off: '', dep: '', d: '', gr: 'Pack / Delta / Epsilon' },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const { render: PS } = panel(emit, form, undefined, { feats: SUB });
+  const pack = walk(PS({ details: details('') })).find(x => x.type === 'Section' && x.props.label === 'Pack');
+  t.ok(pack && walk(pack).filter(x => x.type === 'ToggleField' || /^MSCXSub/.test(x.props.className))
+         .map(x => x.props.label || x.props.children).join(',')
+         === 'P one,Alpha,A one,Beta,B one,Gamma,G one,Delta,Epsilon,E one',
+       'A / B / C: section A, heading B (once, even with no row of its own), smaller heading C; rows of A first');
+  t.ok(!walk(PS({ details: details('') })).some(x => x.type === 'Section' && /\//.test(x.props.label)),
+       'no section is named after a whole A / B path');
 
   {
     const REC = [
