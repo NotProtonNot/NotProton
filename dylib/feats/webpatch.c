@@ -797,12 +797,25 @@ static int var_has(const char *packed, const char *want) {
 // land in dst, and each folder lands where dst has one of the same name. A folder named
 // for an architecture only counts for the runner that runs it, and a tree naming any
 // architecture has to land one this runner runs, or arm64 Wine would get x86_64 files.
+// i386 always runs, and FEX runs x86_64 where dst has no arm64 folder of its own
+// (CrossOver's lib/dxvk).
 static int var_fits(const np_var_t *v, const char *runner, const char *arch) {
     char path[2048], at[2048];
     struct dirent *de;
     struct stat st;
     DIR *d;
-    int lands = 0, named = 0, matched = 0;
+    int lands = 0, named = 0, matched = 0, own = 0;
+
+    if (snprintf(at, sizeof(at), "%s/CrossOver/%s", runner, v->dst) < (int)sizeof(at)
+        && (d = opendir(at))) {
+        while ((de = readdir(d))) {
+            const char *a = var_arch_of(de->d_name);
+            if (de->d_name[0] == '.' || !a || strcmp(a, arch) != 0) continue;
+            if (snprintf(path, sizeof(path), "%s/%s", at, de->d_name) < (int)sizeof(path)
+                && var_is_dir(path)) own = 1;
+        }
+        closedir(d);
+    }
 
     if (!(d = opendir(v->src))) return 0;
     while ((de = readdir(d))) {
@@ -822,7 +835,9 @@ static int var_fits(const np_var_t *v, const char *runner, const char *arch) {
         if (here) lands = 1;
         if ((a = var_arch_of(de->d_name))) {
             named = 1;
-            if (here && strcmp(a, arch) == 0) matched = 1;
+            int runs = strcmp(a, arch) == 0 || strcmp(a, "i386") == 0
+                       || (strcmp(a, "x86_64") == 0 && !own);
+            if (here && runs) matched = 1;
         }
     }
     closedir(d);

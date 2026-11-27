@@ -483,6 +483,43 @@ int main(void) {
     ok(strstr(vars_json(), "t:[\"notproton\",\"notproton-26.3\",\"notproton-fex-rosetta\"]")
        != NULL, "is offered everywhere, each runner taking the slot it has");
 
+    puts("== an x86 slot the FEX runner runs itself");
+    clear_vars();
+    // CrossOver's lib/dxvk has no arm64 slot, so the FEX runner loads its x86 DLLs.
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-27.0-fex/CrossOver/lib/dxvk/'{i386,x86_64}'-windows'%s", g_home, "");
+    make_dir("mkdir -p '%s/trees/dxvk/'{i386,x86_64}'-windows'%s", g_home, "");
+    make_asset("trees/dxvk/i386-windows/d3d9.dll");
+    make_asset("trees/dxvk/x86_64-windows/d3d9.dll");
+    write_var("dxvkmac.conf",
+               "[dxvkmac]\nlabel = Dxvk\nvariant = DXVK\n"
+               "src = trees/dxvk\ndst = lib/dxvk\n");
+    ok(strstr(vars_json(), "t:[\"notproton\",\"notproton-fex-rosetta\"]") != NULL,
+       "an x86 tree is offered to the FEX tool where its runner has no arm64 slot");
+    clear_vars();
+    make_dir("mkdir -p '%s/trees/old/i386-windows'%s", g_home, "");
+    make_asset("trees/old/i386-windows/d3d11.dll");
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-27.0-fex/CrossOver/lib/dxmt/i386-windows'%s", g_home, "");
+    write_var("thirtytwo.conf",
+               "[thirtytwo]\nlabel = Old\nvariant = Backend\n"
+               "src = trees/old\ndst = lib/dxmt\n");
+    ok(strstr(vars_json(), "t:[\"notproton\",\"notproton-fex-rosetta\"]") != NULL,
+       "an i386 tree is offered to the FEX tool beside an arm64 slot");
+    make_dir("rmdir '%s/Library/Application Support/notproton/runners/"
+             "crossover-27.0-fex/CrossOver/lib/dxmt/i386-windows'%s", g_home, "");
+    clear_vars();
+    // The exception is for x86 on FEX only: Rosetta never runs arm64 files, slot or not.
+    make_dir("mkdir -p '%s/Library/Application Support/notproton/runners/"
+             "crossover-27.0-fex/CrossOver/lib/armonly/aarch64-windows'%s", g_home, "");
+    make_dir("mkdir -p '%s/trees/armonly/aarch64-windows'%s", g_home, "");
+    make_asset("trees/armonly/aarch64-windows/d3d11.dll");
+    write_var("armonly.conf",
+               "[armonly]\nlabel = Arm\nvariant = Backend\n"
+               "src = trees/armonly\ndst = lib/armonly\n");
+    ok(strstr(vars_json(), "t:[\"notproton\"]") != NULL,
+       "an arm64 tree is not offered to the Rosetta tool, even with no x86_64 slot");
+
     puts("== rejections");
     clear_vars();
     write_var("ok-one.conf",
