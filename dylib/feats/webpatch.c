@@ -1405,7 +1405,9 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".MSCXBar>div{position:absolute;top:0;bottom:0;left:-30%;width:30%;background:#1a9fff;" \
     "animation:MSCXSlide 1.2s linear infinite}" \
     "@keyframes MSCXSlide{from{left:-30%}to{left:100%}}" \
-    ".MSCXKeys{margin-top:5px;opacity:.75}\""
+    ".MSCXKeys{margin-top:5px;opacity:.75}" \
+    ".MSCXSub{padding:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;opacity:.7}" \
+    ".MSCXSub2{padding:10px 0 2px 12px;text-transform:none;letter-spacing:0}\""
 
 #define NP_CX_BARREL(X) X(XY) X(m) X(Yh) X($n) X(Vb) X(D0) X(y4) X(J1) X(d3) X(gz)
 #define NP_CX_BARREL_C(n) #n,
@@ -1584,7 +1586,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "?/^NOTPROTON_ENV_/.test(f.k):f.rq||(f.ev||[]).length))," \
     "npG=f=>f.gr||f.dep&&(npRows.find(x=>x.k===f.dep)||{}).gr||\"\"," \
     "npGs=[...new Set(npRows.map(npG).filter(Boolean))].sort((a,b)=>a.localeCompare(b))," \
-    "npIn=g=>npRows.filter(f=>npG(f)===g&&(!f.dep||on1(f.dep)))," \
+    "npIn=g=>npRows.filter(f=>npG(f)===g&&(!f.dep||on1(f.dep))),npTop=g=>g.split(\" / \")[0]," \
     /* Lines a plugin only wants read once the row is on, such as the keys that
        change the rest of a feature in game, sit under its description while it is. */ \
     "npR=f=>{const lv=f.dep?dl(f.dep,1):0," \
@@ -1694,8 +1696,10 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "dev&&(npIn(\"\").length||vids.length)?(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
     "children:vids.map(V).concat(npIn(\"\").map(npR))})},\"dev\"):null," \
-    "dev&&npGs.length?npGs.map(g=>(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
-    "{label:g,children:npIn(g).map(npR)})},\"gr:\"+g)):null,npCx&&foot" \
+    "dev&&npGs.length?[...new Set(npGs.map(npTop))].map(t=>(0," RT ".jsx)(" BARREL ".J1,{children:(0," RT ".jsx)(" BARREL ".XY," \
+    "{label:t,children:npGs.filter(g=>npTop(g)===t).flatMap((g,i,a)=>{const p=g.split(\" / \"),q=(a[i-1]||\"\").split(\" / \")," \
+    "h=(c,x)=>(0," RT ".jsx)(\"div\",{className:c,children:x},c+g);" \
+    "return(p[1]&&p[1]!==q[1]?[h(\"MSCXSub\",p[1])]:[]).concat(p[2]?[h(\"MSCXSub MSCXSub2\",p.slice(2).join(\" / \"))]:[],npIn(g).map(npR))})})},\"gr:\"+t)):null,npCx&&foot" \
     "].filter(Boolean);" \
     /* A tool of someone else's with nothing of ours to offer gets no page at all. */ \
     "if(!npBody.length)return null;" \
