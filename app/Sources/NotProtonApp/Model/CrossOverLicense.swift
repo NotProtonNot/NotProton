@@ -24,6 +24,13 @@ enum CrossOverLicense {
 
     private static let licenseBase = "com.codeweavers.CrossOver"
 
+    // SHA-256 of the key CrossOver verifies its own license with (share/crossover/data/tie.pub),
+    // the same in 26.3 and the 2026 Previews. The bundle's copy is trusted only if it is this
+    // one: a key swapped into a copied bundle would otherwise verify a license signed with it.
+    static let codeWeaversKeys: Set<String> = [
+        "de88c936ee0fe6233314168a4651833abef7ef374ff798fa1c0b548a525a3686",
+    ]
+
     static let notActivatedTitle = String(localized: "CrossOver does not appear to be activated.")
     static let trialUnsupported = String(localized: "The trial version is not supported.")
     static let notActivatedAdvice = "\(String(localized: "Please run CrossOver and try again.")) \(trialUnsupported)"
@@ -34,10 +41,11 @@ enum CrossOverLicense {
     static func check(
         crossOverRoot: URL,
         searchDirs: [URL] = defaultSearchDirs,
-        openssl: String = defaultOpenssl
+        openssl: String = defaultOpenssl,
+        keys: Set<String> = codeWeaversKeys
     ) -> Status {
         let status = evaluate(
-            crossOverRoot: crossOverRoot, searchDirs: searchDirs, openssl: openssl
+            crossOverRoot: crossOverRoot, searchDirs: searchDirs, openssl: openssl, keys: keys
         )
         AppLog.note("license: \(status.diagnostic)")
         return status
@@ -46,7 +54,8 @@ enum CrossOverLicense {
     private static func evaluate(
         crossOverRoot: URL,
         searchDirs: [URL],
-        openssl: String
+        openssl: String,
+        keys: Set<String>
     ) -> Status {
         let keyFile = crossOverRoot.appending(
             path: "share/crossover/data/tie.pub"
@@ -57,6 +66,14 @@ enum CrossOverLicense {
                 licensed: false,
                 detail: notActivated,
                 diagnostic: "no verification key in the CrossOver bundle"
+            )
+        }
+
+        guard let key = Digest.sha256IfPresent(URL(filePath: keyFile)), keys.contains(key) else {
+            return Status(
+                licensed: false,
+                detail: notActivated,
+                diagnostic: "the verification key in the CrossOver bundle is not CodeWeavers'"
             )
         }
 
