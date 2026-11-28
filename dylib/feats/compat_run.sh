@@ -1529,6 +1529,21 @@ APPLESCRIPT
   refuse_foreign_prefix
 }
 
+# Seeding in 1.1.0 through 1.2.8 left this behind on exFAT.
+refuse_unseeded_prefix() {
+  [ -d "$WINEPREFIX/dosdevices" ] && [ ! -L "$WINEPREFIX/dosdevices" ] || return 0
+  [ ! -e "$WINEPREFIX/dosdevices/c:" ] && [ ! -L "$WINEPREFIX/dosdevices/c:" ] || return 0
+  [ ! -f "$WINEPREFIX/drive_c/windows/system32/ntdll.dll" ] || return 0
+  echo "=== an earlier seed left this prefix without drive C:, rebuild the prefix in NotProton ===" >> "$log" 2>&1 || true
+  case "${wine_unix##*/}" in
+    aarch64-unix) now_arch=aa64 ;;
+    *) now_arch=8664 ;;
+  esac
+  rebuild_prefix "This game needs its prefix rebuilt" "An earlier version of NotProton couldn't finish setting up this game's prefix, so the game can't start.
+
+Do you want to rebuild the prefix for $(running_name "$np_display" "$(tool_name "$now_arch")")? Your save games will be preserved and not lost."
+}
+
 refuse_foreign_prefix() {
   case "${wine_unix##*/}" in
     aarch64-unix) want=aa64 ;;
@@ -2175,6 +2190,8 @@ abandon_seed() {
     if [ "$seed_building" -eq 1 ]; then
       in_template_env "$seed_scratch" "$WINESERVER" -k >/dev/null 2>&1 || true
       in_template_env "$seed_scratch" "$WINESERVER" -w >/dev/null 2>&1 || exit "$1"
+    else
+      unseed_prefix "$seed_scratch"
     fi
     rm -rf "$seed_scratch" 2>/dev/null || true
   fi
@@ -2200,6 +2217,7 @@ sweep_dead_seeds() {
       stale_users=$(lsof -t +D "$stale_server" 2>&1 || true)
       [ -z "$stale_users" ] || continue
     fi
+    case "$leftover" in */pfx.seeding.*) unseed_prefix "$leftover" ;; esac
     rm -rf "$leftover" 2>/dev/null || true
   done
 }
@@ -2253,7 +2271,26 @@ build_prefix_template() {
   [ -f "$template_dir/pfx/system.reg" ]
 }
 
+# macOS keeps xattrs in a ._name file beside each item on exFAT.
+is_sidecar() {
+  case "${1##*/}" in ._*) [ -f "$1" ] && [ ! -L "$1" ] ;; *) return 1 ;; esac
+}
+
+# exFAT has no hard links.
+place_seed_file() {
+  if ln -h "$1" "$2" 2>/dev/null; then
+    [ ! -L "$2" ] && [ "$1" -ef "$2" ]
+  else
+    mv -n "$1" "$2" && [ ! -e "$1" ] && [ -f "$2" ] && [ ! -L "$2" ]
+  fi
+}
+
+# Undo list for unseed_prefix.
+seed_made_list=.notproton-seeded
+
 install_seed_tree() (
+  made="$seed_scratch/$seed_made_list"
+  : > "$made" || return 1
   set -- ""
   while [ "$#" -gt 0 ]; do
     relative=$1
@@ -2264,13 +2301,15 @@ install_seed_tree() (
     [ -r "$source_dir" ] && [ -x "$source_dir" ] || return 1
     for source in "$source_dir"/* "$source_dir"/.[!.]* "$source_dir"/..?*; do
       [ -e "$source" ] || [ -L "$source" ] || continue
+      ! is_sidecar "$source" || continue
       name=${source##*/}
       if [ -z "$relative" ]; then
-        case "$name" in system.reg|.update-timestamp) continue ;; esac
+        case "$name" in system.reg|.update-timestamp|"$seed_made_list") continue ;; esac
       fi
       target="$target_dir/$name"
       if [ -d "$source" ] && [ ! -L "$source" ]; then
         if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+          printf '%s\n' "$relative/$name" >> "$made" || return 1
           mkdir "$target" || return 1
         fi
         [ -d "$target" ] && [ ! -L "$target" ] || return 1
@@ -2282,23 +2321,45 @@ install_seed_tree() (
         [ -L "$source" ] && [ -L "$target" ] \
           && [ "$(readlink "$source")" = "$(readlink "$target")" ] || return 1
       elif [ -L "$source" ]; then
+        printf '%s\n' "$relative/$name" >> "$made" || return 1
         ln -sh "$(readlink "$source")" "$target" || return 1
         [ -L "$target" ] && [ "$(readlink "$source")" = "$(readlink "$target")" ] || return 1
       elif [ -f "$source" ]; then
-        ln -h "$source" "$target" || return 1
-        [ ! -L "$target" ] && [ "$source" -ef "$target" ] || return 1
+        printf '%s\n' "$relative/$name" >> "$made" || return 1
+        place_seed_file "$source" "$target" || return 1
       else
         return 1
       fi
     done
   done
-  ln -h "$seed_scratch/system.reg" "$WINEPREFIX/system.reg" \
-    && [ ! -L "$WINEPREFIX/system.reg" ] \
-    && [ "$seed_scratch/system.reg" -ef "$WINEPREFIX/system.reg" ] || return 1
+  printf '%s\n' /system.reg /.update-timestamp >> "$made" || return 1
+  place_seed_file "$seed_scratch/system.reg" "$WINEPREFIX/system.reg" || return 1
+  rm -f "$made"
   if [ -f "$seed_scratch/.update-timestamp" ]; then
-    ln -h "$seed_scratch/.update-timestamp" "$WINEPREFIX/.update-timestamp" || return 1
+    place_seed_file "$seed_scratch/.update-timestamp" "$WINEPREFIX/.update-timestamp" || return 1
   fi
 )
+
+unseed_prefix() {
+  made="$1/$seed_made_list"
+  [ -f "$made" ] && [ ! -L "$made" ] || return 0
+  if [ -f "$WINEPREFIX/system.reg" ]; then
+    rm -f "$made"
+    return 0
+  fi
+  tail -r "$made" | while IFS= read -r path; do
+    case "$path" in /*) ;; *) continue ;; esac
+    target="$WINEPREFIX$path"
+    if [ -d "$target" ] && [ ! -L "$target" ]; then
+      for sidecar in "$target"/._*; do ! is_sidecar "$sidecar" || rm -f "$sidecar"; done
+      rmdir "$target" 2>/dev/null || true
+    else
+      rm -f "$target" 2>/dev/null || true
+    fi
+  done
+  rm -f "$made"
+  echo "=== took the unfinished template seed back out of the prefix ===" >> "$log" 2>&1 || true
+}
 
 copy_template_into_prefix() {
   seed_scratch="$STEAM_COMPAT_DATA_PATH/pfx.seeding.$$"
@@ -2317,6 +2378,7 @@ copy_template_into_prefix() {
   if [ "$copied" -eq 0 ] && prefix_is_bare && install_seed_tree; then
     echo "=== $how ===" >> "$log" 2>&1 || true
   else
+    unseed_prefix "$seed_scratch"
     echo "=== could not seed from the template, wine builds this prefix itself ===" \
       >> "$log" 2>&1 || true
   fi
@@ -2334,6 +2396,7 @@ prefix_is_bare() (
       && [ -r "$directory" ] && [ -x "$directory" ] || return 1
     for node in "$directory"/* "$directory"/.[!.]* "$directory"/..?*; do
       [ -e "$node" ] || [ -L "$node" ] || continue
+      ! is_sidecar "$node" || continue
       part="$relative/${node##*/}"
       if [ -L "$node" ]; then
         if [ "$part" = /dosdevices/s: ] && [ "$(readlink "$node")" = "$(game_drive_record)" ]; then
@@ -2718,6 +2781,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   note_other_build
   stage_step="prefix arch check"
   refuse_foreign_prefix
+  refuse_unseeded_prefix
   claim_prefix
   [ "$verb" = run ] || note_variant_switch
   stage_step="prefix switch check"

@@ -17,6 +17,8 @@ functions="$functions
 $(cut_block '^runner_id=""' '^if \[ -n ".STEAM_COMPAT_DATA_PATH" \]; then' "")"
 functions="$functions
 $(cut_block '^without_lock_fds\(\) \{' '^\}' 1)"
+functions="$functions
+$(cut_block '^refuse_unseeded_prefix\(\) \{' '^\}' 1)"
 np_build=fixture
 np_variant_key=""
 export np_variant_key np_build CX_ROOT CX_HOME wine_unix np_tool_dir WINELOADER WINESERVER
@@ -190,6 +192,167 @@ printf original > "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save"
 )
 check test "$(cat "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save")" = original
 check test ! -e "$WINEPREFIX/system.reg"
+
+template_devices() {
+  mkdir -p "$template_dir/pfx/dosdevices"
+  ln -s ../drive_c "$template_dir/pfx/dosdevices/c:"
+  ln -s / "$template_dir/pfx/dosdevices/z:"
+}
+
+fixture
+template_devices
+mkdir -p "$WINEPREFIX/drive_c/users/steamuser/Documents/Game"
+printf original > "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save"
+(
+  eval 'ln() { [ "$1" != -h ] || return 1; command ln "$@"; }'
+  copy_template_into_prefix
+)
+check test -f "$WINEPREFIX/system.reg"
+check test -f "$WINEPREFIX/drive_c/windows/ntdll.dll"
+check test "$(readlink "$WINEPREFIX/dosdevices/c:")" = ../drive_c
+check test "$(cat "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save")" = original
+check test ! -e "$WINEPREFIX/.notproton-seeded"
+check test "$(echo "$STEAM_COMPAT_DATA_PATH"/pfx.seeding.*)" = "$STEAM_COMPAT_DATA_PATH/pfx.seeding.*"
+check test "$(cat "$template_dir/pfx/system.reg")" = reg
+
+fixture
+template_devices
+mkdir -p "$WINEPREFIX/drive_c/users/steamuser/Documents/Game"
+printf original > "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save"
+(
+  eval 'ln() { [ "$1" != -h ] || return 1; command ln "$@"; }'
+  eval 'mv() { return 1; }'
+  copy_template_into_prefix
+)
+check test ! -e "$WINEPREFIX/dosdevices"
+check test ! -e "$WINEPREFIX/drive_c/windows"
+check test ! -e "$WINEPREFIX/system.reg"
+check test "$(cat "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save")" = original
+check prefix_is_bare
+
+fixture
+template_devices
+mkdir -p "$WINEPREFIX/drive_c/users/steamuser/Documents/Game"
+printf original > "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save"
+env functions="$functions" /bin/sh -c "
+  eval \"\$functions\"
+  mv() { kill -KILL \"\$\$\"; }
+  ln() { [ \"\$1\" != -h ] || return 1; command ln \"\$@\"; }
+  copy_template_into_prefix
+" || true
+check test -d "$WINEPREFIX/dosdevices"
+sweep_dead_seeds "$STEAM_COMPAT_DATA_PATH"/pfx.seeding.*
+check test ! -e "$WINEPREFIX/dosdevices"
+check test "$(cat "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save")" = original
+check prefix_is_bare
+
+for at in user.reg ntdll.dll; do
+  fixture
+  template_devices
+  mkdir -p "$WINEPREFIX/drive_c/users/steamuser/Documents/Game"
+  printf original > "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save"
+  # shellcheck disable=SC2016 # the child shell expands its own variables
+  env functions="$functions" at="$at" /bin/sh -c '
+    eval "$functions"
+    trap "abandon_seed 143" TERM
+    ln() {
+      case "$*" in *"$at"*) kill -TERM "$$"; /bin/sh -c "kill -TERM \$PPID"; sleep 1 ;; esac
+      command ln "$@"
+    }
+    copy_template_into_prefix
+  ' 2>/dev/null || true
+  check test ! -e "$WINEPREFIX/dosdevices"
+  check test ! -e "$WINEPREFIX/user.reg"
+  check test "$(echo "$STEAM_COMPAT_DATA_PATH"/pfx.seeding.*)" = "$STEAM_COMPAT_DATA_PATH/pfx.seeding.*"
+  check test "$(cat "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save")" = original
+  check prefix_is_bare
+done
+
+fixture
+template_devices
+# shellcheck disable=SC2016 # the child shell expands its own variables
+env functions="$functions" /bin/sh -c '
+  eval "$functions"
+  ln() { case "$*" in *ntdll.dll*) kill -KILL "$$" ;; esac; command ln "$@"; }
+  copy_template_into_prefix
+' 2>/dev/null || true
+printf wine > "$WINEPREFIX/drive_c/windows/ntdll.dll"
+printf wine > "$WINEPREFIX/system.reg"
+sweep_dead_seeds "$STEAM_COMPAT_DATA_PATH"/pfx.seeding.*
+check test "$(cat "$WINEPREFIX/drive_c/windows/ntdll.dll")" = wine
+check test -f "$WINEPREFIX/user.reg"
+check test "$(readlink "$WINEPREFIX/dosdevices/c:")" = ../drive_c
+check test "$(echo "$STEAM_COMPAT_DATA_PATH"/pfx.seeding.*)" = "$STEAM_COMPAT_DATA_PATH/pfx.seeding.*"
+
+# shellcheck disable=SC2329
+running_name() { printf '%s' "$1"; }
+# shellcheck disable=SC2329
+tool_name() { printf '%s' "$1"; }
+prompted() (
+  # shellcheck disable=SC2329
+  rebuild_prefix() { echo asked; }
+  refuse_unseeded_prefix
+)
+
+fixture
+mkdir -p "$WINEPREFIX/dosdevices" "$WINEPREFIX/drive_c/windows/system32" "$WINEPREFIX/drive_c/windows/Fonts"
+ln -s /library "$WINEPREFIX/dosdevices/s:"
+printf xattr > "$WINEPREFIX/dosdevices/._s:"
+printf font > "$WINEPREFIX/drive_c/windows/Fonts/arial.ttf"
+printf half > "$WINEPREFIX/system.reg"
+check test "$(prompted)" = asked
+
+fixture
+mkdir -p "$WINEPREFIX/dosdevices" "$WINEPREFIX/drive_c"
+check test "$(prompted)" = asked
+
+fixture
+mkdir -p "$WINEPREFIX/dosdevices" "$WINEPREFIX/drive_c/windows/system32"
+ln -s ../drive_c "$WINEPREFIX/dosdevices/c:"
+check test -z "$(prompted)"
+
+fixture
+mkdir -p "$WINEPREFIX/dosdevices" "$WINEPREFIX/drive_c/windows/system32"
+printf dll > "$WINEPREFIX/drive_c/windows/system32/ntdll.dll"
+check test -z "$(prompted)"
+
+fixture
+mkdir -p "$WINEPREFIX/drive_c/users/steamuser"
+check test -z "$(prompted)"
+
+fixture
+mkdir -p "$WINEPREFIX/drive_c/users/steamuser/Documents"
+printf xattr > "$WINEPREFIX/._drive_c"
+printf xattr > "$WINEPREFIX/drive_c/users/._steamuser"
+check prefix_is_bare
+printf real > "$WINEPREFIX/drive_c/stray"
+check test "$(prefix_is_bare && echo bare || echo not)" = not
+
+
+exfat_image="$work/exfat.dmg"
+exfat_mount="$work/exfat"
+if mkdir "$exfat_mount" && hdiutil create -quiet -size 16m -fs ExFAT -volname npseed "$exfat_image" 2>/dev/null \
+  && hdiutil attach -quiet -nobrowse -mountpoint "$exfat_mount" "$exfat_image" 2>/dev/null; then
+  trap 'hdiutil detach -quiet -force "$exfat_mount" 2>/dev/null || true; chmod -R u+rwX "$work"; rm -rf "$work"' EXIT
+  real_work=$work
+  work=$exfat_mount
+  fixture
+  work=$real_work
+  template_devices
+  find "$template_dir/pfx" -exec xattr -sw com.notproton.seedcheck x {} \;
+  mkdir -p "$WINEPREFIX/drive_c/users/steamuser/Documents/Game"
+  printf original > "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save"
+  xattr -w com.notproton.seedcheck x "$WINEPREFIX/drive_c/users/steamuser"
+  copy_template_into_prefix
+  check test ! -d "$STEAM_COMPAT_DATA_PATH/pfx.seeding.$$"
+  check test -f "$WINEPREFIX/system.reg"
+  check test -f "$WINEPREFIX/drive_c/windows/ntdll.dll"
+  check test "$(readlink "$WINEPREFIX/dosdevices/c:")" = ../drive_c
+  check test "$(cat "$WINEPREFIX/drive_c/users/steamuser/Documents/Game/save")" = original
+  hdiutil detach -quiet "$exfat_mount" || true
+else
+  echo "  skip exFAT image: hdiutil could not make one"
+fi
 
 fixture
 mkdir -p "$WINEPREFIX/dosdevices"
