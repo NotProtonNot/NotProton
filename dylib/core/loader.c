@@ -9,6 +9,7 @@
 #include "../feats/ceg.h"
 #include "../feats/compat.h"
 #include "../feats/input_access.h"
+#include "../feats/rounded_windows.h"
 #include "dobby.h"
 
 #include <stdio.h>
@@ -337,6 +338,7 @@ static void np_init(void) {
     if (is_main_helper(pn)) {
         np_log_attach();
         np_hooks_spawn_install();
+        np_rounded_windows_install();
         return;
     }
     if (strcmp(pn, "steam_osx") != 0)
