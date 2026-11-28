@@ -82,6 +82,14 @@ static void valid_cases(void) {
           "Automatic and unknown backends are not saved");
     check(!valid(NP_DEFAULTS_FEX, "ROSETTA_ADVERTISE_AVX=1") &&
           !valid(NP_DEFAULTS_FEX, "D3DM_ENABLE_METALFX=1") &&
+          !valid(NP_DEFAULTS_FEX, "D3DM_SUPPORT_DXR=1") &&
+          !valid(NP_DEFAULTS_FEX, "D3DM_MTL4=0") &&
+          !valid(NP_DEFAULTS_FEX, "D3DM_MAX_FPS=60") &&
+          valid(NP_DEFAULTS_ROSETTA, "D3DM_SUPPORT_DXR=1") &&
+          valid(NP_DEFAULTS_ROSETTA, "D3DM_MTL4=0") &&
+          valid(NP_DEFAULTS_ROSETTA, "D3DM_MAX_FPS=60") &&
+          !valid(NP_DEFAULTS_ROSETTA, "D3DM_MAX_FPS=45") &&
+          !valid(NP_DEFAULTS_ROSETTA, "D3DM_MAX_FPS=abc") &&
           !valid(NP_DEFAULTS_ROSETTA, "FEX_X87REDUCEDPRECISION=1") &&
           valid(NP_DEFAULTS_FEX, "FEX_X87REDUCEDPRECISION=0"),
           "runner-only rows stay with their runner");
