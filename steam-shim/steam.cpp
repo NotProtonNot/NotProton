@@ -663,9 +663,49 @@ static bool convert_linux_vrpaths(void)
     return true;
 }
 
+/* A drive letter or UNC path: a Windows runtime, not one on the host. */
+static bool is_windows_path(const char *path)
+{
+    if (!path)
+        return false;
+    if (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) &&
+            path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
+        return true;
+    return path[0] == '\\' && path[1] == '\\';
+}
+
+/* VR_OVERRIDE naming a Windows OpenVR runtime (one that runs inside the prefix, such as
+ * xrizer) takes it as is. The game's openvr_api.dll uses VR_OVERRIDE only alongside an
+ * openvrpaths.vrpath in the prefix, so write one naming the same runtime, and keep
+ * VR_OVERRIDE for the game. There is no host runtime to bridge to through C:\vrclient. */
+static bool use_windows_vr_override(void)
+{
+    const char *runtime = getenv("VR_OVERRIDE");
+    if (!is_windows_path(runtime))
+        return false;
+
+    Json::Value root;
+    root["jsonid"] = "vrpathreg";
+    root["version"] = 1;
+    root["runtime"] = Json::Value(Json::ValueType::arrayValue);
+    root["runtime"][0] = runtime;
+
+    WCHAR windows_vrpaths[MAX_PATH];
+    if (!get_windows_vr_path(windows_vrpaths, true))
+        return false;
+
+    Json::StyledWriter writer;
+    write_string_to_file(windows_vrpaths, writer.write(root));
+    WINE_TRACE("Windows OpenVR runtime from VR_OVERRIDE: %s\n", runtime);
+    return true;
+}
+
 static void setup_vrpaths(void)
 {
     bool success = false;
+
+    if (use_windows_vr_override())
+        return;
 
     try{
         success = convert_linux_vrpaths();
